@@ -25,6 +25,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/paymentprovider"
 	"github.com/project-algebra/algebra/internal/domain/plugin"
 	"github.com/project-algebra/algebra/internal/domain/privacy"
+	"github.com/project-algebra/algebra/internal/domain/receipt"
 	"github.com/project-algebra/algebra/internal/platform/bankoffers"
 	"github.com/project-algebra/algebra/internal/platform/config"
 	"github.com/project-algebra/algebra/internal/platform/identity"
@@ -72,6 +73,12 @@ type Bundle struct {
 	Activity   *app.ActivityService
 	Onboarding *app.OnboardingService
 	Demo       *app.DemoService
+
+	// --- Spend Passes and signed receipts (internal/domain/spendpass, receipt) ---
+	SpendPasses *app.SpendPassService
+	Receipts    *app.ReceiptService
+	// MCPPublicURL: see config.Config.MCPPublicURL.
+	MCPPublicURL string
 	// OAuthProviders holds only the providers with credentials configured,
 	// keyed by name ("google", "github").
 	OAuthProviders map[string]identity.Provider
@@ -290,6 +297,21 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		GrowthPlanID: cfg.Billing.GrowthPlanID, GrowthAmountMinor: cfg.Billing.GrowthPriceMinor, Currency: "INR",
 	})
 	orderSvc.SetExecutionGate(billingSvc)
+
+	// Spend Passes: every purchase by an agent holding one clears the pass
+	// as well as the person's guardrails, and every placed order gets a
+	// receipt signed with a key derived from the master key.
+	passRepo := postgres.NewSpendPassRepo(db)
+	spendPassSvc := app.NewSpendPassService(passRepo, agentSvc, passRepo)
+	policySvc.SetSpendPasses(spendPassSvc)
+	orderSvc.SetSpendPasses(spendPassSvc)
+	signer, err := receipt.NewSigner(masterKey)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("wiring: receipt signer: %w", err)
+	}
+	receiptSvc := app.NewReceiptService(signer, cfg.Auth.PublicWebURL, postgres.NewReceiptRepo(db), agents, decisions, passRepo)
+	orderSvc.SetReceipts(receiptSvc)
 	onboardingSvc := app.NewOnboardingService(accountSvc, commerceProfileSvc, privacyResolver)
 	demoSvc := app.NewDemoService(accountSvc, onboardingSvc)
 	oauthProviders := map[string]identity.Provider{}
@@ -347,7 +369,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
-		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, OAuthProviders: oauthProviders,
+		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,

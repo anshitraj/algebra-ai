@@ -20,6 +20,7 @@ What it takes to run Algebra for real users, what the code already enforces, and
 | Legal pages | `/terms`, `/privacy`, `/refunds`, `/contact` — what Razorpay's website review and Google's OAuth consent screen check for. Business details come from build args (below); nothing is invented when they're unset |
 | Error handling | Branded 404, route and console error boundaries, root `global-error`; `robots.txt` keeps `/console` and `/api` out of search, `sitemap.xml` lists public pages |
 | CI | Go fmt/vet/build/race tests, migrations on a fresh Postgres, web lint + typecheck + production build |
+| Plugins | Console → Plugins: each person switches sources on/off — live web prices (always on), bank offers, Amazon deals, Flipkart offers, and opt-in community deals (two subreddits of their choice, DesiDime). Enforced server-side; plugins only ever see the product search and can't check out. Community tips are labelled unverified and never enter a price. Optional `TAVILY_API_KEY` reads community posts from the last week |
 
 ## 2. Still demo — needs a partner or account
 

@@ -10,6 +10,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/audit"
 	"github.com/project-algebra/algebra/internal/domain/intent"
 	"github.com/project-algebra/algebra/internal/domain/quote"
+	"github.com/project-algebra/algebra/internal/domain/spendpass"
 	"github.com/project-algebra/algebra/policy"
 )
 
@@ -25,7 +26,12 @@ type PolicyService struct {
 	now         func() time.Time
 	approvalTTL time.Duration
 	userRules   UserRulesSource
+	passes      PassGate // optional — see SetSpendPasses
 }
+
+// SetSpendPasses makes every purchase by an agent that holds a Spend Pass
+// clear the pass as well as the person's guardrails (the stricter wins).
+func (s *PolicyService) SetSpendPasses(g PassGate) { s.passes = g }
 
 // SetUserRules makes evaluation use each user's own guardrails (see
 // UserRulesSource) instead of the single platform-default provider. Nil
@@ -143,6 +149,15 @@ func (s *PolicyService) evaluate(ctx context.Context, pi *intent.PurchaseIntent,
 	decision, err := provider.EvaluatePurchaseIntent(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("app: policy evaluation failed: %w", err)
+	}
+	if s.passes != nil {
+		passDecision, pass, err := s.passes.CheckPurchase(ctx, pi.AgentID, q.Merchant, pi.Constraints.Category, q.FinalPayable)
+		if err != nil {
+			return nil, err
+		}
+		if passDecision != nil {
+			decision = spendpass.Combine(decision, passDecision, pass.ID)
+		}
 	}
 	return decision, nil
 }

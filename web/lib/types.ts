@@ -181,6 +181,76 @@ export type OrderDetail = {
   ship_to?: ShippingProfile;
   ship_to_alias?: string;
   payment_alias?: string;
+  /** Signed spend receipt (compact JWS) — verifiable by anyone at /verify. */
+  receipt?: string;
+};
+
+// --- Spend Passes (internal/domain/spendpass, /api/v1/me/passes) ---
+
+export type AgentKind = "claude" | "chatgpt" | "custom";
+export type BudgetPeriod = "total" | "week" | "month";
+
+export type SpendPass = {
+  id: string;
+  agent_id: string;
+  label: string;
+  agent_kind: AgentKind;
+  currency: string;
+  budget_minor_units: number;
+  budget_period: BudgetPeriod;
+  max_per_purchase_minor_units?: number;
+  approve_above_minor_units?: number;
+  allowed_categories: string[];
+  allowed_merchants: string[];
+  created_at: string;
+  expires_at: string;
+  revoked_at?: string;
+  active: boolean;
+  spent_minor_units: number;
+  remaining_minor_units: number;
+  window_starts_at: string;
+};
+
+export type PassConnect = { api_base: string; mcp_url?: string };
+
+/** A new pass with its agent token — the token is shown exactly once. */
+export type IssuedPass = SpendPass & { token: string; connect: PassConnect };
+
+export type NewPass = {
+  label: string;
+  agent_kind: AgentKind;
+  budget_minor_units: number;
+  budget_period: BudgetPeriod;
+  max_per_purchase_minor_units?: number;
+  approve_above_minor_units?: number;
+  allowed_categories: string[];
+  expires_in_days: number;
+};
+
+// --- signed spend receipts (internal/domain/receipt) ---
+
+export type ReceiptClaims = {
+  iss: string;
+  jti: string;
+  iat: number;
+  sub: string;
+  agent: { id: string; name: string; client: string };
+  pass?: string;
+  merchant: string;
+  merchant_order_id: string;
+  amount: { minor_units: number; currency: string };
+  items: { name: string; quantity: number; unit_minor_units: number }[];
+  items_hash: string;
+  authorization: { method: "policy" | "human"; approved_at: number; policy_version?: string; reason_codes?: string[] };
+  test?: boolean;
+};
+
+export type ReceiptVerification = {
+  valid: boolean;
+  recorded: boolean;
+  claims?: ReceiptClaims;
+  pass?: { label: string; active: boolean; revoked: boolean };
+  reason?: string;
 };
 
 // Matches internal/domain/audit.Event exactly (GET .../audit returns the

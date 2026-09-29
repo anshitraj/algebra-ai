@@ -70,8 +70,8 @@ export function StoreLogo({ store, size = 24, className = "" }: { store: string 
         loading="lazy"
         referrerPolicy="no-referrer"
         onError={() => setFailed(true)}
-        className={`${box} border border-border bg-white object-contain p-[12%]`}
-        style={{ width: size, height: size, borderRadius: radius }}
+        className={`${box} border border-border bg-white object-contain`}
+        style={{ width: size, height: size, borderRadius: radius, padding: Math.round(size * 0.14) }}
       />
     );
   }

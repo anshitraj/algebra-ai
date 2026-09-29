@@ -5,13 +5,14 @@
 // can shop within policy but is rejected by every approval endpoint.
 // Wraps only the endpoints the agent's tools need — see tools.ts.
 
-import type { Plugin,
+import type {
   AuditEvent,
   CommerceProfile,
   DealResults,
   ExecuteResult,
   Guardrails,
   Intent,
+  Plugin,
   IntentConstraints,
   IntentItem,
   Merchant,

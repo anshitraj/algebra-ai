@@ -40,6 +40,16 @@
         "$env:ALGEBRA_API_URL='http://localhost:8090'; $env:NEXT_DIST_DIR='.next-alt'; pnpm --dir web exec next dev --port 3210"
       ],
       "port": 3210
+    },
+    {
+      "name": "mcp",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-Command",
+        "go run ./cmd/mcp -http=:8081"
+      ],
+      "port": 8081
     }
   ]
 }

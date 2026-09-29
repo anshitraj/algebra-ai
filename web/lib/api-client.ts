@@ -18,7 +18,12 @@ import type {
   IntentActivity,
   IntentConstraints,
   IntentItem,
+  IssuedPass,
+  NewPass,
   OrderDetail,
+  PassConnect,
+  ReceiptVerification,
+  SpendPass,
   Merchant,
   OnboardingAnswers,
   Order,
@@ -185,6 +190,23 @@ export function listMyApprovals() {
 
 export function listMyOrders(limit = 50) {
   return apiFetch<Order[]>(`/api/v1/me/orders?limit=${limit}`);
+}
+
+export function listPasses() {
+  return apiFetch<{ passes: SpendPass[]; connect: PassConnect }>("/api/v1/me/passes");
+}
+
+export function createPass(p: NewPass) {
+  return apiFetch<IssuedPass>("/api/v1/me/passes", { method: "POST", body: p });
+}
+
+export function revokePass(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/v1/me/passes/${encodeURIComponent(id)}/revoke`, { method: "POST" });
+}
+
+/** Public: anyone can check a receipt — it carries nothing personal. */
+export function verifyReceipt(receipt: string) {
+  return apiFetch<ReceiptVerification>("/api/v1/receipts/verify", { method: "POST", body: { receipt } });
 }
 
 export function getMyOrder(id: string) {

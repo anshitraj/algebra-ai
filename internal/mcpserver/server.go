@@ -16,8 +16,10 @@
 // call-site-explicit rather than implicit-from-transport, and is exactly
 // what mandate §6/§7 asks for either way: "every MCP request capable of
 // mutating commerce state must identify user, agent, application/client."
-// Moving to the HTTP transport's native bearer-auth flow is a transport
-// swap, not a rewrite of any handler below.
+// Over streamable HTTP, an agent may instead send its token as
+// "Authorization: Bearer <token>" (bearerMiddleware) and leave agent_token
+// empty — how a Spend Pass connects Claude, ChatGPT or any MCP client without
+// a secret ever appearing in the conversation.
 package mcpserver
 
 import (
@@ -60,6 +62,9 @@ type Server struct {
 	// update_commerce_preferences — see internal/domain/commerceprofile.
 	CommerceProfiles *app.CommerceProfileService
 
+	// SpendPasses backs algebra.spend_pass: an agent reading its own limits.
+	SpendPasses *app.SpendPassService
+
 	// Limiter is optional (mandate §35/§49) — nil means no MCP-level rate
 	// limiting, which is fine for local stdio development and not fine for
 	// a production streamable-HTTP deployment. See rateLimitMiddleware.
@@ -68,7 +73,10 @@ type Server struct {
 
 func (srv *Server) resolveAgent(ctx context.Context, token string) (*agentpkg.Identity, error) {
 	if token == "" {
-		return nil, fmt.Errorf("agent_token is required")
+		token = bearerFromContext(ctx)
+	}
+	if token == "" {
+		return nil, fmt.Errorf("agent_token is required (or send Authorization: Bearer <token>)")
 	}
 	ag, err := srv.Agents.GetByTokenHash(ctx, agentpkg.HashToken(token))
 	if err != nil {
@@ -113,8 +121,9 @@ func stripInternal(q *quote.CheckoutQuote) quote.CheckoutQuote {
 // deployment (see cmd/mcp).
 func NewMCPServer(srv *Server) *gomcp.Server {
 	s := gomcp.NewServer(&gomcp.Implementation{Name: "project-algebra", Version: "0.1.0"}, nil)
-	s.AddReceivingMiddleware(srv.rateLimitMiddleware)
+	s.AddReceivingMiddleware(bearerMiddleware, srv.rateLimitMiddleware)
 	srv.registerCommerceTools(s)
+	srv.registerSpendPassTools(s)
 	srv.registerPaymentsTools(s)
 	srv.registerProfilesTools(s)
 	srv.registerPolicyTools(s)

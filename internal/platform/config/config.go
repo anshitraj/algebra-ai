@@ -62,6 +62,11 @@ type Config struct {
 	// GeminiAPIKey enables Gemini-grounded shopping web search
 	// (connectors/websearch.Gemini) — preferred over Custom Search when set.
 	// GeminiSearchModel defaults to the stable "latest Flash" alias.
+	// MCPPublicURL is where this deployment's MCP server is reachable
+	// (cmd/mcp -http behind TLS), shown to people connecting an agent with a
+	// Spend Pass. Empty hides the MCP option.
+	MCPPublicURL string
+
 	GeminiAPIKey      string
 	GeminiSearchModel string
 	// TavilyAPIKey (optional) makes community deal plugins read through
@@ -279,6 +284,7 @@ func FromEnv() (*Config, error) {
 	cfg.GoogleSearchAPIKey = os.Getenv("GOOGLE_SEARCH_API_KEY")
 	cfg.GoogleSearchEngineID = os.Getenv("GOOGLE_SEARCH_ENGINE_ID")
 	cfg.GeminiAPIKey = getEnv("GEMINI_API_KEY", os.Getenv("GOOGLE_GEMINI_API"))
+	cfg.MCPPublicURL = strings.TrimRight(os.Getenv("MCP_PUBLIC_URL"), "/")
 	cfg.GeminiSearchModel = os.Getenv("GEMINI_SEARCH_MODEL")
 	cfg.TavilyAPIKey = os.Getenv("TAVILY_API_KEY")
 	webSearchTTL, err := getDuration("WEB_SEARCH_CACHE_TTL", 10*time.Minute)

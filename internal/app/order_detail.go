@@ -25,6 +25,8 @@ type OrderDetail struct {
 	ShipTo       *privacy.ShippingProfile `json:"ship_to,omitempty"`
 	ShipToAlias  string                   `json:"ship_to_alias,omitempty"`
 	PaymentAlias string                   `json:"payment_alias,omitempty"`
+	// Receipt is the signed spend receipt (compact JWS), if one was issued.
+	Receipt string `json:"receipt,omitempty"`
 }
 
 // OrderForUser returns one of the user's own orders. Anyone else's order
@@ -54,6 +56,11 @@ func (s *OrderService) OrderForUser(ctx context.Context, userID, orderID string)
 	}
 	if d.Events == nil {
 		d.Events = []order.Event{}
+	}
+	if s.receipts != nil {
+		if jws, err := s.receipts.ForOrder(ctx, orderID); err == nil {
+			d.Receipt = jws
+		}
 	}
 	if alias := pi.Constraints.DeliveryProfile; alias != "" && s.privacy != nil {
 		shipTo, err := s.privacy.ResolveShipping(ctx, userID, alias, privacy.ResolveAuthorization{

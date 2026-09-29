@@ -394,6 +394,9 @@ type executeOutput struct {
 	IntentStatus string       `json:"intent_status"`
 	Order        *order.Order `json:"order,omitempty"`
 	Reason       string       `json:"reason,omitempty"`
+	// Receipt is the signed spend receipt for a placed order — proof, for
+	// the store or anyone, that the person authorized this purchase.
+	Receipt string `json:"receipt,omitempty"`
 }
 
 func toDecisionOutput(dec *policy.PolicyDecision) decisionOutput {
@@ -401,5 +404,5 @@ func toDecisionOutput(dec *policy.PolicyDecision) decisionOutput {
 }
 
 func toExecuteOutput(o *app.ExecuteOutcome) executeOutput {
-	return executeOutput{IntentStatus: string(o.IntentStatus), Order: o.Order, Reason: o.Reason}
+	return executeOutput{IntentStatus: string(o.IntentStatus), Order: o.Order, Reason: o.Reason, Receipt: o.Receipt}
 }

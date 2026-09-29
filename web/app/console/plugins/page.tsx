@@ -151,16 +151,16 @@ function PluginCard({
           <button
             type="button"
             role="switch"
-            aria-checked={p.enabled}
-            aria-label={`${p.enabled ? "Turn off" : "Turn on"} ${p.name}`}
+            aria-checked={on}
+            aria-label={`${on ? "Turn off" : "Turn on"} ${p.name}`}
             disabled={busy || !p.ready}
             onClick={toggle}
             className="relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50"
-            style={{ background: p.enabled ? "var(--color-primary)" : "var(--color-border-strong)" }}
+            style={{ background: on ? "var(--color-primary)" : "var(--color-border-strong)" }}
           >
             <motion.span
               className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-surface shadow"
-              animate={{ x: p.enabled ? 20 : 0 }}
+              animate={{ x: on ? 20 : 0 }}
               transition={{ type: "spring", stiffness: 500, damping: 32 }}
             />
           </button>

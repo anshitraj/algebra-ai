@@ -89,7 +89,7 @@ async function runConversation(ai: GoogleGenAI, models: { agent: string; user: s
     default_shipping_alias: "Home",
     preferences: { shopping: { priority: "best_value", household: "couple" }, ...scenario.preferences },
   };
-  const systemPrompt = buildSystemPrompt(profile, guardrails, scenario.mode);
+  const systemPrompt = buildSystemPrompt(profile, guardrails, scenario.mode, scenario.plugins ?? []);
   const { execute, log } = makeExecutor(scenario.mode, guardrails);
 
   const lines: string[] = [];

@@ -51,7 +51,11 @@ const nextConfig: NextConfig = {
   // distDir per `next dev`), e.g. NEXT_DIST_DIR=.next-alt.
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
   async rewrites() {
-    return [{ source: "/api/v1/:path*", destination: `${API_URL}/api/v1/:path*` }];
+    return [
+      { source: "/api/v1/:path*", destination: `${API_URL}/api/v1/:path*` },
+      // The key set that verifies spend receipts, on the public domain.
+      { source: "/.well-known/jwks.json", destination: `${API_URL}/.well-known/jwks.json` },
+    ];
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

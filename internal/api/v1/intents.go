@@ -224,6 +224,9 @@ type executeResponse struct {
 	IntentStatus string      `json:"intent_status"`
 	Order        interface{} `json:"order,omitempty"`
 	Reason       string      `json:"reason,omitempty"`
+	// Receipt is the signed spend receipt (compact JWS) for a placed order:
+	// verifiable by anyone at /.well-known/jwks.json or POST /receipts/verify.
+	Receipt string `json:"receipt,omitempty"`
 }
 
 func (a *API) execute(w http.ResponseWriter, r *http.Request) {
@@ -237,7 +240,7 @@ func (a *API) execute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, executeResponse{IntentStatus: string(outcome.IntentStatus), Order: outcome.Order, Reason: outcome.Reason})
+	writeJSON(w, http.StatusOK, executeResponse{IntentStatus: string(outcome.IntentStatus), Order: outcome.Order, Reason: outcome.Reason, Receipt: outcome.Receipt})
 }
 
 func (a *API) getOrder(w http.ResponseWriter, r *http.Request) {

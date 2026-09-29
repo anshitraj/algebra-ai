@@ -75,6 +75,12 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/me/intents", api.listMyIntents)
 	mux.HandleFunc("GET /api/v1/me/approvals", api.listMyApprovals)
 	mux.HandleFunc("GET /api/v1/me/orders", api.listMyOrders)
+	mux.HandleFunc("GET /api/v1/me/passes", api.listMyPasses)
+	mux.HandleFunc("POST /api/v1/me/passes", api.createMyPass)
+	mux.HandleFunc("POST /api/v1/me/passes/{id}/revoke", api.revokeMyPass)
+	mux.HandleFunc("GET /api/v1/pass", api.getMyAgentPass)
+	mux.HandleFunc("GET /.well-known/jwks.json", api.jwks)
+	mux.HandleFunc("POST /api/v1/receipts/verify", api.verifyReceipt)
 	mux.HandleFunc("GET /api/v1/me/orders/{id}", api.getMyOrder)
 
 	mux.HandleFunc("GET /api/v1/billing", api.getBilling)

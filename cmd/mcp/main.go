@@ -47,7 +47,7 @@ func main() {
 		Policy: bundle.Policy, Orders: bundle.Orders, Payments: bundle.Payments, Privacy: bundle.Privacy,
 		Connectors: bundle.Connectors, Idempotency: bundle.Idempotency, Limiter: bundle.Limiter,
 		Integrators: bundle.Integrators, TransactionPolicy: bundle.TransactionPolicy,
-		PaymentIntents: bundle.PaymentIntentSvc, CommerceProfiles: bundle.CommerceProfileSvc,
+		PaymentIntents: bundle.PaymentIntentSvc, CommerceProfiles: bundle.CommerceProfileSvc, SpendPasses: bundle.SpendPasses,
 	}
 	server := mcpserver.NewMCPServer(srv)
 

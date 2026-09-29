@@ -17,6 +17,7 @@ import {
   IconMenu,
   IconPackage,
   IconReceipt,
+  IconShield,
   IconSettings,
   IconSliders,
   IconStore,
@@ -40,6 +41,7 @@ const PRIMARY: NavItem[] = [
 
 const CONTROLS: NavItem[] = [
   { href: "/console/guardrails", label: "Guardrails", icon: <IconSliders /> },
+  { href: "/console/passes", label: "Spend passes", icon: <IconShield /> },
   { href: "/console/payment-sources", label: "Payment methods", icon: <IconWallet /> },
   { href: "/console/profile", label: "Profile & address", icon: <IconUser /> },
   { href: "/console/merchants", label: "Stores", icon: <IconStore /> },

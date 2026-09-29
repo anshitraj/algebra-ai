@@ -43,6 +43,8 @@ func (srv *Server) rateLimitMiddleware(next gomcp.MethodHandler) gomcp.MethodHan
 		}
 		if err := json.Unmarshal(params.Arguments, &args); err == nil && args.AgentToken != "" {
 			key = "mcp:agent:" + agentpkg.HashToken(args.AgentToken)
+		} else if token := bearerFromContext(ctx); token != "" {
+			key = "mcp:agent:" + agentpkg.HashToken(token)
 		}
 
 		allowed, retryAfter, err := srv.Limiter.Allow(ctx, "ratelimit:"+key, defaultMCPRateLimit, defaultMCPRateLimitWindow)

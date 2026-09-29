@@ -36,7 +36,17 @@ type OrderService struct {
 	privacy     PrivacyResolver // optional — see resolveFulfillment
 	userRules   UserRulesSource // optional — see PolicyService.SetUserRules
 	gate        ExecutionGate   // optional — plan limits, see SetExecutionGate
+	passes      PassGate        // optional — see SetSpendPasses
+	receipts    ReceiptIssuer   // optional — see SetReceipts
 }
+
+// SetSpendPasses re-checks an agent's Spend Pass right before paying: an
+// approval can't outlive a revoked pass, and two purchases approved side by
+// side can't both spend the same remaining budget.
+func (s *OrderService) SetSpendPasses(g PassGate) { s.passes = g }
+
+// SetReceipts signs a spend receipt for every order placed.
+func (s *OrderService) SetReceipts(r ReceiptIssuer) { s.receipts = r }
 
 // ExecutionGate decides whether a user's plan allows one more order this
 // month. BillingService implements it.
@@ -139,6 +149,8 @@ type ExecuteOutcome struct {
 	Order        *order.Order
 	Challenge    *payment.AuthorizationChallenge
 	Reason       string
+	// Receipt is the signed spend receipt (compact JWS) for a placed order.
+	Receipt string
 }
 
 // Execute is commerce.request_purchase's final step once an approval is
@@ -249,6 +261,26 @@ func (s *OrderService) Execute(ctx context.Context, idem IdempotencyStore, idemK
 			return &ExecuteOutcome{IntentStatus: pi.Status, Reason: reason}, nil
 		}
 
+		// The Spend Pass, if the agent holds one, gets the last word before
+		// money moves: revoked, expired or out of budget is terminal here.
+		// (Its ask-me line was already honoured when the approval was made.)
+		if s.passes != nil {
+			passDecision, _, err := s.passes.CheckPurchase(ctx, pi.AgentID, refreshed.Merchant, pi.Constraints.Category, refreshed.FinalPayable)
+			if err != nil {
+				return nil, err
+			}
+			if passDecision != nil && passDecision.Decision == policy.Deny {
+				if err := transitionIntent(ctx, s.intents, s.audit, s.now, pi, intent.StateExecuting, "ExecutionStarted", ""); err != nil {
+					return nil, err
+				}
+				reason := fmt.Sprintf("spend pass denied: %v", passDecision.ReasonCodes)
+				if err := transitionIntent(ctx, s.intents, s.audit, s.now, pi, intent.StateFailed, "IntentPolicyRejected", reason); err != nil {
+					return nil, err
+				}
+				return &ExecuteOutcome{IntentStatus: intent.StateFailed, Reason: reason}, nil
+			}
+		}
+
 		// Resolve aliases → real addresses BEFORE claiming the approval: a
 		// resolution failure must leave the approval reusable, not burn it.
 		fulfillment, err := s.resolveFulfillment(ctx, pi, a)
@@ -305,7 +337,19 @@ func (s *OrderService) handleExecutionResult(ctx context.Context, pi *intent.Pur
 		if err := transitionIntent(ctx, s.intents, s.audit, s.now, pi, intent.StateSucceeded, "OrderCompleted", ord.Merchant); err != nil {
 			return nil, err
 		}
-		return &ExecuteOutcome{IntentStatus: pi.Status, Order: &ord}, nil
+		out := &ExecuteOutcome{IntentStatus: pi.Status, Order: &ord}
+		// The order stands whether or not signing works; a missing receipt
+		// is recorded, not fatal.
+		if s.receipts != nil {
+			if jws, err := s.receipts.Issue(ctx, &ord, pi, a); err == nil {
+				out.Receipt = jws
+			} else {
+				evt := audit.NewEvent("ReceiptFailed", s.now())
+				evt.UserID, evt.AgentID, evt.IntentID, evt.Result = pi.UserID, pi.AgentID, pi.ID, err.Error()
+				_ = s.audit.Record(ctx, evt)
+			}
+		}
+		return out, nil
 
 	case merchant.ExecutionAuthenticationRequired:
 		if err := transitionIntent(ctx, s.intents, s.audit, s.now, pi, intent.StateAuthenticationRequired, "PaymentChallengeCreated", result.Reason); err != nil {

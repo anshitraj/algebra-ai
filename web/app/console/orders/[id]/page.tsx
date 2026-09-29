@@ -73,6 +73,7 @@ function OrderView({ detail }: { detail: OrderDetail }) {
         <Tracker detail={detail} />
         <Delivery shipTo={detail.ship_to} simulated={simulated} />
         <ShareLink orderNumber={order.merchant_order_id} />
+        {detail.receipt && <SignedReceipt receipt={detail.receipt} />}
       </div>
 
       <Invoice detail={detail} />
@@ -217,6 +218,52 @@ function Delivery({ shipTo, simulated }: { shipTo?: ShippingProfile; simulated: 
         </div>
       )}
     </Panel>
+  );
+}
+
+// The signed spend receipt: proof, checkable by anyone — the store, a
+// payment company, a dispute team — that this purchase was authorized.
+function SignedReceipt({ receipt }: { receipt: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="rounded-2xl border border-border px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary-tint text-primary">
+            <IconCheck size={14} strokeWidth={2.6} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">Signed spend receipt</p>
+            <p className="text-xs text-muted">Proof that you authorized exactly this purchase — anyone can verify it, no account needed.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              navigator.clipboard?.writeText(receipt).then(
+                () => {
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1500);
+                },
+                () => {}
+              )
+            }
+            className="rounded-lg border border-border-strong px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary-tint"
+          >
+            {copied ? "Copied" : "Copy receipt"}
+          </button>
+          <a
+            href={`/verify?r=${encodeURIComponent(receipt)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-tint"
+          >
+            Verify <IconExternal size={12} />
+          </a>
+        </div>
+      </div>
+    </div>
   );
 }
 
