@@ -9,10 +9,14 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,24 +24,30 @@ import (
 	"github.com/project-algebra/algebra/connectors/websearch"
 	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/billing"
+	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/confidential"
 	"github.com/project-algebra/algebra/internal/domain/merchant"
 	"github.com/project-algebra/algebra/internal/domain/paymentprovider"
 	"github.com/project-algebra/algebra/internal/domain/plugin"
 	"github.com/project-algebra/algebra/internal/domain/privacy"
 	"github.com/project-algebra/algebra/internal/domain/receipt"
+	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/platform/bankoffers"
 	"github.com/project-algebra/algebra/internal/platform/config"
 	"github.com/project-algebra/algebra/internal/platform/identity"
 	"github.com/project-algebra/algebra/internal/platform/postgres"
 	redisplatform "github.com/project-algebra/algebra/internal/platform/redis"
 	"github.com/project-algebra/algebra/internal/platform/resilience"
+	"github.com/project-algebra/algebra/internal/platform/safehttp"
+	"github.com/project-algebra/algebra/internal/platform/solana"
 	"github.com/project-algebra/algebra/policy"
 	"github.com/project-algebra/algebra/providers/arcium"
 	"github.com/project-algebra/algebra/providers/paymentdemo"
 	"github.com/project-algebra/algebra/providers/razorpay"
 	"github.com/project-algebra/algebra/providers/sandboxpay"
+	"github.com/project-algebra/algebra/providers/solanax402"
 	"github.com/project-algebra/algebra/providers/vault"
+	"github.com/project-algebra/algebra/providers/x402client"
 )
 
 // Bundle is every long-lived, shared dependency a transport (REST or MCP)
@@ -85,6 +95,13 @@ type Bundle struct {
 	// SandboxProvider is the SANDBOX x402 provider, nil unless
 	// ECONOMIC_SANDBOX is on (see config.Config.EconomicSandbox).
 	SandboxProvider *sandboxpay.Provider
+	// Execution runs routed work: it drives the coordinator, makes the paid
+	// x402 call and judges the result (internal/domain/routing).
+	Execution *app.ExecutionService
+	// ExecutionProviders are the providers an agent can name: the ones the
+	// operator pinned (ECONOMIC_PROVIDERS) and, in sandbox mode, the
+	// simulated one. Keyed by provider name.
+	ExecutionProviders map[string][]routing.Candidate
 
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
@@ -335,6 +352,11 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		sandboxProvider = sandboxpay.NewProvider(rail, cfg.Auth.PublicWebURL+"/api/v1/sandbox/x402/token-risk", 0)
 		econSvc.RegisterRecovery(sandboxpay.ProviderID, sandboxProvider)
 	}
+	execSvc, execProviders, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db))
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("wiring: %w", err)
+	}
 	onboardingSvc := app.NewOnboardingService(accountSvc, commerceProfileSvc, privacyResolver)
 	demoSvc := app.NewDemoService(accountSvc, onboardingSvc)
 	oauthProviders := map[string]identity.Provider{}
@@ -393,7 +415,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, Execution: execSvc, ExecutionProviders: execProviders, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,
@@ -413,4 +435,162 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 // unverified.
 func envWebhookSecret(provider string) string {
 	return os.Getenv("WEBHOOK_SECRET_" + strings.ToUpper(provider))
+}
+
+// buildExecution wires the executor: the x402 runner over an HTTP client that
+// can only reach public addresses (plus the sandbox provider's own port in
+// sandbox mode), the capability catalog, and the providers an agent can name.
+func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.EconomicService, store app.ExecutionStore) (*app.ExecutionService, map[string][]routing.Candidate, error) {
+	catalog, err := app.NewStaticCatalog(app.DefaultCapabilities()...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("capability catalog: %w", err)
+	}
+	providers, err := ParseConfiguredProviders(cfg.EconomicProviders)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ECONOMIC_PROVIDERS: %w", err)
+	}
+	httpOpts := safehttp.Options{}
+	networks := map[string]string{}
+	if cfg.EconomicSandbox {
+		networks[chain.Sandbox] = "sandbox"
+		// The sandbox provider is served by this API, on this machine: allow
+		// loopback on its port and no other.
+		if port := listenPort(cfg.HTTPAddr); port > 0 {
+			httpOpts.LoopbackPorts = []int{port}
+			c, err := routing.Candidate{
+				Capability: "solana.token-risk", Provider: sandboxpay.ProviderID, Name: "Sandbox token risk (simulated)",
+				ExecutionType: routing.ExecX402, Method: "POST", Network: chain.Sandbox, Sources: []routing.DiscoverySource{routing.SourceConfigured},
+				Endpoint: "http://127.0.0.1:" + strconv.Itoa(port) + "/api/v1/sandbox/x402/token-risk",
+			}.Normalize()
+			if err != nil {
+				return nil, nil, fmt.Errorf("sandbox candidate: %w", err)
+			}
+			providers[c.Provider] = append(providers[c.Provider], c)
+		}
+	}
+	if cfg.Solana.Cluster != "" {
+		rail, err := buildSolanaRail(ctx, cfg.Solana)
+		if err != nil {
+			return nil, nil, err
+		}
+		if rail != nil {
+			econSvc.RegisterRail(rail)
+			networks[rail.Network()] = solanax402.RailName
+		}
+	}
+	exec := app.NewExecutionService(econSvc, store)
+	exec.SetCapabilities(catalog)
+	exec.RegisterRunner(x402client.New(x402client.Config{
+		HTTP: safehttp.New(httpOpts), Networks: networks, ReuseQuoteFor: 15 * time.Second,
+	}))
+	return exec, providers, nil
+}
+
+// defaultSolanaRPC are the public endpoints, rate-limited and fine for trying
+// things out; anything that matters should name its own node.
+var defaultSolanaRPC = map[string]string{
+	"devnet":  "https://api.devnet.solana.com",
+	"mainnet": "https://api.mainnet-beta.solana.com",
+}
+
+// buildSolanaRail builds the Solana USDC rail and checks it against the
+// cluster. A mistake that could send money to the wrong place (a wallet that
+// won't load, a node on another cluster) stops startup. A node that is merely
+// unreachable does not: the rail is left out and said so, so the API still
+// serves and no payment is made on a cluster that couldn't be verified.
+func buildSolanaRail(ctx context.Context, sc config.SolanaConfig) (*solanax402.Rail, error) {
+	text := sc.Keypair
+	if sc.KeypairFile != "" {
+		b, err := os.ReadFile(sc.KeypairFile)
+		if err != nil {
+			return nil, fmt.Errorf("SOLANA_KEYPAIR_FILE: %w", err)
+		}
+		text = string(b)
+	}
+	// The error never echoes the key.
+	kp, err := solana.ParseKeypair(text)
+	if err != nil {
+		return nil, fmt.Errorf("the Solana wallet couldn't be loaded: %w", err)
+	}
+	url := sc.RPCURL
+	if url == "" {
+		url = defaultSolanaRPC[sc.Cluster]
+	}
+	rail, err := solanax402.New(solanax402.Config{
+		Cluster: sc.Cluster, RPC: solana.NewRPC(url, nil), Signer: kp, MaxPaymentMinor: sc.MaxPaymentMinor,
+	})
+	if err != nil {
+		return nil, err
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	st, err := rail.Status(checkCtx)
+	switch {
+	case errors.Is(err, solanax402.ErrWrongCluster):
+		return nil, err
+	case err != nil:
+		log.Printf("wiring: SOLANA RAIL DISABLED: couldn't verify the %s cluster at %s: %v. No Solana payment will be made until this is fixed.", sc.Cluster, url, err)
+		return nil, nil
+	}
+	usdc := "no USDC account yet"
+	if st.USDCMinor != nil {
+		usdc = chain.FormatUnits(int64(*st.USDCMinor), chain.USDCDecimals) + " USDC"
+	}
+	log.Printf("wiring: Solana %s rail enabled: wallet %s holds %s; at most %s USDC per payment", sc.Cluster, st.Address, usdc,
+		chain.FormatUnits(st.MaxPaymentMinor, chain.USDCDecimals))
+	return rail, nil
+}
+
+// ParseConfiguredProviders reads the ECONOMIC_PROVIDERS JSON array into
+// candidates from the "configured" source: providers the operator pinned, and
+// so trusted as native. A mistake here fails startup rather than silently
+// dropping a provider.
+func ParseConfiguredProviders(raw string) (map[string][]routing.Candidate, error) {
+	out := map[string][]routing.Candidate{}
+	if strings.TrimSpace(raw) == "" {
+		return out, nil
+	}
+	var entries []struct {
+		Capability string `json:"capability"`
+		Provider   string `json:"provider"`
+		Name       string `json:"name"`
+		Endpoint   string `json:"endpoint"`
+		Method     string `json:"method"`
+		Network    string `json:"network"`
+	}
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&entries); err != nil {
+		return nil, fmt.Errorf("not a JSON array of providers: %w", err)
+	}
+	seen := map[string]bool{}
+	for i, e := range entries {
+		c, err := routing.Candidate{
+			Capability: e.Capability, Provider: e.Provider, Name: e.Name, ExecutionType: routing.ExecX402,
+			Endpoint: e.Endpoint, Method: e.Method, Network: e.Network, Sources: []routing.DiscoverySource{routing.SourceConfigured},
+		}.Normalize()
+		if err != nil {
+			return nil, fmt.Errorf("entry %d (%s): %w", i+1, e.Provider, err)
+		}
+		if seen[c.ID] {
+			return nil, fmt.Errorf("entry %d (%s) repeats an earlier one", i+1, e.Provider)
+		}
+		seen[c.ID] = true
+		out[c.Provider] = append(out[c.Provider], c)
+	}
+	return out, nil
+}
+
+// listenPort is the port of a listen address like ":8080" or "0.0.0.0:8080";
+// zero when there isn't one.
+func listenPort(addr string) int {
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil || n < 1 || n > 65535 {
+		return 0
+	}
+	return n
 }

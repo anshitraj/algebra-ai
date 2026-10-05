@@ -93,6 +93,10 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/economic-intents/{id}/reservations/{rid}/release", api.releaseEconomicAttempt)
 	mux.HandleFunc("POST /api/v1/economic-intents/{id}/reconcile", api.reconcileEconomicIntent)
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/receipt", api.getEconomicReceipt)
+	// Execution: Algebra prices, pays, calls, verifies and signs.
+	mux.HandleFunc("POST /api/v1/execute", api.executeOutcome)
+	mux.HandleFunc("POST /api/v1/economic-intents/{id}/execute", api.executeEconomicIntent)
+	mux.HandleFunc("GET /api/v1/economic-intents/{id}/executions", api.listEconomicExecutions)
 	mux.HandleFunc("GET /api/v1/me/economic-intents", api.listMyEconomicIntents)
 	mux.HandleFunc("POST /api/v1/me/economic-intents", api.createMyEconomicIntent)
 	mux.HandleFunc("GET /api/v1/me/economic-intents/stats", api.myEconomicStats)

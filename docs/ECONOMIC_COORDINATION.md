@@ -122,7 +122,7 @@ payloads.
 |---|---|
 | 0 | This audit |
 | 1–4 | Intent, reservation state machine, authority, concurrency tests |
-| 5 | x402 exact + Solana mainnet USDC rail + a real provider (needs a small project-funded wallet) |
+| 5 | x402 exact + Solana mainnet USDC rail + a real provider (needs a small project-funded wallet). The executor, x402 runner and sandbox end-to-end are built: see [EXECUTION.md](EXECUTION.md). The real rail is not. |
 | 6 | Reconciliation engine and sweeper |
 | 7 | Intent Receipt v2 |
 | 8 | Telemetry and `cmd/verify-intent` |

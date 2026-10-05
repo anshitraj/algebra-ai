@@ -7,6 +7,7 @@ package config
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+
+	"github.com/project-algebra/algebra/internal/domain/chain"
 )
 
 type Config struct {
@@ -82,9 +85,40 @@ type Config struct {
 	// with ECONOMIC_SANDBOX=on.
 	EconomicSandbox bool
 
+	// EconomicProviders is a JSON array of x402 providers the operator pins
+	// by hand, the "configured" discovery source, e.g.
+	//
+	//	[{"capability":"solana.token-risk","provider":"acme","endpoint":"https://api.acme.example/risk","method":"POST","network":"solana"}]
+	//
+	// An agent can ask for them by provider name. They are trusted as native:
+	// the operator vouched for them. Empty means none.
+	EconomicProviders string
+
+	// Solana is the real payment rail (providers/solanax402): Algebra pays
+	// x402 providers in USDC from a wallet it controls. Off unless
+	// SOLANA_CLUSTER is set.
+	Solana SolanaConfig
+
 	Auth AuthConfig
 
 	Billing BillingConfig
+}
+
+// SolanaConfig configures the Solana USDC rail.
+type SolanaConfig struct {
+	// Cluster is "devnet" or "mainnet"; empty turns the rail off.
+	Cluster string
+	// RPCURL is the node to read from. Empty uses the public endpoint for
+	// the cluster, which is rate-limited and fine for trying things out.
+	RPCURL string
+	// Keypair is the wallet's secret as text (a JSON array or base58), or
+	// KeypairFile is a path to the same. Prefer the file: a secret in the
+	// environment ends up in process listings and crash reports.
+	Keypair     string
+	KeypairFile string
+	// MaxPaymentMinor is the most one payment may be, in micro-USDC: a hard
+	// ceiling in the rail itself, whatever any policy says.
+	MaxPaymentMinor int64
 }
 
 // BillingConfig configures Razorpay billing for Algebra's own plans. Empty
@@ -298,6 +332,10 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	cfg.WebSearchCacheTTL = webSearchTTL
+	cfg.EconomicProviders = strings.TrimSpace(os.Getenv("ECONOMIC_PROVIDERS"))
+	if err := loadSolana(&cfg.Solana); err != nil {
+		return nil, err
+	}
 	switch strings.ToLower(os.Getenv("ECONOMIC_SANDBOX")) {
 	case "on":
 		cfg.EconomicSandbox = true
@@ -497,4 +535,47 @@ func splitCSV(v string) []string {
 		}
 	}
 	return out
+}
+
+// loadSolana reads the Solana rail's settings. Mainnet moves real money, so
+// it needs its own explicit acknowledgement on top of naming the cluster.
+func loadSolana(c *SolanaConfig) error {
+	c.Cluster = strings.ToLower(strings.TrimSpace(os.Getenv("SOLANA_CLUSTER")))
+	if c.Cluster == "" {
+		return nil
+	}
+	switch c.Cluster {
+	case "devnet":
+	case "mainnet", "mainnet-beta":
+		c.Cluster = "mainnet"
+		if strings.ToLower(os.Getenv("SOLANA_ALLOW_MAINNET")) != "yes" {
+			return errors.New("config: SOLANA_CLUSTER=mainnet pays with real money; set SOLANA_ALLOW_MAINNET=yes to confirm that is intended")
+		}
+	default:
+		return fmt.Errorf("config: SOLANA_CLUSTER must be devnet or mainnet, not %q", c.Cluster)
+	}
+	c.RPCURL = strings.TrimSpace(os.Getenv("SOLANA_RPC_URL"))
+	c.Keypair = strings.TrimSpace(os.Getenv("SOLANA_KEYPAIR"))
+	c.KeypairFile = strings.TrimSpace(os.Getenv("SOLANA_KEYPAIR_FILE"))
+	if c.Keypair == "" && c.KeypairFile == "" {
+		return errors.New("config: SOLANA_CLUSTER is set but there is no wallet: set SOLANA_KEYPAIR_FILE (preferred) or SOLANA_KEYPAIR")
+	}
+	c.MaxPaymentMinor = 1_000_000 // 1 USDC
+	if v := strings.TrimSpace(os.Getenv("SOLANA_MAX_PAYMENT_USDC")); v != "" {
+		n, err := chain.ParseUnits(v, chain.USDCDecimals)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("config: SOLANA_MAX_PAYMENT_USDC must be a positive amount like 0.50: %v", err)
+		}
+		c.MaxPaymentMinor = n
+	}
+	return nil
+}
+
+// SolanaFromEnv reads only the Solana settings (and a local .env), for
+// command-line tools that don't need the rest of the server's configuration.
+func SolanaFromEnv() (SolanaConfig, error) {
+	_ = godotenv.Load()
+	var c SolanaConfig
+	err := loadSolana(&c)
+	return c, err
 }

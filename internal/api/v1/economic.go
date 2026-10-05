@@ -64,6 +64,13 @@ func writeEconError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": err.Error(), "reason_codes": denied.ReasonCodes})
 	case errors.Is(err, app.ErrExecutionFrozen):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "reason": app.RejectUnknown})
+	case errors.Is(err, app.ErrNoRoute):
+		var nr *app.NoRoute
+		body := map[string]any{"error": err.Error()}
+		if errors.As(err, &nr) {
+			body["rejected"] = nr.Rejected
+		}
+		writeJSON(w, http.StatusUnprocessableEntity, body)
 	default:
 		writeError(w, err)
 	}
