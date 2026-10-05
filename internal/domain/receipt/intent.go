@@ -27,10 +27,12 @@ type IntentClaims struct {
 	Subject string `json:"sub"`
 	Version int    `json:"v"`
 
-	Intent       IntentRef       `json:"intent"`
-	Authority    AuthorityRef    `json:"authority"`
-	Reservation  ReservationRef  `json:"reservation"`
-	Provider     ProviderRef     `json:"provider"`
+	Intent      IntentRef      `json:"intent"`
+	Authority   AuthorityRef   `json:"authority"`
+	Reservation ReservationRef `json:"reservation"`
+	Provider    ProviderRef    `json:"provider"`
+	// Routing says how the provider was chosen, when Algebra's router chose it.
+	Routing      *RoutingRef     `json:"routing,omitempty"`
 	Execution    ExecutionRef    `json:"execution"`
 	Settlement   *SettlementRef  `json:"settlement,omitempty"`
 	Coordination CoordinationRef `json:"coordination"`
@@ -75,9 +77,37 @@ type ExecutionRef struct {
 	RequestHash         string `json:"request_hash,omitempty"`
 	ResultHash          string `json:"result_hash,omitempty"`
 	ProviderOperationID string `json:"provider_operation_id,omitempty"`
-	// Status is what's proven about the result: "fulfilled" or
-	// "result_unknown".
+	// Status is what's proven about the result: "fulfilled", "not_fulfilled"
+	// or "result_unknown".
 	Status string `json:"status"`
+	// Quality is Algebra's own judgement of the delivered result. It says how
+	// the response measured against what was asked for, not that its data is
+	// true.
+	Quality *QualityRef `json:"quality,omitempty"`
+}
+
+// RoutingRef commits to how the provider was chosen: the mode, the plan the
+// choice came from, and the exact priced offer that was paid.
+type RoutingRef struct {
+	// Mode is CHEAPEST, FASTEST or AUTO.
+	Mode string `json:"mode"`
+	// PlanHash commits to the ranked quotes the choice was made from, and
+	// QuoteHash to the offer that was taken.
+	PlanHash    string `json:"plan_hash,omitempty"`
+	QuoteHash   string `json:"quote_hash,omitempty"`
+	CandidateID string `json:"candidate_id,omitempty"`
+	// Rank is the plan step that executed; Fallback is true when it wasn't
+	// the first choice.
+	Rank     int  `json:"plan_rank"`
+	Fallback bool `json:"fallback"`
+}
+
+// QualityRef is an evaluator's verdict on a result.
+type QualityRef struct {
+	Evaluator   string `json:"evaluator"`
+	SchemaValid *bool  `json:"schema_valid,omitempty"`
+	// Score is 0 to 100; absent when nothing about the result could be judged.
+	Score *float64 `json:"score,omitempty"`
 }
 
 type SettlementRef struct {

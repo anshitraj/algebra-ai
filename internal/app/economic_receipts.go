@@ -19,7 +19,14 @@ type IntentReceiptService struct {
 	agents AgentStore
 	store  EconStore
 	now    func() time.Time
+
+	// executions, when set, lets a receipt carry how the provider was chosen
+	// and how the result was judged.
+	executions ExecutionStore
 }
+
+// SetExecutions attaches the executor's records.
+func (s *IntentReceiptService) SetExecutions(e ExecutionStore) { s.executions = e }
 
 func NewIntentReceiptService(signer *receipt.Signer, issuer string, agents AgentStore, store EconStore) *IntentReceiptService {
 	return &IntentReceiptService{signer: signer, issuer: issuer, agents: agents, store: store, now: time.Now}
@@ -58,14 +65,31 @@ func (s *IntentReceiptService) Sign(ctx context.Context, v *IntentView) (jws, id
 	if v.ApprovedAt != nil {
 		c.Authority.Method = receipt.MethodHuman
 	}
-	if v.Fulfillment == econ.FulfillmentFulfilled {
+	switch v.Fulfillment {
+	case econ.FulfillmentFulfilled:
 		c.Execution.Status = "fulfilled"
+	case econ.FulfillmentNotFulfilled:
+		c.Execution.Status = "not_fulfilled"
 	}
 	if r.QuoteMinor > 0 {
 		c.Provider.Quote = &receipt.Money{MinorUnits: r.QuoteMinor, Currency: v.Currency}
 	}
 	if ag, err := s.agents.Get(ctx, r.ExecutorAgentID); err == nil {
 		c.Reservation.Executor = receipt.Agent{ID: ag.ID, Name: ag.Name, Client: ag.ClientID}
+	}
+	if s.executions != nil {
+		if rec, err := s.executions.ForReservation(ctx, r.ID); err == nil {
+			x := rec.Result
+			if x.Mode != "" {
+				c.Routing = &receipt.RoutingRef{
+					Mode: string(x.Mode), PlanHash: x.PlanHash, QuoteHash: x.QuoteHash, CandidateID: x.CandidateID,
+					Rank: x.PlanRank, Fallback: x.PlanRank > 1,
+				}
+			}
+			if q := rec.Quality; q != nil {
+				c.Execution.Quality = &receipt.QualityRef{Evaluator: q.Evaluator, SchemaValid: q.SchemaValid, Score: q.FinalQuality}
+			}
+		}
 	}
 	c.Settlement = &receipt.SettlementRef{
 		Rail: r.Rail, Network: r.Evidence.Network, Asset: r.Evidence.Asset,

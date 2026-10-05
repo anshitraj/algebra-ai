@@ -80,7 +80,19 @@ type EconomicService struct {
 
 	leaseTTL    time.Duration
 	execTimeout time.Duration
+
+	onResolved ResolutionHook
+	executions ExecutionStore
 }
+
+// ResolutionHook is told when reconciliation settles an ambiguous attempt:
+// the intent either committed or reopened, so any record kept about the
+// attempt (the executor's own telemetry) can be brought up to date. It runs
+// after the economic state is final and can't change it.
+type ResolutionHook func(ctx context.Context, v *IntentView, reservationID string)
+
+// SetResolutionHook registers the hook.
+func (s *EconomicService) SetResolutionHook(h ResolutionHook) { s.onResolved = h }
 
 func NewEconomicService(store EconStore, agents AgentStore, passes SpendPassStore, ledger PassSpendLedger) *EconomicService {
 	return &EconomicService{
@@ -99,7 +111,21 @@ func (s *EconomicService) RegisterRecovery(providerID string, r ProviderRecovery
 }
 
 // SetReceipts attaches Intent Receipt signing.
-func (s *EconomicService) SetReceipts(r *IntentReceiptService) { s.receipts = r }
+func (s *EconomicService) SetReceipts(r *IntentReceiptService) {
+	s.receipts = r
+	if r != nil && s.executions != nil {
+		r.SetExecutions(s.executions)
+	}
+}
+
+// attachExecutions lets receipts carry the executor's records, whichever of
+// the two is wired first.
+func (s *EconomicService) attachExecutions(e ExecutionStore) {
+	s.executions = e
+	if s.receipts != nil {
+		s.receipts.SetExecutions(e)
+	}
+}
 
 // SetLogger replaces the structured logger lifecycle events go to.
 func (s *EconomicService) SetLogger(l *slog.Logger) { s.log = l }
@@ -615,6 +641,12 @@ type CompletionReport struct {
 	Outcome  econ.Outcome  `json:"outcome"`
 	Evidence econ.Evidence `json:"evidence"`
 	Detail   string        `json:"detail,omitempty"`
+	// Fulfillment lets an executor say that money moved but the result was
+	// unusable (econ.FulfillmentNotFulfilled, with outcome SETTLED). It is
+	// the one fulfilment claim taken on an executor's word, because it can
+	// only make an attempt look worse, never commit more money; a claim of
+	// success still needs outcome FULFILLED and a rail that proves payment.
+	Fulfillment econ.Fulfillment `json:"fulfillment,omitempty"`
 }
 
 // Complete records an executor's report for its executing attempt and
@@ -669,7 +701,13 @@ func (s *EconomicService) Complete(ctx context.Context, agentID, intentID, reser
 	}
 	// Money may have moved: ask the rail, outside the lock.
 	st, rerr := s.settlement(ctx, snapshot)
-	claimFulfilled := rep.Outcome == econ.OutcomeFulfilled
+	claim := econ.FulfillmentUnknown
+	switch {
+	case rep.Outcome == econ.OutcomeFulfilled:
+		claim = econ.FulfillmentFulfilled
+	case rep.Outcome == econ.OutcomeSettled && rep.Fulfillment == econ.FulfillmentNotFulfilled:
+		claim = econ.FulfillmentNotFulfilled
+	}
 	err = s.store.Atomically(ctx, intentID, "", func(u EconUnit) error {
 		in := u.Intent()
 		r, err := u.Reservation(reservationID)
@@ -683,7 +721,7 @@ func (s *EconomicService) Complete(ctx context.Context, agentID, intentID, reser
 		if rerr != nil {
 			return s.toUnknown(u, in, r, "rail_unavailable: "+trunc(rerr.Error(), 120), now)
 		}
-		return s.applySettlement(u, in, r, st, claimFulfilled, rep.Evidence.ResultHash, now)
+		return s.applySettlement(u, in, r, st, claim, rep.Evidence.ResultHash, now)
 	})
 	if err != nil {
 		return nil, err
@@ -694,13 +732,12 @@ func (s *EconomicService) Complete(ctx context.Context, agentID, intentID, reser
 
 // applySettlement moves an executing or reconciling attempt as far as the
 // rail's proof allows.
-func (s *EconomicService) applySettlement(u EconUnit, in *econ.Intent, r *econ.Reservation, st Settlement, fulfilled bool, resultHash string, now time.Time) error {
+func (s *EconomicService) applySettlement(u EconUnit, in *econ.Intent, r *econ.Reservation, st Settlement, f econ.Fulfillment, resultHash string, now time.Time) error {
 	switch st.Status {
 	case SettlementSettled:
-		f := econ.FulfillmentUnknown
 		outcome := econ.OutcomeSettled
-		if fulfilled {
-			f, outcome = econ.FulfillmentFulfilled, econ.OutcomeFulfilled
+		if f == econ.FulfillmentFulfilled {
+			outcome = econ.OutcomeFulfilled
 		}
 		return s.commit(u, in, r, st, f, outcome, resultHash, now)
 	case SettlementNotSettled:
@@ -917,9 +954,19 @@ func (s *EconomicService) Reconcile(ctx context.Context, intentID string) (*Reco
 		return &ReconcileResult{State: state, Summary: "Nothing to reconcile: the intent's outcome is known."}, nil
 	}
 
-	st, rerr := s.settlement(ctx, snapshot)
-	if rerr != nil {
-		st = Settlement{Status: SettlementUnknown, Detail: rerr.Error()}
+	var st Settlement
+	if !snapshot.Evidence.AuthorityIssued {
+		// Algebra never released payment authority for this attempt (the
+		// executor stopped before asking for it), and a payment value is only
+		// ever returned after it is recorded. No money could have moved, and
+		// no rail needs to say so: leaving this RECONCILING forever would
+		// block the intent on an answer no rail can give.
+		st = Settlement{Status: SettlementNotSettled, Detail: "Algebra never released payment authority for this attempt"}
+	} else {
+		var rerr error
+		if st, rerr = s.settlement(ctx, snapshot); rerr != nil {
+			st = Settlement{Status: SettlementUnknown, Detail: rerr.Error()}
+		}
 	}
 	rec := Recovery{Status: RecoveryUnknown, Detail: "no recovery adapter for this provider"}
 	if st.Status == SettlementSettled {
@@ -951,7 +998,14 @@ func (s *EconomicService) Reconcile(ctx context.Context, intentID string) (*Reco
 				r.Evidence.ProviderOperationID = firstNonEmpty(r.Evidence.ProviderOperationID, rec.OperationID)
 			}
 		}
-		if err := s.applySettlement(u, in, r, st, rec.Status == RecoveryFulfilled, firstNonEmpty(rec.ResultHash, r.Evidence.ResultHash), now); err != nil {
+		f := econ.FulfillmentUnknown
+		switch rec.Status {
+		case RecoveryFulfilled:
+			f = econ.FulfillmentFulfilled
+		case RecoveryNotFulfilled:
+			f = econ.FulfillmentNotFulfilled
+		}
+		if err := s.applySettlement(u, in, r, st, f, firstNonEmpty(rec.ResultHash, r.Evidence.ResultHash), now); err != nil {
 			return err
 		}
 		res.State = in.State
@@ -963,6 +1017,11 @@ func (s *EconomicService) Reconcile(ctx context.Context, intentID string) (*Reco
 	res.Unresolved = res.State == econ.StateReconciling
 	res.Summary = reconcileSummary(res)
 	s.maybeSign(ctx, intentID)
+	if s.onResolved != nil && (res.State == econ.StateCommitted || res.State == econ.StateOpen) {
+		if v, err := s.View(ctx, intentID, false); err == nil {
+			s.onResolved(ctx, v, snapshot.ID)
+		}
+	}
 	return res, nil
 }
 
@@ -1110,8 +1169,11 @@ func (s *EconomicService) Stats(ctx context.Context, principalID string, since t
 func Summarize(in *econ.Intent) string {
 	switch in.State {
 	case econ.StateCommitted:
-		if in.Fulfillment == econ.FulfillmentFulfilled {
+		switch in.Fulfillment {
+		case econ.FulfillmentFulfilled:
 			return "Committed: paid once and the result was received."
+		case econ.FulfillmentNotFulfilled:
+			return "Payment confirmed, but the provider didn't deliver a usable result. Duplicate payment blocked — ask the provider for a refund or a redo."
 		}
 		return "Payment confirmed; resource outcome unknown. Duplicate payment blocked — provider or manual recovery required."
 	case econ.StateUnknown, econ.StateReconciling:
