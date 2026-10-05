@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/project-algebra/algebra/internal/domain/chain"
 )
 
 // Intent is one economic outcome a principal wants accomplished. It is not
@@ -59,17 +62,147 @@ type Intent struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// Constraints are the outcome's freshness and latency bounds.
+// Constraints bound how an outcome may be produced: how fresh and fast it
+// must be and, for routed outcomes, which providers, networks and assets
+// qualify. Every field is optional; zero means no bound beyond the person's
+// own policy. They narrow what the person's Spend Pass allows, never widen it.
+// Fields added after the first release are omitted when empty, so an intent
+// that doesn't use them keeps the hash it always had.
 type Constraints struct {
 	MaxAgeSeconds int `json:"max_age_seconds,omitempty"`
 	MaxLatencyMS  int `json:"max_latency_ms,omitempty"`
+
+	// MaxSlippageBps and MaxPriceImpactBps bound a trade, in basis points
+	// (100 = 1%).
+	MaxSlippageBps    int `json:"max_slippage_bps,omitempty"`
+	MaxPriceImpactBps int `json:"max_price_impact_bps,omitempty"`
+
+	// MinQuality and MinReliabilityPct (0-100) exclude providers whose own
+	// record, as Algebra observed it, falls below them.
+	MinQuality        int `json:"min_quality,omitempty"`
+	MinReliabilityPct int `json:"min_reliability_pct,omitempty"`
+
+	// AllowedNetworks and AllowedAssets, when set, restrict where and in what
+	// the outcome may be paid.
+	AllowedNetworks []string `json:"allowed_networks,omitempty"`
+	AllowedAssets   []string `json:"allowed_assets,omitempty"`
 }
+
+// maxListEntries bounds every list a caller can attach to an intent.
+const maxListEntries = 16
+
+var (
+	networkRE  = regexp.MustCompile(`^[a-z0-9][a-z0-9:._-]{0,63}$`)
+	assetRE    = regexp.MustCompile(`^[A-Z0-9][A-Z0-9._-]{0,15}$`)
+	providerRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._:-]{0,95}$`)
+)
+
+// Normalize validates the bounds and puts the lists in canonical form
+// (canonical network names, upper-case assets, sorted, no duplicates) so two
+// spellings of the same constraints produce the same intent hash.
+func (c Constraints) Normalize() (Constraints, error) {
+	if c.MaxAgeSeconds < 0 || c.MaxLatencyMS < 0 {
+		return c, errors.New("constraints can't be negative")
+	}
+	if c.MaxSlippageBps < 0 || c.MaxSlippageBps > 10_000 || c.MaxPriceImpactBps < 0 || c.MaxPriceImpactBps > 10_000 {
+		return c, errors.New("constraints slippage and price impact are basis points between 0 and 10000")
+	}
+	if c.MinQuality < 0 || c.MinQuality > 100 || c.MinReliabilityPct < 0 || c.MinReliabilityPct > 100 {
+		return c, errors.New("constraints minimum quality and reliability are percentages between 0 and 100")
+	}
+	var err error
+	if c.AllowedNetworks, err = canonList(c.AllowedNetworks, chain.NormalizeNetwork, networkRE, true); err != nil {
+		return c, fmt.Errorf("constraints allowed networks: %w", err)
+	}
+	if c.AllowedAssets, err = canonList(c.AllowedAssets, chain.NormalizeAsset, assetRE, true); err != nil {
+		return c, fmt.Errorf("constraints allowed assets: %w", err)
+	}
+	return c, nil
+}
+
+func lowerTrim(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+// NormalizeProvider lower-cases and validates a provider ID: the one name an
+// intent's allow-list, a reservation, a Spend Pass and a receipt all use for
+// the same provider.
+func NormalizeProvider(id string) (string, error) {
+	id = lowerTrim(id)
+	if !providerRE.MatchString(id) {
+		return "", errors.New("provider must be 1-96 lowercase letters, digits, dots, colons, dashes or underscores, e.g. \"birdeye\" or \"x402:api.example.com\"")
+	}
+	return id, nil
+}
+
+// canonList normalises each entry, drops blanks and duplicates and checks the
+// rest against re. Sorted lists compare and hash the same however they were
+// typed; ordered lists (a ranking) keep their order.
+func canonList(in []string, norm func(string) string, re *regexp.Regexp, sorted bool) ([]string, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		v = norm(v)
+		if v == "" || slices.Contains(out, v) {
+			continue
+		}
+		if !re.MatchString(v) {
+			return nil, fmt.Errorf("%q isn't a valid name", v)
+		}
+		out = append(out, v)
+	}
+	if len(out) > maxListEntries {
+		return nil, fmt.Errorf("at most %d entries are allowed", maxListEntries)
+	}
+	if sorted {
+		slices.Sort(out)
+	}
+	return out, nil
+}
+
+// Provider selection strategies. An empty Strategy means StrategyAuto.
+const (
+	// StrategyAuto weighs quality, reliability, cost, speed and policy fit.
+	StrategyAuto = "auto"
+	// StrategyCheapest minimises total expected cost.
+	StrategyCheapest = "cheapest"
+	// StrategyFastest minimises expected time to a verified result.
+	StrategyFastest = "fastest"
+	// StrategyFixed limits execution to ProviderPolicy.Providers.
+	StrategyFixed = "fixed"
+	// StrategyBestExecution is the original name for StrategyAuto.
+	StrategyBestExecution = "best_execution"
+)
 
 // ProviderPolicy steers provider selection. Algebra doesn't claim to have
 // invented routing; this records what the principal asked for.
 type ProviderPolicy struct {
-	Strategy  string   `json:"strategy,omitempty"` // "best_execution" | "cheapest" | "fixed"
+	// Strategy is one of the Strategy constants.
+	Strategy string `json:"strategy,omitempty"`
+	// Providers, when set, is an allow-list: a reservation that names any
+	// other provider is refused.
 	Providers []string `json:"providers,omitempty"`
+}
+
+// Normalize validates the strategy (the old name best_execution becomes
+// auto) and cleans the provider list, keeping its order.
+func (p ProviderPolicy) Normalize() (ProviderPolicy, error) {
+	p.Strategy = strings.ToLower(strings.TrimSpace(p.Strategy))
+	switch p.Strategy {
+	case "", StrategyAuto, StrategyCheapest, StrategyFastest, StrategyFixed:
+	case StrategyBestExecution:
+		p.Strategy = StrategyAuto
+	default:
+		return p, fmt.Errorf("provider policy strategy must be auto, cheapest, fastest or fixed, not %q", p.Strategy)
+	}
+	var err error
+	if p.Providers, err = canonList(p.Providers, lowerTrim, providerRE, false); err != nil {
+		return p, fmt.Errorf("provider policy providers: %w", err)
+	}
+	if p.Strategy == StrategyFixed && len(p.Providers) == 0 {
+		return p, errors.New("provider policy strategy \"fixed\" needs at least one provider")
+	}
+	return p, nil
 }
 
 // Spec is what a caller asks for when creating an intent.
@@ -90,6 +223,16 @@ var (
 	windowRE     = regexp.MustCompile(`^[A-Za-z0-9:._-]{1,64}$`)
 )
 
+// NormalizeCapability lower-cases and validates a capability ID, the
+// vocabulary shared by intents, providers and the router.
+func NormalizeCapability(id string) (string, error) {
+	id = strings.ToLower(strings.TrimSpace(id))
+	if !capabilityRE.MatchString(id) {
+		return "", errors.New("capability must be 2-64 lowercase letters, digits, dots, dashes or underscores, e.g. \"solana.token-risk\"")
+	}
+	return id, nil
+}
+
 // MaxTTL bounds how long an intent stays open; MinTTL keeps the
 // second-precision deadline from landing in the past.
 const (
@@ -100,10 +243,11 @@ const (
 // New validates a Spec and builds an OPEN intent with its deterministic
 // identity. Approval, if needed, is applied by the caller.
 func New(id, principalID, passID, agentID string, s Spec, now time.Time) (*Intent, error) {
-	s.Capability = strings.ToLower(strings.TrimSpace(s.Capability))
-	if !capabilityRE.MatchString(s.Capability) {
-		return nil, errors.New("capability must be 2-64 lowercase letters, digits, dots, dashes or underscores, e.g. \"solana.token-risk\"")
+	capability, err := NormalizeCapability(s.Capability)
+	if err != nil {
+		return nil, err
 	}
+	s.Capability = capability
 	if s.Quantity == 0 {
 		s.Quantity = 1
 	}
@@ -133,8 +277,11 @@ func New(id, principalID, passID, agentID string, s Spec, now time.Time) (*Inten
 	if s.TTL < MinTTL {
 		return nil, errors.New("an intent must stay open at least 10 seconds")
 	}
-	if s.Constraints.MaxAgeSeconds < 0 || s.Constraints.MaxLatencyMS < 0 {
-		return nil, errors.New("constraints can't be negative")
+	if s.Constraints, err = s.Constraints.Normalize(); err != nil {
+		return nil, err
+	}
+	if s.ProviderPolicy, err = s.ProviderPolicy.Normalize(); err != nil {
+		return nil, err
 	}
 	canon, err := Canonicalize(s.Input)
 	if err != nil {
