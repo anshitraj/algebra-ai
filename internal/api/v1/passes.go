@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/project-algebra/algebra/internal/app"
+	"github.com/project-algebra/algebra/internal/domain/receipt"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 	"github.com/project-algebra/algebra/internal/domain/spendpass"
 )
@@ -16,6 +17,7 @@ import (
 type createPassRequest struct {
 	Label                    string   `json:"label"`
 	AgentKind                string   `json:"agent_kind"`
+	Currency                 string   `json:"currency"`
 	BudgetMinorUnits         int64    `json:"budget_minor_units"`
 	BudgetPeriod             string   `json:"budget_period"`
 	MaxPerPurchaseMinorUnits *int64   `json:"max_per_purchase_minor_units"`
@@ -66,7 +68,7 @@ func (a *API) createMyPass(w http.ResponseWriter, r *http.Request) {
 		days = 30
 	}
 	issued, err := a.b.SpendPasses.Create(r.Context(), sess.UserID, spendpass.Pass{
-		Label: req.Label, AgentKind: spendpass.AgentKind(strings.ToLower(req.AgentKind)),
+		Label: req.Label, AgentKind: spendpass.AgentKind(strings.ToLower(req.AgentKind)), Currency: req.Currency,
 		BudgetMinorUnits: req.BudgetMinorUnits, BudgetPeriod: spendpass.Period(strings.ToLower(req.BudgetPeriod)),
 		MaxPerPurchaseMinorUnits: req.MaxPerPurchaseMinorUnits, ApproveAboveMinorUnits: req.ApproveAboveMinorUnits,
 		AllowedCategories: req.AllowedCategories, AllowedMerchants: req.AllowedMerchants,
@@ -143,6 +145,10 @@ func (a *API) verifyReceipt(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Receipt) > 16<<10 {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "that's too long to be a receipt"})
+		return
+	}
+	if receipt.Kind(req.Receipt) == receipt.IntentType && a.b.IntentReceipts != nil {
+		writeJSON(w, http.StatusOK, a.b.IntentReceipts.Verify(r.Context(), req.Receipt))
 		return
 	}
 	writeJSON(w, http.StatusOK, a.b.Receipts.Verify(r.Context(), req.Receipt))

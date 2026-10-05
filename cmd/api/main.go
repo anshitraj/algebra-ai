@@ -69,6 +69,26 @@ func main() {
 		}
 	}()
 
+	// Economic coordination sweeper: expired leases are released, overdue
+	// executions become UNKNOWN (never FAILED), UNKNOWN outcomes are
+	// reconciled against the rail, and stale intents expire.
+	go func() {
+		t := time.NewTicker(15 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			if n, err := bundle.Economic.Sweep(ctx); err != nil {
+				logger.Warn("economic sweep", "error", err)
+			} else if n > 0 {
+				logger.Info("economic sweep", "handled", n)
+			}
+		}
+	}()
+
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)

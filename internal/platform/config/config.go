@@ -76,6 +76,12 @@ type Config struct {
 	// WebSearchCacheTTL is how long a web-search result is reused (Redis).
 	WebSearchCacheTTL time.Duration
 
+	// EconomicSandbox mounts the sandbox payment rail and sandbox x402
+	// provider (providers/sandboxpay): simulated money, labelled test
+	// everywhere. On by default outside production; in production only
+	// with ECONOMIC_SANDBOX=on.
+	EconomicSandbox bool
+
 	Auth AuthConfig
 
 	Billing BillingConfig
@@ -292,6 +298,14 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	cfg.WebSearchCacheTTL = webSearchTTL
+	switch strings.ToLower(os.Getenv("ECONOMIC_SANDBOX")) {
+	case "on":
+		cfg.EconomicSandbox = true
+	case "off":
+		cfg.EconomicSandbox = false
+	default:
+		cfg.EconomicSandbox = cfg.Env != "production"
+	}
 
 	sessionTTL, err := getDuration("SESSION_TTL", 30*24*time.Hour)
 	if err != nil {

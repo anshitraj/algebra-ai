@@ -36,6 +36,7 @@ import (
 	"github.com/project-algebra/algebra/providers/arcium"
 	"github.com/project-algebra/algebra/providers/paymentdemo"
 	"github.com/project-algebra/algebra/providers/razorpay"
+	"github.com/project-algebra/algebra/providers/sandboxpay"
 	"github.com/project-algebra/algebra/providers/vault"
 )
 
@@ -77,6 +78,14 @@ type Bundle struct {
 	// --- Spend Passes and signed receipts (internal/domain/spendpass, receipt) ---
 	SpendPasses *app.SpendPassService
 	Receipts    *app.ReceiptService
+
+	// --- Economic coordination (internal/domain/econ) ---
+	Economic       *app.EconomicService
+	IntentReceipts *app.IntentReceiptService
+	// SandboxProvider is the SANDBOX x402 provider, nil unless
+	// ECONOMIC_SANDBOX is on (see config.Config.EconomicSandbox).
+	SandboxProvider *sandboxpay.Provider
+
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
 	// OAuthProviders holds only the providers with credentials configured,
@@ -312,6 +321,20 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	}
 	receiptSvc := app.NewReceiptService(signer, cfg.Auth.PublicWebURL, postgres.NewReceiptRepo(db), agents, decisions, passRepo)
 	orderSvc.SetReceipts(receiptSvc)
+
+	// Economic coordination: executors act under their own Spend Pass; the
+	// database guarantees one live attempt and one commitment per intent.
+	econRepo := postgres.NewEconRepo(db)
+	econSvc := app.NewEconomicService(econRepo, agents, passRepo, passRepo)
+	intentReceiptSvc := app.NewIntentReceiptService(signer, cfg.Auth.PublicWebURL, agents, econRepo)
+	econSvc.SetReceipts(intentReceiptSvc)
+	var sandboxProvider *sandboxpay.Provider
+	if cfg.EconomicSandbox {
+		rail := sandboxpay.NewRail(time.Minute)
+		econSvc.RegisterRail(rail)
+		sandboxProvider = sandboxpay.NewProvider(rail, cfg.Auth.PublicWebURL+"/api/v1/sandbox/x402/token-risk", 0)
+		econSvc.RegisterRecovery(sandboxpay.ProviderID, sandboxProvider)
+	}
 	onboardingSvc := app.NewOnboardingService(accountSvc, commerceProfileSvc, privacyResolver)
 	demoSvc := app.NewDemoService(accountSvc, onboardingSvc)
 	oauthProviders := map[string]identity.Provider{}
@@ -369,7 +392,8 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
-		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
+		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,

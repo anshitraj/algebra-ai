@@ -100,6 +100,10 @@ func (p Pass) Normalize(now time.Time, knownCategories []string) (Pass, error) {
 	if p.Currency == "" {
 		p.Currency = "INR"
 	}
+	// INR for shopping; USDC (micro-units) for paid APIs and data.
+	if p.Currency != "INR" && p.Currency != "USDC" {
+		return p, fmt.Errorf("currency must be INR or USDC, not %q", p.Currency)
+	}
 	if p.BudgetMinorUnits <= 0 {
 		return p, errors.New("the budget must be more than zero")
 	}

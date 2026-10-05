@@ -83,6 +83,28 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/receipts/verify", api.verifyReceipt)
 	mux.HandleFunc("GET /api/v1/me/orders/{id}", api.getMyOrder)
 
+	// Economic coordination (docs/ECONOMIC_COORDINATION.md).
+	mux.HandleFunc("POST /api/v1/economic-intents", api.createEconomicIntent)
+	mux.HandleFunc("GET /api/v1/economic-intents/{id}", api.getEconomicIntent)
+	mux.HandleFunc("POST /api/v1/economic-intents/{id}/reservations", api.reserveEconomicIntent)
+	mux.HandleFunc("POST /api/v1/economic-intents/{id}/reservations/{rid}/begin", api.beginEconomicAttempt)
+	mux.HandleFunc("POST /api/v1/economic-intents/{id}/reservations/{rid}/authorize-payment", api.authorizeEconomicPayment)
+	mux.HandleFunc("POST /api/v1/economic-intents/{id}/reservations/{rid}/complete", api.completeEconomicAttempt)
+	mux.HandleFunc("POST /api/v1/economic-intents/{id}/reservations/{rid}/release", api.releaseEconomicAttempt)
+	mux.HandleFunc("POST /api/v1/economic-intents/{id}/reconcile", api.reconcileEconomicIntent)
+	mux.HandleFunc("GET /api/v1/economic-intents/{id}/receipt", api.getEconomicReceipt)
+	mux.HandleFunc("GET /api/v1/me/economic-intents", api.listMyEconomicIntents)
+	mux.HandleFunc("POST /api/v1/me/economic-intents", api.createMyEconomicIntent)
+	mux.HandleFunc("GET /api/v1/me/economic-intents/stats", api.myEconomicStats)
+	mux.HandleFunc("GET /api/v1/me/economic-intents/{id}", api.getMyEconomicIntent)
+	mux.HandleFunc("POST /api/v1/me/economic-intents/{id}/approve", api.approveMyEconomicIntent)
+	mux.HandleFunc("POST /api/v1/me/economic-intents/{id}/cancel", api.cancelMyEconomicIntent)
+	if b.SandboxProvider != nil {
+		// SANDBOX x402 provider: simulated data, simulated money.
+		mux.HandleFunc("POST /api/v1/sandbox/x402/token-risk", b.SandboxProvider.Serve)
+		mux.HandleFunc("GET /api/v1/sandbox/x402/token-risk/operations/{key}", b.SandboxProvider.ServeOperation)
+	}
+
 	mux.HandleFunc("GET /api/v1/billing", api.getBilling)
 	mux.HandleFunc("GET /api/v1/billing/plans", api.getBillingPlans)
 	mux.HandleFunc("POST /api/v1/billing/checkout", api.startCheckout)

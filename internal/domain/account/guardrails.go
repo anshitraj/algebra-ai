@@ -43,6 +43,8 @@ const PlatformMaxPerDayMinorUnits int64 = 50_000_000
 var KnownCategories = []string{
 	"groceries", "food_delivery", "electronics", "fashion", "home",
 	"beauty", "pharmacy", "gift_cards", "alcohol", "tobacco", "subscriptions", "travel",
+	// digital_services: paid APIs and data an agent buys per call (x402).
+	"digital_services",
 }
 
 // DefaultGuardrails mirrors policy.DefaultRules() so a user who skips
