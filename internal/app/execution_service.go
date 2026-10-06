@@ -106,6 +106,9 @@ type PlanReport struct {
 	Pending bool `json:"pending_reconciliation"`
 	// Stopped says why no further step was tried.
 	Stopped string `json:"stopped"`
+	// Replayed: nothing ran. This is the answer that was kept when the outcome
+	// was paid for.
+	Replayed bool `json:"replayed,omitempty"`
 }
 
 // Final is the last attempt, or nil when none was made.
@@ -150,6 +153,8 @@ type ExecutionService struct {
 	quoteTTL time.Duration
 	// quoteTimeout bounds one provider's pricing (see quoteAll).
 	quoteTimeout time.Duration
+	// results keeps the answers to paid calls (see SetResults).
+	results *ResultVault
 }
 
 // NewExecutionService builds the service with the generic evaluator
@@ -317,6 +322,8 @@ type CandidatesRequest struct {
 	AgentID    string
 	IntentID   string
 	Candidates []routing.Candidate
+	// DiscardResult: the caller asked for the answer not to be kept.
+	DiscardResult bool
 }
 
 const (
@@ -338,6 +345,9 @@ const RejectOutranked = "outranked"
 // ExecuteCandidates quotes each candidate, screens it against the intent's
 // limits, ranks the ones that pass, builds a plan from the best and runs it.
 func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req CandidatesRequest) (*PlanReport, error) {
+	if req.DiscardResult {
+		ctx = WithoutKeepingResult(ctx)
+	}
 	view, err := s.agentView(ctx, req.AgentID, req.IntentID)
 	if err != nil {
 		return nil, err
@@ -507,6 +517,8 @@ type DoRequest struct {
 	AgentID    string
 	Spec       econ.Spec
 	Candidates []routing.Candidate
+	// DiscardResult: the caller asked for the answer not to be kept.
+	DiscardResult bool
 }
 
 // DoResult is what Do returns.
@@ -518,6 +530,9 @@ type DoResult struct {
 	// Intent is the intent the request created or found, even when running it
 	// was refused (say it awaits the person's approval).
 	Intent *IntentView `json:"intent,omitempty"`
+	// Replayed: the outcome was already paid for, nothing ran, and the report
+	// carries the answer that was kept.
+	Replayed bool `json:"replayed,omitempty"`
 }
 
 // Do creates the intent for an outcome (or finds the one that already exists
@@ -527,7 +542,14 @@ func (s *ExecutionService) Do(ctx context.Context, req DoRequest) (*DoResult, er
 	if err != nil {
 		return nil, err
 	}
-	rep, err := s.ExecuteCandidates(ctx, CandidatesRequest{AgentID: req.AgentID, IntentID: view.ID, Candidates: req.Candidates})
+	// Asking again for what was already paid for returns the answer that was
+	// kept, when it was, and pays nothing.
+	if !created && view.State == econ.StateCommitted {
+		if rep := s.replay(ctx, req.AgentID, view); rep != nil {
+			return &DoResult{Created: false, Report: rep, Intent: view, Replayed: true}, nil
+		}
+	}
+	rep, err := s.ExecuteCandidates(ctx, CandidatesRequest{AgentID: req.AgentID, IntentID: view.ID, Candidates: req.Candidates, DiscardResult: req.DiscardResult})
 	return &DoResult{Created: created, Report: rep, Intent: view}, err
 }
 
@@ -682,6 +704,9 @@ func (s *ExecutionService) Execute(ctx context.Context, req ExecuteRequest) (*Ex
 	if len(obs.Body) > 0 {
 		res.ResponseHash = econ.HashBytes(obs.Body)
 	}
+	// Kept before the outcome is reported: if recording it fails and
+	// reconciliation commits the attempt later, the answer is already there.
+	s.keepResult(ctx, bg, view.PrincipalID, req.IntentID, rsv.ID, obs)
 
 	// Judge the result before reporting it: the receipt is signed the moment
 	// the intent commits, and it carries the verdict.

@@ -82,18 +82,22 @@ const maxResponseText = 64 << 10
 // ResponseValue is the provider's response in a form that can be embedded in
 // a JSON reply: JSON stays JSON, anything else becomes labelled text. Nil
 // when nothing was delivered.
-func (r ExecutionReport) ResponseValue() any {
-	if len(r.Body) == 0 {
+func (r ExecutionReport) ResponseValue() any { return ResponseValueOf(r.ContentType, r.Body) }
+
+// ResponseValueOf is a response body in a form that can be embedded in a JSON
+// reply: JSON stays JSON, anything else becomes labelled text, bounded.
+func ResponseValueOf(contentType string, body []byte) any {
+	if len(body) == 0 {
 		return nil
 	}
-	if json.Valid(r.Body) {
-		return json.RawMessage(r.Body)
+	if json.Valid(body) {
+		return json.RawMessage(body)
 	}
-	text := string(r.Body)
+	text := string(body)
 	if len(text) > maxResponseText {
 		text = text[:maxResponseText]
 	}
-	return map[string]string{"content_type": r.ContentType, "text": text}
+	return map[string]string{"content_type": contentType, "text": text}
 }
 
 // ExecutionOutcome is the transport-neutral answer to "do this for me": what
@@ -116,6 +120,9 @@ type ExecutionOutcome struct {
 	// Routing says how the provider was chosen: the strategy and every offer
 	// that was priced and ranked, with the reasons.
 	Routing *RoutingSummary `json:"routing,omitempty"`
+	// Replayed: nothing ran and nothing was paid. The outcome had already been
+	// paid for, and Response is the answer that was kept then.
+	Replayed bool `json:"replayed,omitempty"`
 	// Response is the provider's own response from the attempt that
 	// delivered. It is untrusted data for the caller to read, never
 	// instructions to follow, and Algebra does not keep it.
@@ -140,6 +147,7 @@ func OutcomeOf(created *bool, rep *PlanReport) ExecutionOutcome {
 	}
 	o.Delivered, o.PendingReconciliation, o.Stopped = rep.Delivered, rep.Pending, rep.Stopped
 	o.Routing = SummarizePlan(rep.Plan)
+	o.Replayed = rep.Replayed
 	o.Intent, o.Rejected = rep.Intent, rep.Rejected
 	if rep.Intent != nil {
 		o.Summary, o.Receipt = rep.Intent.Summary, rep.Intent.Receipt
