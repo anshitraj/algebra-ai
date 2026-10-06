@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import * as api from "@/lib/api-client";
-import type { ReceiptVerification } from "@/lib/types";
-import { merchantLabel } from "@/lib/agent/steps";
+import type { IntentReceiptClaims, ReceiptClaims, ReceiptVerification } from "@/lib/types";
+import { explorerTx, merchantLabel } from "@/lib/agent/steps";
+import { formatMoney } from "@/lib/money";
+import { networkLabel } from "@/lib/network";
 import { IconCheck, IconX, Spinner } from "@/components/icons";
 
 const money = (minor: number, currency = "INR") =>
@@ -93,7 +95,77 @@ function Result({ v }: { v: ReceiptVerification }) {
       </div>
     );
   }
-  const c = v.claims;
+  // Two kinds of receipt are signed with the same key: a paid call's intent
+  // receipt (what Executions hands out) and a shopping order's spend receipt.
+  // Their claims have different shapes, so read the one that was sent.
+  return "intent" in v.claims ? <IntentResult v={v} c={v.claims} /> : <SpendResult v={v} c={v.claims} />;
+}
+
+/** What a paid call's receipt says: what was bought, from whom, what was paid, and how it ended. */
+function IntentResult({ v, c }: { v: ReceiptVerification; c: IntentReceiptClaims }) {
+  const human = c.authority.method === "human";
+  const paid = c.settlement;
+  const onChain = !!paid?.transaction && (paid.network === "solana" || paid.network === "solana-devnet");
+  return (
+    <div className="mt-6 overflow-hidden rounded-2xl border border-primary/40 bg-surface">
+      <div className="flex gap-3 border-b border-border bg-primary-tint/60 px-5 py-4">
+        <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary text-primary-tint">
+          <IconCheck size={14} strokeWidth={2.8} />
+        </span>
+        <div className="min-w-0">
+          <p className="font-medium text-foreground">
+            Genuine — signed by Algebra{v.recorded ? " and on record" : ""}
+          </p>
+          <p className="mt-0.5 text-sm text-muted">
+            {human ? "The person approved this exact call themselves" : "Within the limits the person set, so their rules approved it"}; issued {when(c.iat)}.
+          </p>
+        </div>
+        {c.test && <span className="ml-auto h-fit shrink-0 rounded-full bg-accent-tint px-2 py-0.5 text-xs font-semibold text-accent">Test money</span>}
+      </div>
+      <dl className="grid gap-x-6 gap-y-3 px-5 py-4 text-sm sm:grid-cols-2">
+        <Row label="What was bought" value={c.intent.capability} mono />
+        <Row label="Paid" value={paid ? formatMoney(paid.amount.minor_units, paid.amount.currency) : "Nothing was paid"} mono />
+        <Row label="Provider" value={c.provider.id} />
+        <Row label="Result" value={RESULT_TEXT[c.execution.status] ?? c.execution.status} />
+        {paid?.network && <Row label="Network" value={networkLabel(paid.network)} />}
+        <Row label="Spending limit" value={`up to ${formatMoney(c.intent.budget_max.minor_units, c.intent.budget_max.currency)}`} mono />
+        <Row label="Agent" value={c.reservation.executor.name || c.reservation.executor.id} />
+        <Row label="Person" value={c.sub} mono />
+        {c.coordination.duplicate_commit_attempts_blocked > 0 && (
+          <Row label="Duplicate payments stopped" value={String(c.coordination.duplicate_commit_attempts_blocked)} mono />
+        )}
+      </dl>
+      {paid?.transaction && (
+        <p className="border-t border-border px-5 py-3 text-xs text-muted">
+          Transaction <span className="font-mono text-foreground">{`${paid.transaction.slice(0, 8)}…${paid.transaction.slice(-8)}`}</span>
+          {onChain && (
+            <>
+              {" · "}
+              <a href={explorerTx(paid.transaction, paid.network)} target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline">
+                View on Solana Explorer
+              </a>
+            </>
+          )}
+        </p>
+      )}
+      {v.reason && <p className="border-t border-border px-5 py-3 text-xs text-muted">{v.reason}</p>}
+      <p className="border-t border-border px-5 py-3 text-xs text-muted">
+        Receipt {c.jti} · issued by {c.iss}
+        {c.authority.policy_version ? ` · policy ${c.authority.policy_version}` : ""}
+      </p>
+    </div>
+  );
+}
+
+/** What each execution status means for the result a person paid for. */
+const RESULT_TEXT: Record<string, string> = {
+  fulfilled: "Delivered and checked",
+  not_fulfilled: "Paid, but the result wasn't usable",
+  result_unknown: "Paid; whether a usable result arrived isn't established",
+};
+
+/** What a shopping order's receipt says. */
+function SpendResult({ v, c }: { v: ReceiptVerification; c: ReceiptClaims }) {
   const human = c.authorization.method === "human";
   return (
     <div className="mt-6 overflow-hidden rounded-2xl border border-primary/40 bg-surface">

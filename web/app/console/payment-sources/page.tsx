@@ -11,6 +11,7 @@ export default function PaymentSourcesPage() {
   const [nickname, setNickname] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   async function load() {
     setSources((await api.listPaymentSources()) ?? []);
@@ -42,9 +43,12 @@ export default function PaymentSourcesPage() {
 
   async function handleRevoke(id: string) {
     setBusy(id);
+    setRevokeError(null);
     try {
       await api.revokePaymentSource(id);
       await load();
+    } catch (err) {
+      setRevokeError(`${err instanceof Error ? err.message : "Couldn't reach Algebra"}. The payment source is still active.`);
     } finally {
       setBusy(null);
     }
@@ -62,6 +66,7 @@ export default function PaymentSourcesPage() {
       </p>
 
       <div className="mt-8">
+        {revokeError && <p className="mb-3 rounded-lg bg-danger-tint px-3 py-2 text-sm text-danger">{revokeError}</p>}
         {sources === null && <p className="text-sm text-muted">Loading…</p>}
         {sources?.length === 0 && (
           <EmptyState title="No payment sources" body="Add a sandbox card below to see it here." />

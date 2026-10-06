@@ -51,7 +51,10 @@ export function ApprovalCard({
     }
   }
 
-  const closed = intent && !intent.requires_approval && !resolved;
+  // The call stops needing the person once it leaves AWAITING_APPROVAL: they
+  // approved or cancelled it elsewhere (the Executions page), or it expired.
+  // requires_approval can't say this: it stays true after approval.
+  const closed = !!intent && intent.state !== "AWAITING_APPROVAL" && !resolved;
 
   return (
     <motion.div

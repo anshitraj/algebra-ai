@@ -1,6 +1,6 @@
 import { executeTool, type ToolResult } from "./execute-tool";
 import { detectPendingApproval, type PendingApproval } from "./pending-approval";
-import { stepHint, stepTitle, summarizeStep } from "./steps";
+import { PAID_TOOLS, stepHint, stepTitle, summarizeStep } from "./steps";
 import type { AskedQuestion, EmitFn } from "./events";
 import type { ServerIdentity } from "./server-client";
 
@@ -8,7 +8,6 @@ import type { ServerIdentity } from "./server-client";
 // creates fresh for every request — so the count is per turn. A model that
 // loops on paying would otherwise spend the pass down one call at a time.
 const MAX_PAID_CALLS_PER_TURN = 3;
-const PAID_TOOLS = new Set(["pay_and_call", "run_approved_intent"]);
 const paidThisTurn = new WeakMap<ServerIdentity, number>();
 
 // Read-only lookups that are safe to run side by side. A round made only of

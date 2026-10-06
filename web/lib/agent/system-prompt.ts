@@ -1,3 +1,4 @@
+import { approvalRule } from "../pass-rules";
 import type { RailStatus, SpendPass } from "../types";
 
 const USDC = 1_000_000;
@@ -57,7 +58,9 @@ export function buildSystemPrompt({ network, pass, rail, mode }: PromptContext):
       `Paying under the Spend Pass "${pass.label}": ${usdc(pass.remaining_minor_units)} left of ${usdc(pass.budget_minor_units)}${pass.budget_period === "total" ? "" : ` per ${pass.budget_period}`}.`,
     ];
     if (pass.max_per_purchase_minor_units) p.push(`At most ${usdc(pass.max_per_purchase_minor_units)} per call.`);
-    if (pass.approve_above_minor_units) p.push(`Calls at or above ${usdc(pass.approve_above_minor_units)} wait for the user's approval.`);
+    const ask = approvalRule(pass);
+    if (ask.kind === "always") p.push("Every call waits for the user's approval.");
+    else if (ask.kind === "above") p.push(`Calls at or above ${usdc(ask.minor)} wait for the user's approval.`);
     if (pass.allowed_merchants?.length) p.push(`Only these providers: ${pass.allowed_merchants.join(", ")}.`);
     p.push("The pass is enforced on Algebra's server; use it to set expectations, never as a substitute for pay_and_call's answer.");
     facts.push(p.join(" "));

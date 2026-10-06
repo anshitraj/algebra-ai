@@ -166,7 +166,7 @@ export function listSessions() {
 }
 
 export function revokeSession(id: string) {
-  return apiFetch<{ ok: boolean }>(`/api/v1/me/sessions/${id}/revoke`, { method: "POST" });
+  return apiFetch<{ ok: boolean }>(`/api/v1/me/sessions/${encodeURIComponent(id)}/revoke`, { method: "POST" });
 }
 
 export function getGuardrails() {
@@ -293,79 +293,79 @@ export function createIntent(items: IntentItem[], constraints: IntentConstraints
 }
 
 export function getIntent(id: string) {
-  return apiFetch<Intent>(`/api/v1/intents/${id}`);
+  return apiFetch<Intent>(`/api/v1/intents/${encodeURIComponent(id)}`);
 }
 
 export function cancelIntent(id: string) {
-  return apiFetch<Intent>(`/api/v1/intents/${id}/cancel`, { method: "POST" });
+  return apiFetch<Intent>(`/api/v1/intents/${encodeURIComponent(id)}/cancel`, { method: "POST" });
 }
 
 export function discover(id: string) {
-  return apiFetch<{ quotes: Quote[] }>(`/api/v1/intents/${id}/discover`, { method: "POST" });
+  return apiFetch<{ quotes: Quote[] }>(`/api/v1/intents/${encodeURIComponent(id)}/discover`, { method: "POST" });
 }
 
 export function getQuotes(id: string) {
-  return apiFetch<{ quotes: Quote[] }>(`/api/v1/intents/${id}/quotes`);
+  return apiFetch<{ quotes: Quote[] }>(`/api/v1/intents/${encodeURIComponent(id)}/quotes`);
 }
 
 export function selectQuote(id: string, quoteId: string) {
-  return apiFetch<{ ok: boolean }>(`/api/v1/intents/${id}/select-quote`, {
+  return apiFetch<{ ok: boolean }>(`/api/v1/intents/${encodeURIComponent(id)}/select-quote`, {
     method: "POST",
     body: { quote_id: quoteId },
   });
 }
 
 export function requestPurchase(id: string) {
-  return apiFetch<PolicyDecision>(`/api/v1/intents/${id}/request-purchase`, { method: "POST" });
+  return apiFetch<PolicyDecision>(`/api/v1/intents/${encodeURIComponent(id)}/request-purchase`, { method: "POST" });
 }
 
 export function policyPreview(id: string) {
-  return apiFetch<PolicyDecision>(`/api/v1/intents/${id}/policy-preview`);
+  return apiFetch<PolicyDecision>(`/api/v1/intents/${encodeURIComponent(id)}/policy-preview`);
 }
 
 export function policyExplain(id: string) {
-  return apiFetch<PolicyDecision>(`/api/v1/intents/${id}/policy-explain`);
+  return apiFetch<PolicyDecision>(`/api/v1/intents/${encodeURIComponent(id)}/policy-explain`);
 }
 
 export function execute(id: string, idempotencyKey: string) {
-  return apiFetch<ExecuteResult>(`/api/v1/intents/${id}/execute`, {
+  return apiFetch<ExecuteResult>(`/api/v1/intents/${encodeURIComponent(id)}/execute`, {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
   });
 }
 
 export function getOrder(id: string) {
-  return apiFetch<Order>(`/api/v1/intents/${id}/order`);
+  return apiFetch<Order>(`/api/v1/intents/${encodeURIComponent(id)}/order`);
 }
 
 export function getReceipt(id: string) {
-  return apiFetch<Order>(`/api/v1/intents/${id}/receipt`);
+  return apiFetch<Order>(`/api/v1/intents/${encodeURIComponent(id)}/receipt`);
 }
 
 export function cancelOrder(id: string) {
-  return apiFetch<Order>(`/api/v1/intents/${id}/cancel-order`, { method: "POST" });
+  return apiFetch<Order>(`/api/v1/intents/${encodeURIComponent(id)}/cancel-order`, { method: "POST" });
 }
 
 export function getAuditTrail(id: string) {
-  return apiFetch<AuditEvent[]>(`/api/v1/intents/${id}/audit`);
+  return apiFetch<AuditEvent[]>(`/api/v1/intents/${encodeURIComponent(id)}/audit`);
 }
 
 // --- approvals (human session only — an agent token is rejected) ---
 
 export function getApprovalForIntent(intentId: string) {
-  return apiFetch<Approval>(`/api/v1/intents/${intentId}/approval`);
+  return apiFetch<Approval>(`/api/v1/intents/${encodeURIComponent(intentId)}/approval`);
 }
 
 export function approveApproval(id: string) {
-  return apiFetch<{ approval_id: string; status: string }>(`/api/v1/approvals/${id}/approve`, { method: "POST" });
+  return apiFetch<{ approval_id: string; status: string }>(`/api/v1/approvals/${encodeURIComponent(id)}/approve`, { method: "POST" });
 }
 
 export function rejectApproval(id: string) {
-  return apiFetch<{ approval_id: string; status: string }>(`/api/v1/approvals/${id}/reject`, { method: "POST" });
+  return apiFetch<{ approval_id: string; status: string }>(`/api/v1/approvals/${encodeURIComponent(id)}/reject`, { method: "POST" });
 }
 
 export function reapproveApproval(id: string) {
-  return apiFetch<{ approval_id: string; status: string }>(`/api/v1/approvals/${id}/reapprove`, { method: "POST" });
+  return apiFetch<{ approval_id: string; status: string }>(`/api/v1/approvals/${encodeURIComponent(id)}/reapprove`, { method: "POST" });
 }
 
 // --- payment sources ---
@@ -382,7 +382,7 @@ export function addPaymentSource(providerNonce: string, alias: string, nickname?
 }
 
 export function revokePaymentSource(id: string) {
-  return apiFetch<{ ok: boolean }>(`/api/v1/payment-sources/${id}/revoke`, { method: "POST" });
+  return apiFetch<{ ok: boolean }>(`/api/v1/payment-sources/${encodeURIComponent(id)}/revoke`, { method: "POST" });
 }
 
 // --- merchants ---

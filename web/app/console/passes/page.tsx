@@ -427,6 +427,7 @@ function IssuedCard({ pass, connect, onDone }: { pass: IssuedPass; connect: Pass
 
 function PassCard({ pass: p, onRevoked }: { pass: SpendPass; onRevoked: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   // The server says whether the pass can still spend (not revoked, not expired).
   const status = p.revoked_at ? "Revoked" : p.active ? "Active" : "Expired";
   const used = p.budget_minor_units > 0 ? Math.min(p.spent_minor_units / p.budget_minor_units, 1) : 0;
@@ -445,9 +446,13 @@ function PassCard({ pass: p, onRevoked }: { pass: SpendPass; onRevoked: () => vo
   async function revoke() {
     if (!window.confirm(`Revoke "${p.label}"? The agent loses access immediately.`)) return;
     setBusy(true);
+    setError(null);
     try {
       await api.revokePass(p.id);
       onRevoked();
+    } catch (e) {
+      // Revoking is how a person stops an agent spending: a failure must never be silent.
+      setError(`${e instanceof Error ? e.message : "Couldn't reach Algebra"}. The pass is still active.`);
     } finally {
       setBusy(false);
     }
@@ -476,6 +481,11 @@ function PassCard({ pass: p, onRevoked }: { pass: SpendPass; onRevoked: () => vo
           </Button>
         )}
       </div>
+      {error && (
+        <div className="mt-3">
+          <ErrorNote>{error}</ErrorNote>
+        </div>
+      )}
       <div className="mt-4">
         <div className="flex items-baseline justify-between text-sm">
           <span className="text-muted">

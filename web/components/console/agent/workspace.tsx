@@ -10,6 +10,9 @@ import * as api from "@/lib/api-client";
 import type { RailStatus, SpendPass } from "@/lib/types";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
+import { approvalRule } from "@/lib/pass-rules";
+import { CHAT_KEY, clearSavedChat } from "@/lib/agent/saved-chat";
+import { PAID_TOOLS } from "@/lib/agent/steps";
 import { IconArrowUp, IconRefresh, IconShield, IconStop } from "@/components/icons";
 import { useConsoleData } from "../console-data";
 import { ApprovalCard, type ApprovalOutcome } from "./approval-card";
@@ -32,7 +35,16 @@ type Turn = {
   reply?: string;
   error?: string;
   status: "running" | "done" | "error" | "stopped";
+  /**
+   * The turn was stopped (or the page reloaded) while a payment was running.
+   * Stopping hangs up on the chat, not on Algebra: a payment already underway
+   * still finishes and is recorded, so the UI can't say nothing happened.
+   */
+  paymentInFlight?: boolean;
 };
+
+/** True when one of the turn's steps is a payment that hadn't come back yet. */
+const payingNow = (t: Turn) => t.steps.some((s) => s.status === "running" && PAID_TOOLS.has(s.tool));
 
 const SUGGESTIONS: Record<string, string[]> = {
   solana: [
@@ -56,27 +68,37 @@ const MIN_VISIBLE_MS: Record<string, number> = { search_providers: 3000, get_pro
 
 const MODEL_KEY = "algebra:agent-model";
 const PASS_KEY = "algebra:agent-pass";
-// v2: the Solana chat. Chats saved by the earlier shopping agent aren't restored.
-const CHAT_KEY = "algebra:agent-chat:v2";
 // Provider history carries every tool result, so a long chat can get big.
 // Keep the newest turns that fit; the conversation matters more than its tail.
 const CHAT_MAX_BYTES = 400_000;
 const EASE = [0.16, 1, 0.3, 1] as const;
 
 type SessionTotals = { spent: number; calls: number; steps: number };
-type SavedChat = { turns: Turn[]; history: unknown[]; lockedProvider: string | null; session: SessionTotals };
+/** userId is whose chat this is: it is only ever restored for that account. */
+type SavedChat = { userId: string; turns: Turn[]; history: unknown[]; lockedProvider: string | null; session: SessionTotals };
 
-/** Restores the chat a reload would otherwise throw away. */
-function loadChat(): SavedChat | null {
+/** Restores the chat a reload would otherwise throw away, if it is this person's. */
+function loadChat(userId: string): SavedChat | null {
   try {
     const raw = window.localStorage.getItem(CHAT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as SavedChat;
+    if (parsed.userId !== userId) {
+      // Another account's chat on a shared browser, or one saved before chats
+      // were tied to an account: never show it, and don't keep it around.
+      clearSavedChat();
+      return null;
+    }
     if (!Array.isArray(parsed.turns) || parsed.turns.length === 0) return null;
     // A turn interrupted by the reload is no longer running.
     parsed.turns = parsed.turns.map((t) =>
       t.status === "running"
-        ? { ...t, status: "stopped", steps: t.steps.map((s) => (s.status === "running" ? { ...s, status: "error", summary: "Interrupted by a page reload" } : s)) }
+        ? {
+            ...t,
+            status: "stopped",
+            paymentInFlight: payingNow(t),
+            steps: t.steps.map((s) => (s.status === "running" ? { ...s, status: "error", summary: "Interrupted by a page reload" } : s)),
+          }
         : t
     );
     return parsed;
@@ -85,14 +107,15 @@ function loadChat(): SavedChat | null {
   }
 }
 
-function saveChat(chat: SavedChat) {
+function saveChat(chat: Omit<SavedChat, "userId">, userId: string) {
   try {
-    let payload = JSON.stringify(chat);
     let turns = chat.turns;
+    const serialize = () => JSON.stringify({ ...chat, turns, userId });
+    let payload = serialize();
     // Drop the oldest turns until it fits, rather than losing the chat.
     while (payload.length > CHAT_MAX_BYTES && turns.length > 1) {
       turns = turns.slice(1);
-      payload = JSON.stringify({ ...chat, turns, history: chat.history });
+      payload = serialize();
     }
     if (payload.length > CHAT_MAX_BYTES) {
       window.localStorage.removeItem(CHAT_KEY);
@@ -110,6 +133,7 @@ function uid() {
 
 export function AgentWorkspace() {
   const { user } = useSession();
+  const userId = user?.id ?? "";
   const { refreshOverview } = useConsoleData();
   const { network } = useNetwork();
   const params = useSearchParams();
@@ -181,7 +205,7 @@ export function AgentWorkspace() {
 
   useEffect(() => {
     // localStorage is unavailable during SSR, so restore after mount.
-    const saved = loadChat();
+    const saved = userId ? loadChat(userId) : null;
     if (saved) {
       setTurns(saved.turns);
       setHistory(saved.history ?? []);
@@ -190,21 +214,17 @@ export function AgentWorkspace() {
     }
     setRestored(true);
     inputRef.current?.focus();
-  }, []);
+  }, [userId]);
 
   // Persist after every change, so a reload mid-chat loses nothing.
   useEffect(() => {
-    if (!restored) return;
+    if (!restored || !userId) return;
     if (turns.length === 0) {
-      try {
-        window.localStorage.removeItem(CHAT_KEY);
-      } catch {
-        // nothing to clean up if storage was never writable
-      }
+      clearSavedChat();
       return;
     }
-    saveChat({ turns, history, lockedProvider, session });
-  }, [restored, turns, history, lockedProvider, session]);
+    saveChat({ turns, history, lockedProvider, session }, userId);
+  }, [restored, userId, turns, history, lockedProvider, session]);
 
   // Keep the newest content in view unless the user scrolled up to read.
   useEffect(() => {
@@ -328,6 +348,7 @@ export function AgentWorkspace() {
           updateTurn(id, (t) => ({
             ...t,
             status: "stopped",
+            paymentInFlight: payingNow(t),
             steps: t.steps.map((s) => (s.status === "running" ? { ...s, status: "error", summary: "Stopped", endedAt: Date.now() } : s)),
           }));
         } else {
@@ -610,7 +631,18 @@ function TurnView({
         )}
       </AnimatePresence>
 
-      {turn.status === "stopped" && <p className="text-sm text-muted">Stopped. Nothing past the last completed step was done.</p>}
+      {turn.status === "stopped" &&
+        (turn.paymentInFlight ? (
+          <p className="text-sm text-muted">
+            Stopped here, but a payment that was already underway can still go through. Check{" "}
+            <Link href="/console/executions" className="font-medium text-primary hover:underline">
+              Executions
+            </Link>{" "}
+            to see how it ended.
+          </p>
+        ) : (
+          <p className="text-sm text-muted">Stopped. Nothing past the last completed step was done.</p>
+        ))}
       {turn.error && (
         <p role="alert" className="rounded-xl bg-danger-tint px-4 py-3 text-sm text-danger">
           {turn.error}
@@ -661,6 +693,14 @@ function PassPicker({
   );
 }
 
+/** The tail of the empty state's sentence about when the pass asks the person first. */
+function askText(pass: SpendPass): string {
+  const rule = approvalRule(pass);
+  if (rule.kind === "always") return ", and I'll ask you before every call";
+  if (rule.kind === "above") return `, and I'll ask you from ${formatUSDC(rule.minor)} a call`;
+  return "";
+}
+
 function EmptyState({
   name,
   pass,
@@ -700,9 +740,7 @@ function EmptyState({
             ? "Every paid call runs through your Spend Pass first."
             : pass === null
               ? "No Spend Pass picked: I can find APIs and read their prices, and I'll pay once you pick a pass below."
-              : `I pay from “${pass.label}” on Solana ${where}: ${formatUSDC(pass.remaining_minor_units)} left${
-                  pass.approve_above_minor_units ? `, and I'll ask you from ${formatUSDC(pass.approve_above_minor_units)} a call` : ""
-                }.`}
+              : `I pay from “${pass.label}” on Solana ${where}: ${formatUSDC(pass.remaining_minor_units)} left${askText(pass)}.`}
         </span>
       </motion.p>
 

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import * as api from "./api-client";
+import { clearSavedChat } from "./agent/saved-chat";
 import type { User } from "./types";
 
 type SessionStatus = "loading" | "authenticated" | "unauthenticated";
@@ -82,7 +83,13 @@ export function SessionProvider({
   const signOut = useCallback(async () => {
     try {
       await api.signOut();
+    } catch {
+      // The server couldn't be reached. Leave anyway: /login asks the server
+      // for the real session, so a sign-out that didn't take shows up there
+      // instead of being hidden.
     } finally {
+      // The next person on this browser must not inherit this person's chat.
+      clearSavedChat();
       setUserState(null);
       setStatus("unauthenticated");
       router.replace("/login");

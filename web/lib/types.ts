@@ -411,10 +411,44 @@ export type ReceiptClaims = {
   test?: boolean;
 };
 
+// --- signed intent receipts (internal/domain/receipt/intent.go): what Algebra
+// authorized and observed while coordinating one paid call. Every Executions
+// receipt is one of these. ---
+
+type ReceiptMoney = { minor_units: number; currency: string };
+
+export type IntentReceiptClaims = {
+  iss: string;
+  jti: string;
+  iat: number;
+  sub: string;
+  v: number;
+  intent: { id: string; hash: string; capability: string; effect_key: string; quantity: number; window: string; budget_max: ReceiptMoney };
+  authority: { spend_pass_id?: string; policy_version?: string; method: "policy" | "human" };
+  reservation: { id: string; executor: { id: string; name: string; client: string }; attempt: number };
+  provider: { id: string; quote?: ReceiptMoney; settlement_semantics?: string };
+  routing?: { mode: string; plan_hash?: string; quote_hash?: string; candidate_id?: string; plan_rank: number; fallback: boolean };
+  execution: {
+    protocol?: string;
+    scheme?: string;
+    request_hash?: string;
+    result_hash?: string;
+    provider_operation_id?: string;
+    /** "fulfilled", "not_fulfilled" or "result_unknown". */
+    status: string;
+    quality?: { evaluator: string; schema_valid?: boolean; score?: number };
+  };
+  settlement?: { rail: string; network?: string; asset?: string; amount: ReceiptMoney; transaction?: string; payment_id?: string; payer?: string; pay_to?: string };
+  coordination: { attempts: number; duplicate_commit_attempts_blocked: number; reconciliation_required: boolean };
+  final_state: { lifecycle: string; commitment: string; fulfillment: string };
+  test?: boolean;
+};
+
 export type ReceiptVerification = {
   valid: boolean;
   recorded: boolean;
-  claims?: ReceiptClaims;
+  /** A spend receipt (shopping) or an intent receipt (paid calls); tell them apart with isIntentClaims. */
+  claims?: ReceiptClaims | IntentReceiptClaims;
   pass?: { label: string; active: boolean; revoked: boolean };
   reason?: string;
 };

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import * as api from "@/lib/api-client";
+import { safeNext } from "@/lib/safe-next";
 import type { AuthProviders, User } from "@/lib/types";
 import { GitHubMark, GoogleMark, IconReceipt, IconShield, IconStore, Spinner } from "@/components/icons";
 import { AuthInput, FormError, PasswordInput, SubmitButton } from "./fields";
@@ -12,11 +13,6 @@ import { AuthInput, FormError, PasswordInput, SubmitButton } from "./fields";
 type Mode = "login" | "signup";
 /** Which way in: a one-click demo account, or a real (production) account. */
 type Entry = "demo" | "production";
-
-function safeNext(next: string | null): string | null {
-  if (!next || !next.startsWith("/") || next.startsWith("//")) return null;
-  return next;
-}
 
 export function destinationFor(user: User, next: string | null) {
   if (!user.onboarded) return "/onboarding";

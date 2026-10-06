@@ -6,6 +6,7 @@ import * as api from "@/lib/api-client";
 import type { EconIntent, RailStatus, SpendPass } from "@/lib/types";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel } from "@/lib/network";
+import { approvalRule } from "@/lib/pass-rules";
 import { IconGauge, IconShield, IconTag, IconWallet } from "@/components/icons";
 
 function PanelHeading({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
@@ -30,6 +31,14 @@ function Row({ icon, label, value, hint }: { icon: React.ReactNode; label: strin
       </div>
     </li>
   );
+}
+
+/** When the pass makes the person approve a call. Zero means every call, not "never". */
+function approvalRow(pass: SpendPass): { value: string; hint: string } {
+  const rule = approvalRule(pass);
+  if (rule.kind === "always") return { value: "Every call", hint: "Each call waits for your tap" };
+  if (rule.kind === "above") return { value: `≥ ${formatUSDC(rule.minor)}`, hint: "From this price, a call waits for your tap" };
+  return { value: "Never", hint: "Calls within the limits run on their own" };
 }
 
 /** The pass this chat pays under, the wallet that pays, and what the chat has spent. */
@@ -91,12 +100,7 @@ export function PassPanel({
             value={pass.max_per_purchase_minor_units ? formatUSDC(pass.max_per_purchase_minor_units) : "Budget"}
             hint="Refused above this, before anything is paid"
           />
-          <Row
-            icon={<IconShield />}
-            label="Approval"
-            value={pass.approve_above_minor_units ? `≥ ${formatUSDC(pass.approve_above_minor_units)}` : "Never"}
-            hint={pass.approve_above_minor_units ? "From this price, a call waits for your tap" : "Calls within the limits run on their own"}
-          />
+          <Row icon={<IconShield />} label="Approval" {...approvalRow(pass)} />
           <Row
             icon={<IconShield />}
             label="Providers"

@@ -7,6 +7,9 @@ import type { ToolResult } from "./execute-tool";
 
 const USDC = 1_000_000;
 
+/** The tools that can move money. Capped per turn on the server; the browser uses it to tell when a stop may have left a payment underway. */
+export const PAID_TOOLS = new Set(["pay_and_call", "run_approved_intent"]);
+
 function usdc(minor: unknown): string | undefined {
   return typeof minor === "number" ? `${(minor / USDC).toLocaleString("en-US", { maximumFractionDigits: 6 })} USDC` : undefined;
 }
