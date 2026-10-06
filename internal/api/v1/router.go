@@ -97,6 +97,8 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/execute", api.executeOutcome)
 	mux.HandleFunc("POST /api/v1/economic-intents/{id}/execute", api.executeEconomicIntent)
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/executions", api.listEconomicExecutions)
+	mux.HandleFunc("GET /api/v1/economic-intents/{id}/result", api.getEconomicResult)
+	mux.HandleFunc("GET /api/v1/me/economic-intents/{id}/result", api.getMyEconomicResult)
 	mux.HandleFunc("GET /api/v1/me/economic-intents", api.listMyEconomicIntents)
 	mux.HandleFunc("POST /api/v1/me/economic-intents", api.createMyEconomicIntent)
 	mux.HandleFunc("GET /api/v1/me/economic-intents/stats", api.myEconomicStats)

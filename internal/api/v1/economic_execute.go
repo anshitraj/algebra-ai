@@ -36,6 +36,10 @@ type executeRequest struct {
 	// Candidates are endpoints the agent found itself. They are treated as
 	// found on the open web whatever the agent says about them.
 	Candidates []app.CandidateInput `json:"candidates"`
+	// StoreResult is whether Algebra may keep the provider's answer for a
+	// while (sealed, 24 hours by default) so that asking again returns it
+	// instead of "already committed". True unless the request says false.
+	StoreResult *bool `json:"store_result"`
 }
 
 func (a *API) executionEnabled(w http.ResponseWriter) bool {
@@ -76,7 +80,7 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
-	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates})
+	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, DiscardResult: discardsResult(req.StoreResult)})
 	var created *bool
 	var rep *app.PlanReport
 	if res != nil {
@@ -132,6 +136,8 @@ func (a *API) executeEconomicIntent(w http.ResponseWriter, r *http.Request) {
 		// PassID: the console's agent running an intent under one of the
 		// person's passes (see executorFor).
 		PassID string `json:"spend_pass_id"`
+		// StoreResult: see executeRequest.
+		StoreResult *bool `json:"store_result"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := decodeJSON(r, &req); err != nil {
@@ -152,7 +158,7 @@ func (a *API) executeEconomicIntent(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
-	rep, err := a.b.Execution.ExecuteCandidates(ctx, app.CandidatesRequest{AgentID: executor, IntentID: view.ID, Candidates: candidates})
+	rep, err := a.b.Execution.ExecuteCandidates(ctx, app.CandidatesRequest{AgentID: executor, IntentID: view.ID, Candidates: candidates, DiscardResult: discardsResult(req.StoreResult)})
 	a.writeExecution(w, nil, rep, rejected, err)
 }
 

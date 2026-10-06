@@ -61,6 +61,12 @@ func main() {
 			} else if n > 0 {
 				logger.Info("purged expired sessions and reset tokens", "rows", n)
 			}
+			// The answers kept for repeat requests are kept for a limited time.
+			if n, err := bundle.Execution.PurgeResults(ctx); err != nil {
+				logger.Warn("purging expired results", "error", err)
+			} else if n > 0 {
+				logger.Info("purged expired results", "rows", n)
+			}
 			select {
 			case <-ctx.Done():
 				return

@@ -111,6 +111,10 @@ type Config struct {
 	Circle CircleConfig
 	PayAI  CircleConfig
 
+	// Results is how long the answer to a paid call is kept, so asking again
+	// returns it (RESULT_RETENTION, RESULT_MAX_BYTES; see results.go).
+	Results ResultsConfig
+
 	Auth AuthConfig
 
 	Billing BillingConfig
@@ -381,6 +385,9 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	if err := loadDirectory(&cfg.PayAI, "PAYAI_ENABLED", "PAYAI_DISCOVERY_URL"); err != nil {
+		return nil, err
+	}
+	if err := loadResults(&cfg.Results); err != nil {
 		return nil, err
 	}
 	switch strings.ToLower(os.Getenv("ECONOMIC_SANDBOX")) {

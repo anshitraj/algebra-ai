@@ -374,6 +374,19 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		db.Close()
 		return nil, fmt.Errorf("wiring: %w", err)
 	}
+	// The answers to paid calls are kept for a limited time, sealed under a key
+	// derived from the master key and used for nothing else, so that asking again
+	// returns the answer instead of "already committed" (RESULT_RETENTION).
+	if cfg.Results.Retention > 0 {
+		resultMAC := hmac.New(sha256.New, masterKey)
+		resultMAC.Write([]byte("algebra:result-store:v1"))
+		resultEnc, err := privacy.NewAESGCMEncryptor(resultMAC.Sum(nil))
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("wiring: result sealing: %w", err)
+		}
+		execSvc.SetResults(app.NewResultVault(postgres.NewResultRepo(db), resultEnc, cfg.Results.Retention, cfg.Results.MaxBytes))
+	}
 	directory := buildDirectory(cfg)
 	candidates := app.CandidateResolver{Configured: execProviders}
 	var classIndex *catalog.ClassIndex
