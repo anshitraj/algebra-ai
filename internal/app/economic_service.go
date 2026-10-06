@@ -216,9 +216,11 @@ func (s *EconomicService) create(ctx context.Context, p *spendpass.Pass, agentID
 	if spec.Currency == "" {
 		spec.Currency = p.Currency
 	}
+	// A malformed spec comes back as an *econ.InvalidSpecError, which the
+	// transports answer as a bad request: it isn't a conflict with any state.
 	in, err := econ.New(newID("eint"), p.UserID, p.ID, agentID, spec, now)
 	if err != nil {
-		return nil, false, fmt.Errorf("%w: %s", shared.ErrConflict, err.Error())
+		return nil, false, err
 	}
 	spent, err := s.ordersSpent(ctx, p)
 	if err != nil {

@@ -3,6 +3,8 @@ package v1
 import (
 	"errors"
 	"net/http"
+
+	"github.com/project-algebra/algebra/internal/app"
 )
 
 type createWebhookEndpointRequest struct {
@@ -33,12 +35,17 @@ func (a *API) createWebhookEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.URL == "" {
-		writeError(w, errors.New("url is required"))
+		writeError(w, badRequest("url is required"))
 		return
 	}
 
 	ep, secret, err := a.b.WebhookDispatch.CreateEndpoint(r.Context(), t.ID, req.URL, req.EventTypes)
 	if err != nil {
+		if errors.Is(err, app.ErrInvalidWebhookURL) {
+			// The caller's own URL: say why, so they can fix it.
+			writeError(w, badRequest(err.Error()))
+			return
+		}
 		writeError(w, err)
 		return
 	}

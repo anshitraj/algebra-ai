@@ -421,9 +421,19 @@ func (a *API) verifyState(v string) (string, bool) {
 
 // safeNext only allows same-site relative paths as a post-login
 // destination — never an open redirect.
+//
+// Control characters are refused outright: a browser strips TAB, CR and LF
+// from a URL before parsing it, so "/<TAB>/evil.example" in a Location header
+// is read as the protocol-relative "//evil.example" even though it begins
+// with a single slash.
 func safeNext(next string) string {
 	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.Contains(next, "\\") {
 		return ""
+	}
+	for i := 0; i < len(next); i++ {
+		if c := next[i]; c < 0x20 || c == 0x7f {
+			return ""
+		}
 	}
 	return next
 }

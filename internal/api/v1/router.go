@@ -19,6 +19,7 @@ import (
 	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/agent"
 	"github.com/project-algebra/algebra/internal/domain/billing"
+	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/integrator"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 	"github.com/project-algebra/algebra/internal/domain/tenant"
@@ -189,7 +190,7 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("GET /readyz", api.readyz)
 
-	return requestLog(slog.Default(), securityHeaders(corsMiddleware(allowedOrigins, api.rateLimitMiddleware(api.csrfGuard(api.withSession(mux))))))
+	return requestLog(slog.Default(), securityHeaders(corsMiddleware(allowedOrigins, api.rateLimitMiddleware(api.csrfGuard(api.withSession(limitBody(mux)))))))
 }
 
 // corsMiddleware is the outermost layer: an OPTIONS preflight is answered
@@ -306,9 +307,16 @@ type errorBody struct {
 func writeError(w http.ResponseWriter, err error) {
 	status := http.StatusInternalServerError
 	var authErr unauthenticatedError
+	var badReq badRequestError
+	var tooLarge requestTooLargeError
+	var badSpec *econ.InvalidSpecError
 	switch {
 	case errors.As(err, &authErr):
 		status = http.StatusUnauthorized
+	case errors.As(err, &badReq), errors.As(err, &badSpec):
+		status = http.StatusBadRequest
+	case errors.As(err, &tooLarge):
+		status = http.StatusRequestEntityTooLarge
 	case errors.Is(err, billing.ErrQuotaExceeded):
 		status = http.StatusPaymentRequired
 	case errors.Is(err, shared.ErrNotFound):
@@ -323,9 +331,51 @@ func writeError(w http.ResponseWriter, err error) {
 	writeJSON(w, status, errorBody{Error: err.Error()})
 }
 
+// maxRequestBody caps every request body (limitBody). The largest legitimate
+// ones, an execute call with candidates or an intent's own input, are a few
+// KiB; nothing here needs a megabyte.
+const maxRequestBody = 1 << 20
+
+// limitBody makes reading a request body past maxRequestBody fail, for every
+// handler, so none has to remember to cap its own decoder. A handler that
+// reads less (the execute routes) wraps the body again with its own, lower cap.
+func limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil && r.Body != http.NoBody {
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// badRequestError is a request the caller has to fix: writeError answers 400.
+type badRequestError struct{ msg string }
+
+func (e badRequestError) Error() string { return e.msg }
+
+// badRequest is the error for a request the caller got wrong.
+func badRequest(msg string) error { return badRequestError{msg: msg} }
+
+// requestTooLargeError is a body over its cap: writeError answers 413.
+type requestTooLargeError struct{}
+
+func (requestTooLargeError) Error() string { return "request body is too large" }
+
+// decodeJSON reads one JSON value from the body. What goes wrong is the
+// caller's doing, so the errors it returns are ones writeError answers with a
+// 4xx (never the decoder's own text, which describes Go types).
 func decodeJSON(r *http.Request, v any) error {
 	defer r.Body.Close()
-	return json.NewDecoder(r.Body).Decode(v)
+	err := json.NewDecoder(r.Body).Decode(v)
+	var tooBig *http.MaxBytesError
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &tooBig):
+		return requestTooLargeError{}
+	default:
+		return badRequestError{msg: "invalid request body"}
+	}
 }
 
 // resolveAgent extracts and validates the bearer agent token from the

@@ -76,18 +76,6 @@ func writeEconError(w http.ResponseWriter, err error) {
 	}
 }
 
-// econBadRequest reports validation errors from the domain as 400s.
-func econBadRequest(w http.ResponseWriter, err error) bool {
-	msg := err.Error()
-	for _, p := range []string{"capability ", "quantity ", "window ", "budget ", "an intent ", "constraints ", "input: "} {
-		if strings.HasPrefix(msg, p) {
-			writeJSON(w, http.StatusBadRequest, errorBody{Error: msg})
-			return true
-		}
-	}
-	return false
-}
-
 func (a *API) economic(w http.ResponseWriter) bool {
 	if a.b.Economic == nil {
 		writeJSON(w, http.StatusNotImplemented, errorBody{Error: "economic intents are not enabled on this server"})
@@ -112,9 +100,7 @@ func (a *API) createEconomicIntent(w http.ResponseWriter, r *http.Request) {
 	}
 	v, created, err := a.b.Economic.CreateIntent(r.Context(), ag.ID, req.spec())
 	if err != nil {
-		if !econBadRequest(w, err) {
-			writeEconError(w, err)
-		}
+		writeEconError(w, err)
 		return
 	}
 	status := http.StatusOK
@@ -417,9 +403,7 @@ func (a *API) createMyEconomicIntent(w http.ResponseWriter, r *http.Request) {
 	}
 	v, created, err := a.b.Economic.CreateIntentForPass(r.Context(), userID, req.PassID, req.spec())
 	if err != nil {
-		if !econBadRequest(w, err) {
-			writeEconError(w, err)
-		}
+		writeEconError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"intent": v, "created": created})

@@ -240,9 +240,27 @@ const (
 	MinTTL = 10 * time.Second
 )
 
+// InvalidSpecError is a Spec that can't make an intent whatever state anything
+// is in: the caller asked for something malformed (a bad capability, a zero
+// budget, a window or TTL out of range). It is the caller's to fix, so a
+// transport answers it as a bad request rather than as a conflict with state.
+type InvalidSpecError struct{ Err error }
+
+func (e *InvalidSpecError) Error() string { return e.Err.Error() }
+func (e *InvalidSpecError) Unwrap() error { return e.Err }
+
 // New validates a Spec and builds an OPEN intent with its deterministic
-// identity. Approval, if needed, is applied by the caller.
+// identity. Approval, if needed, is applied by the caller. A Spec that can't
+// make an intent fails with an *InvalidSpecError.
 func New(id, principalID, passID, agentID string, s Spec, now time.Time) (*Intent, error) {
+	in, err := build(id, principalID, passID, agentID, s, now)
+	if err != nil {
+		return nil, &InvalidSpecError{Err: err}
+	}
+	return in, nil
+}
+
+func build(id, principalID, passID, agentID string, s Spec, now time.Time) (*Intent, error) {
 	capability, err := NormalizeCapability(s.Capability)
 	if err != nil {
 		return nil, err

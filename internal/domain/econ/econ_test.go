@@ -2,6 +2,7 @@ package econ
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -114,5 +115,37 @@ func TestUnknownIsNeverFailedAndNeverSilentlyRetried(t *testing.T) {
 	}
 	if err := r.Transition(ReservationCommitted, time.Now()); err == nil {
 		t.Error("UNKNOWN → COMMITTED must go through RECONCILING")
+	}
+}
+
+// A spec that can't make an intent fails with a typed error, so a transport
+// can tell "the caller asked for something malformed" from "this collides with
+// state" without matching on message text.
+func TestNewRefusesAMalformedSpecWithATypedError(t *testing.T) {
+	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	good := Spec{Capability: "solana.token-risk", BudgetMaxMinor: 1_000}
+	for name, mutate := range map[string]func(*Spec){
+		"capability":  func(s *Spec) { s.Capability = "NOT VALID!" },
+		"budget":      func(s *Spec) { s.BudgetMaxMinor = 0 },
+		"window":      func(s *Spec) { s.Window = "has spaces" },
+		"ttl too big": func(s *Spec) { s.TTL = 30 * 24 * time.Hour },
+		"ttl too low": func(s *Spec) { s.TTL = time.Second },
+		"input":       func(s *Spec) { s.Input = json.RawMessage(`{`) },
+		"constraints": func(s *Spec) { s.Constraints.MinQuality = 101 },
+	} {
+		s := good
+		mutate(&s)
+		_, err := New("eint_x", "user_1", "pass_1", "agent_1", s, now)
+		var bad *InvalidSpecError
+		if !errors.As(err, &bad) {
+			t.Errorf("%s: got %v, want an *InvalidSpecError", name, err)
+			continue
+		}
+		if bad.Error() == "" || strings.HasPrefix(bad.Error(), "algebra:") {
+			t.Errorf("%s: the message should be the plain reason, got %q", name, bad.Error())
+		}
+	}
+	if _, err := New("eint_ok", "user_1", "pass_1", "agent_1", good, now); err != nil {
+		t.Fatalf("a good spec failed: %v", err)
 	}
 }

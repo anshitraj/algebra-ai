@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/project-algebra/algebra/policy"
@@ -39,7 +38,7 @@ func (a *API) setPolicySet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Conditions == nil {
-		writeError(w, errors.New(`missing "conditions" — send at least an empty {} to explicitly allow everything`))
+		writeError(w, badRequest(`missing "conditions" — send at least an empty {} to explicitly allow everything`))
 		return
 	}
 	var userID *string
