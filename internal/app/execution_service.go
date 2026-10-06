@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/chain"
@@ -152,8 +151,10 @@ type ExecutionService struct {
 	now     func() time.Time
 
 	quoteTTL time.Duration
-	// quoteTimeout bounds one provider's pricing (see quoteAll).
+	// quoteTimeout bounds one provider's pricing, and quoteGrace how long the
+	// others are waited for once one has priced (see quoteAll).
 	quoteTimeout time.Duration
+	quoteGrace   time.Duration
 	// results keeps the answers to paid calls (see SetResults).
 	results *ResultVault
 	// health is the free probe's record of providers; nil runs without it.
@@ -166,7 +167,7 @@ func NewExecutionService(e *EconomicService, store ExecutionStore) *ExecutionSer
 	s := &ExecutionService{
 		econ: e, store: store,
 		runners: map[routing.ExecutionType]StepRunner{}, evals: map[string]Evaluator{},
-		caps: StaticCatalog{}, log: slog.Default(), now: time.Now, quoteTTL: DefaultQuoteTTL, quoteTimeout: quoteTimeout,
+		caps: StaticCatalog{}, log: slog.Default(), now: time.Now, quoteTTL: DefaultQuoteTTL, quoteTimeout: quoteTimeout, quoteGrace: quoteGrace,
 	}
 	s.RegisterEvaluator(GenericEvaluatorName, GenericEvaluator{})
 	// When reconciliation later settles an attempt this service ran, bring
@@ -336,14 +337,18 @@ type CandidatesRequest struct {
 
 const (
 	// MaxQuotedCandidates bounds how many candidates are priced for one
-	// request. Each is an unpaid request to a provider, so the router looks at
-	// enough to have a real choice and no more.
+	// request, all at once. Each is an unpaid request to a provider, so the
+	// router looks at enough to have a real choice and no more.
 	MaxQuotedCandidates = 12
-	// quoteConcurrency is how many providers are asked for a price at once.
-	quoteConcurrency = 4
 	// quoteTimeout is how long one provider has to price a request. A slow
 	// provider is skipped, not waited for: the others are priced meanwhile.
 	quoteTimeout = 20 * time.Second
+	// quoteGrace is how much longer the router waits for the other providers
+	// once one has priced. Providers answer a free price request in a few
+	// hundred milliseconds; without this, every call would take as long as the
+	// slowest provider in a dozen, and one that needs seconds to say what it
+	// charges is not the one to pay for a call that costs a fraction of a cent.
+	quoteGrace = 1500 * time.Millisecond
 )
 
 // RejectOutranked: a candidate that could have done the work but ranked below
@@ -503,33 +508,64 @@ type pricing struct {
 	err error
 }
 
-// quoteAll prices every candidate for the intent's input, a few at a time, each
+// quoteAll prices every candidate for the intent's input, all at once, each
 // with its own deadline. The answers keep the candidates' order, whichever
 // provider answered first. A runner that panics fails its own quote and
 // nothing else.
+//
+// It does not wait for the slowest: once one provider has priced, the others
+// have quoteGrace to do the same, and the ones still working then are given up
+// on (their requests are cancelled) and reported as unpriced.
 func (s *ExecutionService) quoteAll(ctx context.Context, view *IntentView, cands []routing.Candidate) []pricing {
-	out := make([]pricing, len(cands))
-	sem := make(chan struct{}, quoteConcurrency)
-	var wg sync.WaitGroup
+	type answer struct {
+		i int
+		p pricing
+	}
+	// Room for every answer, so a provider that finishes after the router has
+	// moved on never blocks.
+	answers := make(chan answer, len(cands))
+	pricingCtx, giveUp := context.WithCancel(ctx)
+	defer giveUp()
 	for i, c := range cands {
-		wg.Add(1)
-		sem <- struct{}{}
 		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
+			var p pricing
 			defer func() {
-				if p := recover(); p != nil {
-					s.log.Error("execution: runner panicked while pricing", "provider", c.Provider, "panic", fmt.Sprint(p))
-					out[i] = pricing{err: errors.New("the runner crashed while pricing")}
+				if r := recover(); r != nil {
+					s.log.Error("execution: runner panicked while pricing", "provider", c.Provider, "panic", fmt.Sprint(r))
+					p = pricing{err: errors.New("the runner crashed while pricing")}
 				}
+				answers <- answer{i, p}
 			}()
-			qctx, cancel := context.WithTimeout(ctx, s.quoteTimeout)
+			qctx, cancel := context.WithTimeout(pricingCtx, s.quoteTimeout)
 			defer cancel()
 			q, err := s.quote(qctx, view, c)
-			out[i] = pricing{q: q, err: err}
+			p = pricing{q: q, err: err}
 		}()
 	}
-	wg.Wait()
+
+	out := make([]pricing, len(cands))
+	answered := make([]bool, len(cands))
+	var graceOver <-chan time.Time // set when the first provider has priced
+wait:
+	for n := 0; n < len(cands); {
+		select {
+		case a := <-answers:
+			out[a.i], answered[a.i] = a.p, true
+			n++
+			if a.p.err == nil && graceOver == nil {
+				t := time.NewTimer(s.quoteGrace)
+				defer t.Stop()
+				graceOver = t.C
+			}
+		case <-graceOver:
+			break wait
+		}
+	}
+	for i := range out {
+		if !answered[i] {
+			out[i] = pricing{err: fmt.Errorf("no price within %s of the first provider's", s.quoteGrace)}
+		}
+	}
 	return out
 }
 

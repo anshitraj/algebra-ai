@@ -92,17 +92,20 @@ type fakeRunner struct {
 	quotes    map[string]int
 
 	// quotePanics makes pricing a provider panic; quoteDelay makes every
-	// price take that long (or until the caller gives up); maxInflight is the
-	// most prices that were being worked out at once.
-	quotePanics map[string]bool
-	quoteDelay  time.Duration
-	inflight    int
-	maxInflight int
+	// price take that long (or until the caller gives up), quoteDelays one
+	// provider's; maxInflight is the most prices that were being worked out
+	// at once, and quoteCancelled counts prices the router gave up on.
+	quotePanics    map[string]bool
+	quoteDelay     time.Duration
+	quoteDelays    map[string]time.Duration
+	quoteCancelled int
+	inflight       int
+	maxInflight    int
 }
 
 func newFakeRunner() *fakeRunner {
 	return &fakeRunner{
-		costs: map[string]int64{}, latencies: map[string]int{}, quotePanics: map[string]bool{}, quoteErrs: map[string]error{},
+		costs: map[string]int64{}, latencies: map[string]int{}, quotePanics: map[string]bool{}, quoteErrs: map[string]error{}, quoteDelays: map[string]time.Duration{},
 		behaviors: map[string]func(context.Context, StepCall) StepObservation{}, runs: map[string]int{}, quotes: map[string]int{},
 	}
 }
@@ -126,6 +129,9 @@ func (f *fakeRunner) Quote(ctx context.Context, c routing.Candidate, _ json.RawM
 	f.mu.Lock()
 	f.quotes[c.Provider]++
 	panics, delay, latency := f.quotePanics[c.Provider], f.quoteDelay, f.latencies[c.Provider]
+	if d, ok := f.quoteDelays[c.Provider]; ok {
+		delay = d
+	}
 	f.inflight++
 	f.maxInflight = max(f.maxInflight, f.inflight)
 	f.mu.Unlock()
@@ -141,6 +147,9 @@ func (f *fakeRunner) Quote(ctx context.Context, c routing.Candidate, _ json.RawM
 		select {
 		case <-time.After(delay):
 		case <-ctx.Done():
+			f.mu.Lock()
+			f.quoteCancelled++
+			f.mu.Unlock()
 			return routing.Quote{}, ctx.Err()
 		}
 	}

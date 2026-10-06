@@ -215,7 +215,7 @@ func TestRouter_PlansTheBestFiveAndSaysWhoWasOutranked(t *testing.T) {
 	}
 }
 
-func TestRouter_PricesProvidersAFewAtATimeAndKeepsAnOrder(t *testing.T) {
+func TestRouter_PricesProvidersAllAtOnceAndKeepsAnOrder(t *testing.T) {
 	rig := newExecRig(t)
 	rig.runner.quoteDelay = 40 * time.Millisecond
 	var names []string
@@ -234,16 +234,83 @@ func TestRouter_PricesProvidersAFewAtATimeAndKeepsAnOrder(t *testing.T) {
 	rig.runner.mu.Lock()
 	peak := rig.runner.maxInflight
 	rig.runner.mu.Unlock()
-	if peak < 2 || peak > quoteConcurrency {
-		t.Errorf("prices are worked out in parallel, within the limit: peak %d", peak)
+	if peak != len(names) {
+		t.Errorf("every price is worked out at once: peak %d of %d", peak, len(names))
 	}
-	// Eight prices at 40 ms each, four at a time: about 80 ms, not 320.
+	// Eight prices at 40 ms each, together: about 40 ms, not 320.
 	if took > 250*time.Millisecond {
 		t.Errorf("pricing eight providers took %s; it should overlap", took)
 	}
 	// All tie, so the order the caller gave is kept.
 	if rep.Plan.Primary().Quote.Provider != "qa" {
 		t.Errorf("ties keep the caller's order: %s", rep.Plan.Primary().Quote.Provider)
+	}
+}
+
+func TestRouter_StopsWaitingForProvidersThatPriceAfterTheGraceHasPassed(t *testing.T) {
+	rig := newExecRig(t)
+	rig.exec.quoteGrace = 80 * time.Millisecond
+	rig.runner.behaviors["fast"] = rig.delivers(goodBody)
+	rig.runner.behaviors["steady"] = rig.delivers(goodBody)
+	rig.runner.behaviors["glacial"] = rig.delivers(goodBody)
+	rig.runner.quoteDelays["fast"] = 5 * time.Millisecond
+	rig.runner.quoteDelays["steady"] = 30 * time.Millisecond // within the grace after "fast"
+	rig.runner.quoteDelays["glacial"] = 10 * time.Second     // far beyond it
+	in := rig.strategyIntent(t, "auto", "w-grace")
+
+	started := time.Now()
+	rep, err := rig.run(t, in.ID, "fast", "steady", "glacial")
+	took := time.Since(started)
+	if err != nil || !rep.Delivered {
+		t.Fatalf("delivered: %v %v", rep, err)
+	}
+	if took > 2*time.Second {
+		t.Errorf("the call did not wait for the slowest provider: %s", took)
+	}
+	var priced []string
+	for _, st := range rep.Plan.Steps {
+		priced = append(priced, st.Quote.Provider)
+	}
+	slices.Sort(priced)
+	if strings.Join(priced, ",") != "fast,steady" {
+		t.Errorf("the two that priced within the grace are in the plan: %v", priced)
+	}
+	var skipped *routing.Rejection
+	for i := range rep.Rejected {
+		if rep.Rejected[i].Provider == "glacial" {
+			skipped = &rep.Rejected[i]
+		}
+	}
+	if skipped == nil || skipped.Code != routing.RejectUnquotable || !strings.Contains(skipped.Detail, "no price within") {
+		t.Errorf("the slow one is reported as unpriced: %+v", rep.Rejected)
+	}
+	// Its request is cancelled, not left running.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		rig.runner.mu.Lock()
+		cancelled := rig.runner.quoteCancelled
+		rig.runner.mu.Unlock()
+		if cancelled == 1 || time.Now().After(deadline) {
+			if cancelled != 1 {
+				t.Errorf("the slow provider's price request is cancelled: %d", cancelled)
+			}
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestRouter_TheGraceStartsWithTheFirstPriceNotTheFirstFailure(t *testing.T) {
+	rig := newExecRig(t)
+	rig.exec.quoteGrace = 40 * time.Millisecond
+	rig.runner.behaviors["late"] = rig.delivers(goodBody)
+	rig.runner.quoteErrs["broken"] = errors.New("402 without terms")
+	rig.runner.quoteDelays["late"] = 150 * time.Millisecond // slower than the grace, but the only price there will be
+	in := rig.strategyIntent(t, "auto", "w-first")
+
+	rep, err := rig.run(t, in.ID, "broken", "late")
+	if err != nil || !rep.Delivered || rep.Plan.Primary().Quote.Provider != "late" {
+		t.Fatalf("a failure does not start the clock; the only price is waited for: %v %v", rep, err)
 	}
 }
 
