@@ -32,22 +32,33 @@ import { ConsoleDataProvider, useConsoleData } from "./console-data";
 type NavItem = { href: string; label: string; icon: React.ReactNode; badge?: "approvals" };
 
 const PRIMARY: NavItem[] = [
-  { href: "/console/agent", label: "Agent", icon: <IconChat /> },
   { href: "/console", label: "Overview", icon: <IconGrid /> },
-  { href: "/console/approvals", label: "Approvals", icon: <IconInbox />, badge: "approvals" },
-  { href: "/console/orders", label: "Orders", icon: <IconPackage /> },
-  { href: "/console/activity", label: "Activity", icon: <IconList /> },
+  { href: "/console/providers", label: "Providers", icon: <IconStore /> },
+  { href: "/console/executions", label: "Executions", icon: <IconList />, badge: "approvals" },
 ];
 
 const CONTROLS: NavItem[] = [
-  { href: "/console/guardrails", label: "Guardrails", icon: <IconSliders /> },
   { href: "/console/passes", label: "Spend passes", icon: <IconShield /> },
-  { href: "/console/payment-sources", label: "Payment methods", icon: <IconWallet /> },
-  { href: "/console/profile", label: "Profile & address", icon: <IconUser /> },
-  { href: "/console/merchants", label: "Stores", icon: <IconStore /> },
-  { href: "/console/plugins", label: "Plugins", icon: <IconPlug /> },
-  { href: "/console/billing", label: "Plan & billing", icon: <IconReceipt /> },
+  { href: "/console/connect", label: "Connect an agent", icon: <IconPlug /> },
 ];
+
+// The first version of Algebra was a shopping agent. Its pages still work but
+// are off the menu unless NEXT_PUBLIC_LEGACY_SHOPPING=1.
+const LEGACY: NavItem[] =
+  process.env.NEXT_PUBLIC_LEGACY_SHOPPING === "1"
+    ? [
+        { href: "/console/agent", label: "Agent", icon: <IconChat /> },
+        { href: "/console/approvals", label: "Approvals", icon: <IconInbox /> },
+        { href: "/console/orders", label: "Orders", icon: <IconPackage /> },
+        { href: "/console/activity", label: "Activity", icon: <IconList /> },
+        { href: "/console/guardrails", label: "Guardrails", icon: <IconSliders /> },
+        { href: "/console/payment-sources", label: "Payment methods", icon: <IconWallet /> },
+        { href: "/console/profile", label: "Profile & address", icon: <IconUser /> },
+        { href: "/console/merchants", label: "Stores", icon: <IconStore /> },
+        { href: "/console/plugins", label: "Plugins", icon: <IconPlug /> },
+        { href: "/console/billing", label: "Plan & billing", icon: <IconReceipt /> },
+      ]
+    : [];
 
 function isActive(pathname: string, href: string) {
   if (href === "/console") return pathname === "/console";
@@ -148,12 +159,11 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
 }
 
 function MobileApprovalsPill() {
-  const { overview } = useConsoleData();
-  const n = overview?.pending_approvals ?? 0;
+  const { awaitingApproval: n } = useConsoleData();
   if (!n) return null;
   return (
     <Link
-      href="/console/approvals"
+      href="/console/executions"
       className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-full bg-accent-tint px-3 text-xs font-medium text-accent"
     >
       <IconInbox size={14} /> {n} waiting
@@ -162,8 +172,7 @@ function MobileApprovalsPill() {
 }
 
 function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
-  const { overview } = useConsoleData();
-  const pending = overview?.pending_approvals ?? 0;
+  const { awaitingApproval: pending } = useConsoleData();
 
   const renderItem = (item: NavItem) => {
     const active = isActive(pathname, item.href);
@@ -203,36 +212,21 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
       <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 pb-4" aria-label="Console">
         <div className="flex flex-col gap-0.5">{PRIMARY.map(renderItem)}</div>
         <div>
-          <p className="px-3 pb-1.5 text-xs font-medium text-muted/80">Controls</p>
+          <p className="px-3 pb-1.5 text-xs font-medium text-muted/80">Your agents</p>
           <div className="flex flex-col gap-0.5">{CONTROLS.map(renderItem)}</div>
         </div>
-        {overview && <SpendMeter spent={overview.spent_today.minor_units} cap={overview.guardrails.max_per_day_minor_units} />}
+        {LEGACY.length > 0 && (
+          <div>
+            <p className="px-3 pb-1.5 text-xs font-medium text-muted/80">Shopping (legacy)</p>
+            <div className="flex flex-col gap-0.5">{LEGACY.map(renderItem)}</div>
+          </div>
+        )}
+        <p className="mx-1 mt-auto rounded-xl border border-border px-3.5 py-3 text-xs leading-relaxed text-muted">
+          Payments settle in <span className="text-foreground">USDC on Solana</span> over x402. Providers come from Pay.sh and Circle&apos;s Agent Marketplace.
+        </p>
       </nav>
       <UserMenu user={user} />
     </>
-  );
-}
-
-function SpendMeter({ spent, cap }: { spent: number; cap: number }) {
-  const pct = cap > 0 ? Math.min(100, (spent / cap) * 100) : 0;
-  const fmt = (m: number) => `₹${(m / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-  return (
-    <Link href="/console/guardrails" className="mx-1 mt-auto block rounded-xl border border-border px-3.5 py-3 transition-colors hover:bg-primary-tint/50">
-      <div className="flex items-baseline justify-between text-xs">
-        <span className="text-muted">Spent today</span>
-        <span className="font-mono text-foreground tabular-nums">
-          {fmt(spent)} <span className="text-muted">/ {fmt(cap)}</span>
-        </span>
-      </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
-        <motion.div
-          className={`h-full rounded-full ${pct > 85 ? "bg-danger" : pct > 60 ? "bg-accent" : "bg-primary"}`}
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-        />
-      </div>
-    </Link>
   );
 }
 
@@ -324,14 +318,13 @@ function UserMenu({ user }: { user: User }) {
   );
 }
 
-// Every screen of a demo account says so: the products and prices are real,
-// the checkout isn't.
+// Every screen of a demo account says so: the catalogs are real, the money
+// isn't.
 function DemoBanner() {
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-border bg-accent-tint px-4 py-2 text-center text-xs text-accent print:hidden">
       <span>
-        <strong className="font-semibold">Demo mode</strong> · real products and prices, simulated checkout. No money
-        moves, nothing ships.
+        <strong className="font-semibold">Demo mode</strong> · real provider catalogs, simulated USDC. No money moves.
       </span>
       <Link href="/signup" className="font-semibold underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
         Create a real account

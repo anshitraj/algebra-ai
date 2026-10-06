@@ -1,22 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { motion } from "motion/react";
+import { useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
 import { firstName, useSession } from "@/lib/session";
-import type { ApprovalActivity, IntentActivity } from "@/lib/types";
-import { IconArrowRight, IconChat, IconInbox, IconPlus } from "@/components/icons";
-import { useConsoleData } from "@/components/console/console-data";
-import { ApprovalRow } from "@/components/console/approval-row";
-import { IntentList } from "@/components/console/intent-list";
-import { ErrorNote, Skeleton, rupees } from "@/components/console/ui";
-
-const PROMPTS = [
-  "🥤 Help me purchase a Coke Zero, under ₹100",
-  "🧴 Restock toothpaste and shampoo",
-  "🍫 Pick up chocolates for a birthday, under ₹500",
-];
+import type { EconIntent, EconStats, ProviderListing, SpendPass } from "@/lib/types";
+import { formatMoney, formatUSDC } from "@/lib/money";
+import { catalogName } from "@/lib/paysh";
+import { ErrorNote, Skeleton, StatusBadge, timeAgo } from "@/components/console/ui";
+import { IconArrowRight, IconCheck, IconInbox, IconPlug, IconShield, IconStore } from "@/components/icons";
 
 function greeting() {
   const h = new Date().getHours();
@@ -25,28 +17,27 @@ function greeting() {
 
 export default function OverviewPage() {
   const { user } = useSession();
-  const { overview, refreshOverview } = useConsoleData();
-  const [approvals, setApprovals] = useState<ApprovalActivity[] | null>(null);
-  const [intents, setIntents] = useState<IntentActivity[] | null>(null);
+  const [intents, setIntents] = useState<EconIntent[] | null>(null);
+  const [stats, setStats] = useState<EconStats | null>(null);
+  const [passes, setPasses] = useState<SpendPass[] | null>(null);
+  const [catalog, setCatalog] = useState<ProviderListing | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [a, i] = await Promise.all([api.listMyApprovals(), api.listMyIntents(8)]);
-      setApprovals(a);
-      setIntents(i);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load your activity");
-    }
+  useEffect(() => {
+    Promise.all([api.listMyEconomicIntents(8), api.getMyEconomicStats(30), api.listPasses()])
+      .then(([l, s, p]) => {
+        setIntents(l.intents ?? []);
+        setStats(s.stats);
+        setPasses(p.passes);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Couldn't load your overview"));
+    // The catalogs are public and slower to read the first time; they never block the page.
+    api.listProviders({ limit: 1 }).then(setCatalog).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching from the REST API on mount
-    load();
-  }, [load]);
-
-  const g = overview?.guardrails;
-  const spent = overview?.spent_today.minor_units ?? 0;
+  const active = passes?.filter((p) => p.active && p.currency === "USDC") ?? [];
+  const waiting = intents?.filter((i) => i.state === "AWAITING_APPROVAL").length ?? 0;
+  const fresh = passes !== null && passes.filter((p) => p.currency === "USDC").length === 0;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -56,126 +47,154 @@ export default function OverviewPage() {
             {greeting()}, {firstName(user)}
           </h1>
           <p className="mt-1.5 text-[0.95rem] text-muted">
-            {approvals && approvals.length > 0
-              ? `${approvals.length} purchase${approvals.length === 1 ? " is" : "s are"} waiting on you.`
-              : "Nothing needs you right now."}
+            {waiting > 0
+              ? `${waiting} request${waiting === 1 ? " is" : "s are"} waiting for your approval.`
+              : "Your agents pay for APIs in USDC on Solana, inside the limits you set."}
           </p>
         </div>
-        <div className="flex gap-2.5">
-          <Link
-            href="/console/agent"
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-tint transition-[opacity,transform] hover:opacity-95 active:scale-[0.98]"
-          >
-            <IconChat size={16} /> Open agent
-          </Link>
-          <Link
-            href="/console/new"
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-border-strong px-4 text-sm font-medium text-foreground transition-colors hover:bg-primary-tint"
-          >
-            <IconPlus size={16} /> Order by hand
-          </Link>
-        </div>
-      </div>
-
-      {error && (
-        <div className="mt-6">
-          <ErrorNote>{error}</ErrorNote>
-        </div>
-      )}
-
-      {/* Today, in one line of plain facts — not a wall of big numbers. */}
-      <div className="mt-8 grid overflow-hidden rounded-2xl border border-border bg-surface sm:grid-cols-3 sm:divide-x sm:divide-border">
-        <div className="px-5 py-4">
-          <p className="text-xs text-muted">Spent today</p>
-          <p className="mt-1 text-[0.95rem] text-foreground">
-            <span className="font-mono tabular-nums">{rupees(spent)}</span>
-            {g && <span className="text-muted"> of {rupees(g.max_per_day_minor_units)}</span>}
-          </p>
-          <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-border">
-            <motion.div
-              className="h-full rounded-full bg-primary"
-              initial={{ width: 0 }}
-              animate={{ width: g ? `${Math.min(100, (spent / g.max_per_day_minor_units) * 100)}%` : 0 }}
-              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            />
-          </div>
-        </div>
-        <Link href="/console/guardrails" className="border-t border-border px-5 py-4 transition-colors hover:bg-primary-tint/40 sm:border-t-0">
-          <p className="text-xs text-muted">Auto-approves</p>
-          <p className="mt-1 text-[0.95rem] text-foreground">
-            {!g ? "…" : g.approval_threshold_minor_units <= 1 ? "Nothing — you approve all" : `Under ${rupees(g.approval_threshold_minor_units)}`}
-          </p>
-          <p className="mt-2 text-xs text-muted">Edit guardrails →</p>
-        </Link>
-        <Link href="/console/orders" className="border-t border-border px-5 py-4 transition-colors hover:bg-primary-tint/40 sm:border-t-0">
-          <p className="text-xs text-muted">Orders placed</p>
-          <p className="mt-1 font-mono text-[0.95rem] text-foreground tabular-nums">{overview?.orders_total ?? "…"}</p>
-          <p className="mt-2 text-xs text-muted">View orders →</p>
+        <Link
+          href="/console/providers"
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-tint hover:opacity-90"
+        >
+          <IconStore size={16} /> Browse providers
         </Link>
       </div>
 
-      {approvals && approvals.length > 0 && (
-        <section className="mt-10">
-          <h2 className="flex items-center gap-2 text-[0.95rem] font-semibold text-foreground">
-            <IconInbox size={17} className="text-accent" /> Waiting for your approval
-          </h2>
-          <ul className="mt-3 divide-y divide-border overflow-hidden rounded-2xl border border-accent/50 bg-accent-tint/25">
-            {approvals.map((a) => (
-              <ApprovalRow
-                key={a.approval_id}
-                a={a}
-                onDone={() => {
-                  load();
-                  refreshOverview();
-                }}
-              />
-            ))}
-          </ul>
-        </section>
+      {error && <div className="mt-6"><ErrorNote>{error}</ErrorNote></div>}
+
+      {waiting > 0 && (
+        <Link
+          href="/console/executions"
+          className="mt-6 flex items-center gap-3 rounded-2xl border border-accent/60 bg-accent-tint/40 px-5 py-4 text-sm text-foreground hover:bg-accent-tint/60"
+        >
+          <IconInbox size={18} className="text-accent" />
+          <span className="flex-1">
+            {waiting} request{waiting === 1 ? "" : "s"} above a pass&apos;s ask-me line {waiting === 1 ? "needs" : "need"} your yes or no.
+          </span>
+          <IconArrowRight size={16} />
+        </Link>
       )}
 
-      <section className="mt-10">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-[0.95rem] font-semibold text-foreground">Recent activity</h2>
-          <Link href="/console/activity" className="text-sm text-primary hover:underline">
-            See all
-          </Link>
-        </div>
-        <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-surface">
-          {intents === null ? (
-            <div className="space-y-3 p-5">
-              {[0, 1, 2].map((i) => (
-                <Skeleton key={i} className="h-10" />
-              ))}
-            </div>
-          ) : intents.length === 0 ? (
-            <div className="px-6 py-12 text-center">
-              <p className="font-display text-lg font-semibold text-foreground">Your first order starts with a sentence</p>
-              <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
-                Tell the agent what you need. It searches, compares, checks your guardrails, and buys — or asks you first.
-              </p>
-            </div>
-          ) : (
-            <IntentList intents={intents} />
-          )}
-        </div>
-      </section>
+      {fresh && <GettingStarted providers={catalog?.total} />}
 
-      <section className="mt-10">
-        <h2 className="text-[0.95rem] font-semibold text-foreground">Try asking</h2>
-        <div className="mt-3 flex flex-wrap gap-2.5">
-          {PROMPTS.map((p) => (
-            <Link
-              key={p}
-              href={`/console/agent?prompt=${encodeURIComponent(p)}`}
-              className="group inline-flex items-center gap-2 rounded-full border border-border-strong bg-surface px-4 py-2 text-sm text-foreground transition-[border-color,transform] hover:-translate-y-0.5 hover:border-primary/50"
-            >
-              {p}
-              <IconArrowRight size={14} className="text-muted transition-transform group-hover:translate-x-0.5" />
+      <dl className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat label="Spent, 30 days" value={stats ? formatUSDC(stats.spent_minor) : null} />
+        <Stat label="Paid calls" value={stats ? String(stats.committed) : null} />
+        <Stat label="Duplicate payments stopped" value={stats ? String(stats.duplicate_commit_attempts_blocked) : null} />
+        <Stat label="Active passes" value={passes ? String(active.length) : null} />
+      </dl>
+
+      <div className="mt-8 grid gap-6 md:grid-cols-[1.3fr_1fr]">
+        <section aria-labelledby="recent-heading">
+          <div className="flex items-baseline justify-between">
+            <h2 id="recent-heading" className="font-display text-base font-semibold text-foreground">
+              Recent executions
+            </h2>
+            <Link href="/console/executions" className="text-xs font-medium text-primary hover:underline">
+              All executions
             </Link>
-          ))}
-        </div>
-      </section>
+          </div>
+          <div className="mt-3 rounded-2xl border border-border bg-surface">
+            {!intents && !error && <div className="space-y-2 p-4">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-10" />)}</div>}
+            {intents?.length === 0 && <p className="px-5 py-8 text-center text-sm text-muted">No paid calls yet. They appear here as your agents make them.</p>}
+            {intents && intents.length > 0 && (
+              <ul className="divide-y divide-border">
+                {intents.slice(0, 6).map((i) => (
+                  <li key={i.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-mono text-xs text-foreground">{i.capability}</span>
+                      <span className="block text-[0.6875rem] text-muted">{timeAgo(i.created_at)}</span>
+                    </span>
+                    <span className="font-mono text-xs text-foreground tabular-nums">{i.committed_minor > 0 ? formatUSDC(i.committed_minor) : "—"}</span>
+                    <StatusBadge status={i.state} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        <section aria-labelledby="passes-heading">
+          <div className="flex items-baseline justify-between">
+            <h2 id="passes-heading" className="font-display text-base font-semibold text-foreground">
+              Spend passes
+            </h2>
+            <Link href="/console/passes" className="text-xs font-medium text-primary hover:underline">
+              Manage
+            </Link>
+          </div>
+          <div className="mt-3 space-y-2">
+            {!passes && !error && <Skeleton className="h-20" />}
+            {passes && active.length === 0 && (
+              <p className="rounded-2xl border border-dashed border-border-strong px-5 py-6 text-center text-sm text-muted">
+                No active USDC pass. An agent needs one to spend.
+              </p>
+            )}
+            {active.slice(0, 4).map((p) => {
+              const used = p.budget_minor_units > 0 ? Math.min(p.spent_minor_units / p.budget_minor_units, 1) : 0;
+              return (
+                <div key={p.id} className="rounded-2xl border border-border bg-surface px-4 py-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="truncate text-sm font-medium text-foreground">{p.label}</p>
+                    <p className="shrink-0 font-mono text-xs text-muted tabular-nums">{formatMoney(p.remaining_minor_units, p.currency)} left</p>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
+                    <div className={`h-full rounded-full ${used >= 0.9 ? "bg-danger" : "bg-primary"}`} style={{ width: `${used * 100}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {catalog?.sources && (
+            <p className="mt-4 text-xs text-muted">
+              {catalog.total} providers available from {catalog.sources.filter((s) => !s.error).map((s) => catalogName(s.name)).join(" and ")}.
+            </p>
+          )}
+        </section>
+      </div>
     </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface px-4 py-3">
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className="font-display mt-1 text-lg font-semibold text-foreground tabular-nums">{value ?? <Skeleton className="h-6 w-16" />}</dd>
+    </div>
+  );
+}
+
+function GettingStarted({ providers }: { providers?: number }) {
+  const steps = [
+    { href: "/console/passes", icon: <IconShield size={16} />, title: "Issue a Spend Pass", body: "A USDC budget, the most one call may cost, and which providers it may pay." },
+    { href: "/console/connect", icon: <IconPlug size={16} />, title: "Connect your agent", body: "Claude, Cursor, the OpenAI Agents SDK or any HTTP client, over MCP or REST." },
+    {
+      href: "/console/providers",
+      icon: <IconStore size={16} />,
+      title: "Pick what it can call",
+      body: providers ? `${providers} paid APIs from Pay.sh and Circle's Agent Marketplace.` : "Paid APIs from Pay.sh and Circle's Agent Marketplace.",
+    },
+  ];
+  return (
+    <section aria-label="Getting started" className="mt-6 rounded-2xl border border-border bg-surface p-5">
+      <p className="text-sm font-medium text-foreground">Three steps to your agent&apos;s first paid call</p>
+      <ol className="mt-4 grid gap-3 md:grid-cols-3">
+        {steps.map((s, i) => (
+          <li key={s.href}>
+            <Link href={s.href} className="flex h-full flex-col rounded-xl border border-border px-4 py-3 hover:border-primary/50 hover:bg-primary-tint/40">
+              <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-primary-tint text-xs text-primary">{i + 1}</span>
+                {s.title}
+              </span>
+              <span className="mt-1.5 text-xs leading-relaxed text-muted">{s.body}</span>
+            </Link>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
+        <IconCheck size={12} className="text-primary" /> Until this server has a funded Solana wallet, only the sandbox provider can be paid, with simulated USDC.
+      </p>
+    </section>
   );
 }

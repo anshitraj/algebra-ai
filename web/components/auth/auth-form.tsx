@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import * as api from "@/lib/api-client";
 import type { AuthProviders, User } from "@/lib/types";
-import { GitHubMark, GoogleMark, IconCart, IconMapPin, IconReceipt, Spinner } from "@/components/icons";
+import { GitHubMark, GoogleMark, IconReceipt, IconShield, IconStore, Spinner } from "@/components/icons";
 import { AuthInput, FormError, PasswordInput, SubmitButton } from "./fields";
 
 type Mode = "login" | "signup";
@@ -20,7 +20,7 @@ function safeNext(next: string | null): string | null {
 
 export function destinationFor(user: User, next: string | null) {
   if (!user.onboarded) return "/onboarding";
-  return safeNext(next) ?? "/console/agent";
+  return safeNext(next) ?? "/console";
 }
 
 export function AuthForm({ mode }: { mode: Mode }) {
@@ -67,7 +67,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
     setError(null);
     try {
       await api.startDemo();
-      router.replace("/console/agent");
+      router.replace("/console");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't start the demo. Try again.");
       setDemoBusy(false);
@@ -88,7 +88,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
     >
       <h1 className="font-display text-[1.75rem] leading-tight font-semibold tracking-tight text-foreground">
-        {isSignup ? "Create your account" : showDemo ? "See Algebra shop for you" : "Welcome back"}
+        {isSignup ? "Create your account" : showDemo ? "Try Algebra with simulated USDC" : "Welcome back"}
       </h1>
       <p className="mt-2 text-sm text-muted">
         {isSignup ? "Already have an account? " : "New to Algebra? "}
@@ -220,7 +220,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
 function EntryChooser({ entry, onChange }: { entry: Entry; onChange: (e: Entry) => void }) {
   const options: { value: Entry; label: string; hint: string }[] = [
-    { value: "demo", label: "Demo", hint: "No signup · pretend money" },
+    { value: "demo", label: "Demo", hint: "No signup · simulated USDC" },
     { value: "production", label: "Production", hint: "Your real account" },
   ];
   return (
@@ -249,9 +249,9 @@ function EntryChooser({ entry, onChange }: { entry: Entry; onChange: (e: Entry) 
 
 function DemoPanel({ busy, error, onStart }: { busy: boolean; error: string | null; onStart: () => void }) {
   const points = [
-    { icon: <IconCart size={16} />, text: "Ask for anything. The agent finds real products and live prices from Amazon, Flipkart, Blinkit and more." },
-    { icon: <IconReceipt size={16} />, text: "Checkout is simulated: your guardrails and approvals run for real, but no money moves and nothing ships." },
-    { icon: <IconMapPin size={16} />, text: "Every order gets an invoice and a delivery map, so you can see the whole flow end to end." },
+    { icon: <IconStore size={16} />, text: "Browse 100+ paid APIs from Pay.sh and Circle's Agent Marketplace, read live." },
+    { icon: <IconShield size={16} />, text: "Issue a Spend Pass and let an agent pay the sandbox provider: limits, approvals and the coordinator run for real, the USDC is simulated." },
+    { icon: <IconReceipt size={16} />, text: "Every payment ends in a signed receipt you can verify against Algebra's published keys." },
   ];
   return (
     <div className="mt-6">

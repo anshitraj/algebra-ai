@@ -3,35 +3,40 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Logo } from "./logo";
-import { StoreLogo } from "./store-logo";
+import { ProviderMark } from "./provider-mark";
 import { IconCheck } from "./icons";
 
-// An illustrative run of the console: the agent asks three stores for a
-// quote, policy clears the best one, the order goes through. Prices are
-// examples (the panel says so); the stages and audit events are the real
-// ones Algebra records.
+// An illustrative run of the console: the agent asks for a token risk score,
+// three catalog providers answer with a price, the Spend Pass clears the best
+// one, the payment settles, the receipt is signed. Prices are examples (the
+// panel says so); the stages and the audit events are the ones Algebra's
+// coordinator really records.
 
-const STAGES = ["Agent", "Discovery", "Policy", "Approval", "Merchant", "Order"] as const;
+const STAGES = ["Agent", "Discovery", "Policy", "Approval", "Payment", "Receipt"] as const;
 
-const EVENTS = [
-  { stage: 0, text: "IntentCreated", detail: "Coke Zero + chips · budget ₹400" },
-  { stage: 1, text: "DiscoveryStarted", detail: "Blinkit · Zepto · Swiggy Instamart" },
-  { stage: 1, text: "QuoteCreated", detail: "3 quotes" },
-  { stage: 2, text: "PolicyEvaluationStarted", detail: "₹212 at Zepto" },
-  { stage: 2, text: "PolicyEvaluated", detail: "ALLOW · AMOUNT_OK · MERCHANT_OK" },
-  { stage: 3, text: "ApprovalGranted", detail: "under your ₹1,000 line" },
-  { stage: 4, text: "PrivacyProfileResolved", detail: "shipping:home → Zepto" },
-  { stage: 4, text: "ExecutionStarted", detail: "Zepto" },
-  { stage: 5, text: "OrderCompleted", detail: "₹212.00 · arriving in 11 min" },
-] as const;
+type Tick = { stage: number; event?: { text: string; detail: string } };
 
-const QUOTES = [
-  { store: "blinkit", name: "Blinkit", items: "Coke Zero 300ml ×4 · Lay's 90g ×2", total: "₹228", eta: "9 min" },
-  { store: "zepto", name: "Zepto", items: "Coke Zero 300ml ×4 · Lay's 90g ×2", total: "₹212", eta: "11 min", best: true },
-  { store: "swiggy_instamart", name: "Swiggy Instamart", items: "Coke Zero 300ml ×4 · Lay's 90g ×2", total: "₹236", eta: "14 min" },
+const TICKS: Tick[] = [
+  { stage: 0, event: { text: "intent.created", detail: "solana.token-risk · up to 0.01 USDC" } },
+  { stage: 1 },
+  { stage: 1 },
+  { stage: 2, event: { text: "authority.evaluated", detail: "ALLOW · PASS_OK" } },
+  { stage: 3 },
+  { stage: 4, event: { text: "reservation.acquired", detail: "one live attempt · 0.003 USDC held" } },
+  { stage: 4, event: { text: "execution.started", detail: "Birdeye Data" } },
+  { stage: 4, event: { text: "payment.authorized", detail: "x402 · USDC on Solana" } },
+  { stage: 4, event: { text: "payment.confirmed", detail: "settled, proven from chain state" } },
+  { stage: 5, event: { text: "intent.committed", detail: "paid once · result delivered" } },
+  { stage: 5, event: { text: "receipt.signed", detail: "verifies against the published keys" } },
 ];
 
-const NAV = ["Agent", "Overview", "Approvals", "Orders", "Stores", "Guardrails"];
+const QUOTES = [
+  { id: "birdeye", name: "Birdeye Data", what: "token security · GET", price: "0.003 USDC", best: true },
+  { id: "vybe", name: "Vybe Solana Analytics", what: "token details · GET", price: "0.012 USDC" },
+  { id: "nansen", name: "Nansen API", what: "token screener · POST", price: "0.060 USDC" },
+];
+
+const NAV = ["Overview", "Providers", "Spend passes", "Executions", "Approvals", "Activity"];
 
 const TICK_MS = 900;
 const HOLD_MS = 2600;
@@ -46,17 +51,19 @@ export function DashboardPreview() {
     let i = 0;
     let timeout: ReturnType<typeof setTimeout>;
     const advance = () => {
-      i = i >= EVENTS.length ? 0 : i + 1;
+      i = i >= TICKS.length ? 0 : i + 1;
       setStep(i);
-      timeout = setTimeout(advance, i === EVENTS.length ? HOLD_MS : TICK_MS);
+      timeout = setTimeout(advance, i === TICKS.length ? HOLD_MS : TICK_MS);
     };
     timeout = setTimeout(advance, TICK_MS);
     return () => clearTimeout(timeout);
   }, []);
 
-  const done = step >= EVENTS.length;
-  const stage = step === 0 ? 0 : EVENTS[Math.min(step, EVENTS.length) - 1].stage;
-  const visibleEvents = EVENTS.slice(0, step).slice(-VISIBLE_LOG_LINES);
+  const done = step >= TICKS.length;
+  const stage = step === 0 ? 0 : TICKS[Math.min(step, TICKS.length) - 1].stage;
+  const visibleEvents = TICKS.slice(0, step)
+    .flatMap((t) => (t.event ? [t.event] : []))
+    .slice(-VISIBLE_LOG_LINES);
   const searching = step === 2;
   const quotesIn = step >= 3;
   const picked = step >= 5;
@@ -65,7 +72,7 @@ export function DashboardPreview() {
     <div className="brand-frame overflow-hidden rounded-2xl">
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
         <Logo size={16} className="text-primary" />
-        <span className="rounded-md bg-background px-3 py-1 font-mono text-xs text-muted">app.algebra/console/agent</span>
+        <span className="rounded-md bg-background px-3 py-1 font-mono text-xs text-muted">app.algebra/console/executions</span>
         <span className="ml-auto text-[0.6875rem] text-muted">Illustrative prices</span>
       </div>
 
@@ -74,7 +81,7 @@ export function DashboardPreview() {
           {NAV.map((label) => (
             <span
               key={label}
-              className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs whitespace-nowrap ${label === "Agent" ? "bg-primary-tint font-medium text-primary" : "text-muted"}`}
+              className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs whitespace-nowrap ${label === "Executions" ? "bg-primary-tint font-medium text-primary" : "text-muted"}`}
             >
               {label}
             </span>
@@ -83,13 +90,13 @@ export function DashboardPreview() {
 
         <div className="min-w-0 flex-1 p-5 md:p-6">
           <div className="flex items-center justify-between gap-3">
-            <p className="font-display text-sm font-semibold text-foreground">Coke Zero + chips for tonight, under ₹400</p>
+            <p className="font-display text-sm font-semibold text-foreground">Token risk for a new mint, up to 0.01 USDC</p>
             <span
               className={`shrink-0 rounded-full px-2.5 py-1 font-mono text-[0.6875rem] font-medium transition-colors duration-300 ${
                 done ? "bg-primary-tint text-primary" : "bg-accent-tint text-accent"
               }`}
             >
-              {done ? "ORDERED" : STAGES[stage].toUpperCase()}
+              {done ? "COMMITTED" : STAGES[stage].toUpperCase()}
             </span>
           </div>
 
@@ -109,22 +116,22 @@ export function DashboardPreview() {
           </ol>
 
           <div className="mt-5 grid gap-4 md:grid-cols-[1.25fr_1fr]">
-            {/* Quotes: the stores answering, then the pick. */}
+            {/* Quotes: the providers answering, then the pick. */}
             <div className="rounded-xl border border-border bg-background/60">
               <p className="flex items-center gap-2 border-b border-border px-3.5 py-2 text-[0.6875rem] text-muted">
-                Quotes
+                Quotes from Pay.sh and Circle
                 {searching && (
                   <span className="flex items-center gap-1">
                     {QUOTES.map((q, i) => (
                       <motion.span
-                        key={q.store}
+                        key={q.id}
                         animate={reduce ? undefined : { y: [0, -2, 0] }}
                         transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
                       >
-                        <StoreLogo store={q.store} size={14} />
+                        <ProviderMark name={q.name} size={14} />
                       </motion.span>
                     ))}
-                    <span className="ml-1">asking stores…</span>
+                    <span className="ml-1">asking each for its price…</span>
                   </span>
                 )}
               </p>
@@ -135,28 +142,28 @@ export function DashboardPreview() {
                       const chosen = picked && q.best;
                       return (
                         <motion.li
-                          key={q.store}
+                          key={q.id}
                           initial={{ opacity: 0, y: reduce ? 0 : 6 }}
                           animate={{ opacity: picked && !q.best ? 0.55 : 1, y: 0 }}
                           exit={{ opacity: 0 }}
                           transition={{ duration: 0.35, delay: i * 0.12, ease: EASE }}
                           className={`flex items-center gap-3 px-3.5 py-2.5 transition-colors duration-300 ${chosen ? "bg-primary-tint/70" : ""}`}
                         >
-                          <StoreLogo store={q.store} size={30} />
+                          <ProviderMark name={q.name} size={30} />
                           <div className="min-w-0 flex-1">
                             <p className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                               {q.name}
                               {chosen && (
                                 <span className="inline-flex items-center gap-0.5 rounded-full bg-primary px-1.5 py-px text-[0.625rem] font-medium text-primary-tint">
-                                  <IconCheck size={9} strokeWidth={3} /> Best total
+                                  <IconCheck size={9} strokeWidth={3} /> Best price
                                 </span>
                               )}
                             </p>
-                            <p className="truncate text-[0.6875rem] text-muted">{q.items}</p>
+                            <p className="truncate text-[0.6875rem] text-muted">{q.what}</p>
                           </div>
                           <div className="shrink-0 text-right">
-                            <p className="font-mono text-xs text-foreground tabular-nums">{q.total}</p>
-                            <p className="text-[0.625rem] text-muted">{q.eta}</p>
+                            <p className="font-mono text-xs text-foreground tabular-nums">{q.price}</p>
+                            <p className="text-[0.625rem] text-muted">quoted</p>
                           </div>
                         </motion.li>
                       );

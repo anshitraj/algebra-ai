@@ -6,10 +6,12 @@ import type { Overview } from "@/lib/types";
 
 type ConsoleData = {
   overview: Overview | null;
+  /** How many of the person's economic intents wait for their approval. */
+  awaitingApproval: number;
   refreshOverview: () => Promise<void>;
 };
 
-const Ctx = createContext<ConsoleData>({ overview: null, refreshOverview: async () => {} });
+const Ctx = createContext<ConsoleData>({ overview: null, awaitingApproval: 0, refreshOverview: async () => {} });
 
 /**
  * Shared, lightly-polled console state (pending approvals badge, today's
@@ -18,12 +20,19 @@ const Ctx = createContext<ConsoleData>({ overview: null, refreshOverview: async 
  */
 export function ConsoleDataProvider({ children }: { children: React.ReactNode }) {
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [awaitingApproval, setAwaiting] = useState(0);
 
   const refreshOverview = useCallback(async () => {
     try {
+      const l = await api.listMyEconomicIntents(50);
+      setAwaiting((l.intents ?? []).filter((i) => i.state === "AWAITING_APPROVAL").length);
+    } catch {
+      // the badge is best-effort; pages surface their own errors
+    }
+    try {
       setOverview(await api.getOverview());
     } catch {
-      // badge is best-effort; pages surface their own errors
+      // best-effort too
     }
   }, []);
 
@@ -36,7 +45,7 @@ export function ConsoleDataProvider({ children }: { children: React.ReactNode })
     return () => window.clearInterval(id);
   }, [refreshOverview]);
 
-  return <Ctx.Provider value={{ overview, refreshOverview }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ overview, awaitingApproval, refreshOverview }}>{children}</Ctx.Provider>;
 }
 
 export function useConsoleData() {

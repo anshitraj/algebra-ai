@@ -15,13 +15,13 @@ const geistMono = Geist_Mono({
 });
 
 const description =
-  "A non-custodial agentic-commerce control plane. Algebra turns an agent's purchase intent into policy-governed, user-approved checkout — without ever handing the agent a card number, a wallet key, or an OTP.";
+  "The policy-aware execution layer for autonomous agents on Solana. An agent asks for an outcome; Algebra finds a paid API on Pay.sh or Circle's Agent Marketplace, checks the Spend Pass, pays in USDC over x402, verifies the result and signs a receipt, without ever handing the agent a key.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.PUBLIC_WEB_URL || "http://localhost:3000"),
   title: "Algebra — permission to spend, not access to money",
   description,
-  openGraph: { title: "Algebra — permission to spend, not access to money", description, siteName: "Algebra", type: "website", locale: "en_IN" },
+  openGraph: { title: "Algebra — permission to spend, not access to money", description, siteName: "Algebra", type: "website", locale: "en_US" },
   twitter: { card: "summary", title: "Algebra", description },
 };
 

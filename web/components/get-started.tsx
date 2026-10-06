@@ -10,19 +10,19 @@ import { GitHubMark, GoogleMark, IconArrowRight, IconCheck, IconMail, IconShield
 const STEPS = [
   {
     title: "Sign in",
-    body: "Google, GitHub or email. No card, no wallet, nothing to install.",
+    body: "Google, GitHub or email. No wallet to connect, no key to paste.",
   },
   {
-    title: "Set your guardrails",
-    body: "When it should ask you, a daily cap, what it never buys. Four taps — and they become real policy.",
+    title: "Issue a Spend Pass",
+    body: "A USDC budget, the most one call can cost, and which providers it may pay. The pass is the agent's whole authority.",
   },
   {
-    title: "Ask for anything",
-    body: "Say it the way you'd text a friend. The agent searches every connected store and picks by your rules.",
+    title: "Your agent asks",
+    body: "It says what it wants, a token risk score say, and the most it will pay. Algebra finds providers on Pay.sh and Circle's Agent Marketplace and asks each for its real price.",
   },
   {
-    title: "Approve and track",
-    body: "Under your line it just happens. Above it, one tap. Every step lands on an audit trail you can read.",
+    title: "Pay, verify, receipt",
+    body: "Inside your pass it just happens: paid in USDC on Solana, the result checked, a signed receipt you can verify. Above your line, one tap.",
   },
 ];
 
@@ -47,7 +47,7 @@ export function GetStarted() {
       <Container>
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <h2 className="font-display max-w-xl text-3xl font-semibold tracking-tight text-balance text-foreground md:text-[2.6rem] md:leading-[1.08]">
-            From sign-up to first order in four steps.
+            From sign-up to first paid call in four steps.
           </h2>
           <Link href="/signup" className="group inline-flex items-center gap-1.5 text-sm font-medium text-primary">
             Start now — it takes about a minute
@@ -126,9 +126,9 @@ export function GetStarted() {
                 className="flex h-full items-center justify-center"
               >
                 {active === 0 && <SignInScene />}
-                {active === 1 && <GuardrailScene />}
+                {active === 1 && <PassScene />}
                 {active === 2 && <AskScene />}
-                {active === 3 && <ApproveScene />}
+                {active === 3 && <ReceiptScene />}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -167,23 +167,23 @@ function SignInScene() {
   );
 }
 
-function GuardrailScene() {
+function PassScene() {
   const rows = [
-    { k: "Ask me above", v: "₹1,000" },
-    { k: "Daily cap", v: "₹5,000" },
-    { k: "Never buy", v: "Gift cards, alcohol" },
+    { k: "Budget", v: "0.50 USDC" },
+    { k: "Most per call", v: "0.05 USDC" },
+    { k: "Providers", v: "Birdeye, Exa, Google Vision" },
   ];
   return (
     <div className={card}>
-      <p className="font-display text-lg font-semibold text-foreground">When should it check with you?</p>
+      <p className="font-display text-lg font-semibold text-foreground">How much can this agent spend?</p>
       <div className="mt-4 flex flex-wrap gap-2">
-        {["Every purchase", "Above ₹500", "Above ₹1,000", "Above ₹2,500"].map((c, i) => (
+        {["0.10 USDC", "0.50 USDC", "1.00 USDC", "5.00 USDC"].map((c, i) => (
           <motion.span
             key={c}
             initial={{ opacity: 0, scale: 0.94 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.08 * i }}
-            className={`rounded-full border px-3 py-1.5 text-xs ${i === 2 ? "border-primary bg-primary text-primary-tint" : "border-border-strong text-foreground"}`}
+            className={`rounded-full border px-3 py-1.5 text-xs ${i === 1 ? "border-primary bg-primary text-primary-tint" : "border-border-strong text-foreground"}`}
           >
             {c}
           </motion.span>
@@ -196,12 +196,12 @@ function GuardrailScene() {
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.35 + i * 0.1 }}
-            className="flex items-center justify-between text-sm"
+            className="flex items-center justify-between gap-4 text-sm"
           >
             <span className="flex items-center gap-2 text-muted">
               <IconCheck size={13} className="text-primary" strokeWidth={2.4} /> {r.k}
             </span>
-            <span className="font-mono text-foreground">{r.v}</span>
+            <span className="text-right font-mono text-foreground">{r.v}</span>
           </motion.li>
         ))}
       </ul>
@@ -210,11 +210,11 @@ function GuardrailScene() {
 }
 
 function AskScene() {
-  const steps = ["Searching 4 stores", "3 quotes · best ₹92 on Instamart", "Guardrails: under ₹1,000 — approved"];
+  const steps = ["Found 3 providers on Pay.sh and Circle", "Asked each for its real price: best is 0.003 USDC", "Spend Pass: within budget, approved"];
   return (
     <div className={card}>
       <div className="flex justify-end">
-        <p className="rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm text-primary-tint">🥤 Help me purchase a Coke Zero, under ₹100</p>
+        <p className="rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm text-primary-tint">Token risk for this mint, paying at most 0.01 USDC</p>
       </div>
       <ol className="mt-4 space-y-2.5">
         {steps.map((s, i) => (
@@ -225,7 +225,7 @@ function AskScene() {
             transition={{ delay: 0.4 + i * 0.45, ease: EASE }}
             className="flex items-center gap-2.5 text-sm text-foreground"
           >
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-tint">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-tint">
               <IconCheck size={11} strokeWidth={2.8} />
             </span>
             {s}
@@ -236,17 +236,17 @@ function AskScene() {
   );
 }
 
-function ApproveScene() {
+function ReceiptScene() {
   return (
     <div className="w-full max-w-sm space-y-3">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-accent/60 bg-surface p-4 shadow-[0_24px_50px_-30px_rgba(11,16,32,0.55)]">
         <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-tint">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-tint">
             <IconShield size={17} />
           </span>
           <div className="flex-1">
-            <p className="text-sm font-medium text-foreground">Approve ₹1,849 at Amazon?</p>
-            <p className="text-xs text-muted">Above your ₹1,000 line · bound to these items</p>
+            <p className="text-sm font-medium text-foreground">Approve 1.00 USDC to Arkham?</p>
+            <p className="text-xs text-muted">Above your 0.02 USDC line · bound to this exact request</p>
             <div className="mt-3 flex gap-2">
               <motion.span
                 initial={{ scale: 1 }}
@@ -267,12 +267,12 @@ function ApproveScene() {
         transition={{ delay: 1.3, ease: EASE }}
         className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-4"
       >
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-tint">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-tint">
           <IconCheck size={17} strokeWidth={2.4} />
         </span>
         <div>
-          <p className="text-sm font-medium text-foreground">Order placed</p>
-          <p className="font-mono text-xs text-muted">AMZ-408-2291 · arriving Thu</p>
+          <p className="text-sm font-medium text-foreground">Paid once, result delivered</p>
+          <p className="font-mono text-xs text-muted">COMMITTED · SETTLED · receipt verified</p>
         </div>
       </motion.div>
     </div>

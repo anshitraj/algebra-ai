@@ -7,33 +7,33 @@ const steps = [
   {
     n: "01",
     title: "Agent",
-    body: "Turns a user instruction into a structured PurchaseIntent — items, budget, category, merchant preferences.",
+    body: "Says what it wants as a structured intent: a capability, its input and the most it will pay in USDC.",
   },
   {
     n: "02",
     title: "Discovery",
-    body: "Algebra's merchant connectors search, quote, and apply coupons — the agent never talks to a merchant directly.",
+    body: "Algebra finds providers in Pay.sh and Circle's Agent Marketplace and asks each for its real price. The agent never talks to a provider directly.",
   },
   {
     n: "03",
     title: "Policy",
-    body: "A deterministic engine decides ALLOW, DENY, or REQUIRE_APPROVAL from persisted state. An LLM cannot override this.",
+    body: "The Spend Pass decides ALLOW, DENY or REQUIRE_APPROVAL from persisted state. An LLM cannot override this.",
     emphasize: true,
   },
   {
     n: "04",
     title: "Approval",
-    body: "When policy requires it, a human approves — bound to the merchant, items, amount, and payment source.",
+    body: "When the pass says ask, a person approves, bound to this exact request, provider and amount.",
   },
   {
     n: "05",
-    title: "Merchant",
-    body: "Checkout runs against the real connector: Zepto, Swiggy Instamart, Amazon, Flipkart, or a handoff link.",
+    title: "Payment",
+    body: "One live attempt at a time. Algebra pays in USDC over x402 on Solana, and proves the payment from chain state.",
   },
   {
     n: "06",
-    title: "Order",
-    body: "A receipt and an append-only audit trail — every decision, every approval, every charge.",
+    title: "Receipt",
+    body: "The result is checked, and a signed receipt and an append-only audit trail say what was authorized and what happened.",
   },
 ];
 
@@ -45,8 +45,8 @@ export function HowItWorks() {
           One request, six checkpoints.
         </h2>
         <p className="mt-4 max-w-xl text-[1.0625rem] leading-relaxed text-muted">
-          Every purchase — agent-initiated or not — passes through the same
-          six stages. Nothing skips the gate.
+          Every call an agent pays for passes through the same six stages.
+          Nothing skips the gate.
         </p>
 
         <div className="mt-16 grid gap-x-8 gap-y-12 md:grid-cols-6">

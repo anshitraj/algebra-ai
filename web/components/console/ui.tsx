@@ -85,6 +85,12 @@ const statusTone: Record<string, string> = {
   CONFIRMED: "bg-primary-tint text-primary",
   PLACED: "bg-primary-tint text-primary",
   READY: "bg-primary-tint text-primary",
+  COMMITTED: "bg-primary-tint text-primary",
+  OPEN: "bg-border text-muted",
+  AWAITING_APPROVAL: "bg-accent-tint text-accent",
+  RESERVED: "bg-accent-tint text-accent",
+  UNKNOWN: "bg-accent-tint text-accent",
+  RECONCILING: "bg-accent-tint text-accent",
 
   REQUIRE_APPROVAL: "bg-accent-tint text-accent",
   PENDING: "bg-accent-tint text-accent",

@@ -219,12 +219,160 @@ export type IssuedPass = SpendPass & { token: string; connect: PassConnect };
 export type NewPass = {
   label: string;
   agent_kind: AgentKind;
+  /** "INR" (the default) or "USDC". Amounts are minor units of it. */
+  currency?: string;
   budget_minor_units: number;
   budget_period: BudgetPeriod;
   max_per_purchase_minor_units?: number;
   approve_above_minor_units?: number;
   allowed_categories: string[];
+  /** Providers the pass may pay, by ID ("paysh:birdeye.data"); empty means any. */
+  allowed_merchants?: string[];
   expires_in_days: number;
+};
+
+// --- the catalogs of paid APIs: Pay.sh and Circle's Agent Marketplace ---
+// Names, descriptions and use cases are written by the providers and the
+// catalogs. They are shown as text and never followed as instructions. Prices
+// are listings: Algebra asks the endpoint for its real price before paying.
+
+export type ProviderSummary = {
+  /** What policy, Spend Passes and receipts call the provider: "paysh:birdeye.data", "circle:birdeye". */
+  id: string;
+  fqn: string;
+  name: string;
+  description: string;
+  use_case?: string;
+  category: string;
+  service_url: string;
+  host: string;
+  endpoint_count: number;
+  metered: boolean;
+  free_tier: boolean;
+  min_price_minor: number;
+  max_price_minor: number;
+  currency: string;
+  page_url: string;
+  source: string;
+};
+
+export type ProviderCategory = { name: string; count: number };
+
+export type CatalogStatus = {
+  name: string;
+  total: number;
+  generated_at?: string;
+  fetched_at?: string;
+  stale?: boolean;
+  /** The catalog couldn't be read; its providers are missing from this answer. */
+  error?: string;
+};
+
+export type ProviderListing = {
+  source?: string;
+  sources?: CatalogStatus[];
+  generated_at?: string;
+  fetched_at: string;
+  /** Pay.sh couldn't be reached, so this is an older copy. */
+  stale?: boolean;
+  total: number;
+  count: number;
+  categories: ProviderCategory[];
+  providers: ProviderSummary[];
+};
+
+export type ProviderEndpoint = {
+  /** What to ask for in POST /api/v1/execute. */
+  capability: string;
+  method: string;
+  path: string;
+  url: string;
+  pricing: string;
+  price_minor: number;
+  free: boolean;
+  network?: string;
+  pay_to?: string;
+  /** The request's JSON Schema, when the catalog publishes one. */
+  input_schema?: unknown;
+  description: string;
+  callable: boolean;
+  not_callable_reason?: string;
+};
+
+export type ProviderDetail = ProviderSummary & {
+  endpoints: ProviderEndpoint[];
+  fetched_at: string;
+  stale?: boolean;
+};
+
+// --- economic intents: what an agent asked Algebra to get done and pay for ---
+
+export type EconEvidence = {
+  rail?: string;
+  protocol?: string;
+  scheme?: string;
+  network?: string;
+  asset?: string;
+  payment_id?: string;
+  /** The settlement transaction: a Solana signature on the real rail. */
+  transaction?: string;
+  amount_minor?: number;
+  payer?: string;
+  pay_to?: string;
+  request_hash?: string;
+  result_hash?: string;
+  /** True for the sandbox rail: simulated money. */
+  test?: boolean;
+};
+
+export type EconReservation = {
+  id: string;
+  attempt: number;
+  state: string;
+  hold_minor: number;
+  provider_id?: string;
+  rail?: string;
+  quote_minor?: number;
+  evidence: EconEvidence;
+  outcome?: string;
+  created_at: string;
+  finished_at?: string;
+};
+
+export type EconIntent = {
+  id: string;
+  spend_pass_id?: string;
+  capability: string;
+  currency: string;
+  budget_max_minor: number;
+  state: string;
+  commitment?: string;
+  fulfillment?: string;
+  committed_minor: number;
+  attempts: number;
+  duplicate_commit_attempts_blocked: number;
+  requires_approval: boolean;
+  created_at: string;
+  updated_at: string;
+  expires_at: string;
+  reservations: EconReservation[];
+  /** The signed Intent Receipt, once the intent has committed. */
+  receipt?: string;
+  summary: string;
+};
+
+export type EconStats = {
+  intents: number;
+  committed: number;
+  open: number;
+  unresolved: number;
+  execution_attempts: number;
+  duplicate_commit_attempts_blocked: number;
+  went_unknown: number;
+  reconciled: number;
+  authorized_minor: number;
+  spent_minor: number;
+  duplicate_spend_prevented_minor: number;
 };
 
 // --- signed spend receipts (internal/domain/receipt) ---

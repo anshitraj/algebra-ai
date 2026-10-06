@@ -9,8 +9,8 @@ const columns = [
       { label: "Sign in", href: "/login" },
       { label: "Create account", href: "/signup" },
       { label: "Console", href: "/console" },
-      { label: "Pricing", href: "/pricing" },
       { label: "How it works", href: "/#how-it-works" },
+      { label: "Providers", href: "/#providers" },
       { label: "Policy", href: "/#policy" },
       { label: "Security", href: "/#security" },
       { label: "Integrate", href: "/#integrate" },
@@ -19,18 +19,19 @@ const columns = [
   {
     heading: "Docs",
     links: [
-      { label: "Integrating Algebra Policy", href: "https://github.com/anshitraj/algebra/blob/main/docs/INTEGRATING.md" },
-      { label: "Architecture", href: "https://github.com/anshitraj/algebra/blob/main/docs/ARCHITECTURE.md" },
-      { label: "Threat model", href: "https://github.com/anshitraj/algebra/blob/main/docs/THREAT_MODEL.md" },
-      { label: "MCP tools", href: "https://github.com/anshitraj/algebra/blob/main/docs/MCP.md" },
-      { label: "Local development", href: "https://github.com/anshitraj/algebra/blob/main/docs/LOCAL_DEVELOPMENT.md" },
+      { label: "Execution and catalogs", href: "https://github.com/anshitraj/algebra-ai/blob/main/docs/EXECUTION.md" },
+      { label: "Economic coordination", href: "https://github.com/anshitraj/algebra-ai/blob/main/docs/ECONOMIC_COORDINATION.md" },
+      { label: "Threat model", href: "https://github.com/anshitraj/algebra-ai/blob/main/docs/THREAT_MODEL.md" },
+      { label: "MCP tools", href: "https://github.com/anshitraj/algebra-ai/blob/main/docs/MCP.md" },
+      { label: "Local development", href: "https://github.com/anshitraj/algebra-ai/blob/main/docs/LOCAL_DEVELOPMENT.md" },
     ],
   },
   {
     heading: "Project",
     links: [
-      { label: "GitHub", href: "https://github.com/anshitraj/algebra" },
-      { label: "Build plan", href: "https://github.com/anshitraj/algebra/blob/main/BUILD_PLAN.md" },
+      { label: "GitHub", href: "https://github.com/anshitraj/algebra-ai" },
+      { label: "Pay.sh", href: "https://pay.sh" },
+      { label: "Circle Agent Marketplace", href: "https://agents.circle.com" },
     ],
   },
   {
@@ -57,7 +58,7 @@ export function Footer() {
               </span>
             </Link>
             <p className="mt-4 max-w-[26ch] text-sm leading-relaxed text-muted">
-              A non-custodial agentic-commerce control plane.
+              The policy-aware execution layer for autonomous agents on Solana.
             </p>
           </div>
 
@@ -84,8 +85,8 @@ export function Footer() {
 
         <div className="mt-16 flex flex-col gap-3 border-t border-border pt-8 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
           <p>
-            Algebra never holds your card number, CVV, wallet key or OTP. Store names and logos belong to their owners; Algebra isn&apos;t affiliated
-            with them.
+            Agents never hold a key: Algebra pays from a wallet it controls. Provider names belong to their owners; Algebra isn&apos;t affiliated
+            with them, with Pay.sh or with Circle.
           </p>
           <p>Apache-2.0 licensed.</p>
         </div>

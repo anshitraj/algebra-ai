@@ -18,9 +18,9 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           <div className="w-full max-w-[380px]">{children}</div>
         </main>
         <p className="text-xs text-muted">
-          Algebra never sees your card number, CVV, wallet key or OTP.{" "}
+          Agents never hold a key: Algebra pays from a wallet it controls, inside limits you set.{" "}
           <Link href="/#security" className="underline decoration-border-strong hover:text-foreground">
-            How we keep it that way
+            How that works
           </Link>
         </p>
       </div>
@@ -32,9 +32,9 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
 }
 
 const STEPS = [
-  { label: "Found it on 3 merchants", detail: "Best: ₹120 on Instamart" },
-  { label: "Checked your guardrails", detail: "Under ₹1,000 · auto-approve" },
-  { label: "Order placed", detail: "Arriving in 12 min" },
+  { label: "Found 3 providers on Pay.sh and Circle", detail: "Best quote: 0.003 USDC · Birdeye" },
+  { label: "Checked the Spend Pass", detail: "Under your 0.05 USDC line · approved" },
+  { label: "Paid in USDC on Solana", detail: "Result delivered · receipt signed" },
 ];
 
 // A looping, honest miniature of the product: one request, the checks it
@@ -53,13 +53,13 @@ function Vignette() {
     <div className="flex h-full flex-col justify-between p-12 xl:p-16">
       <div className="max-w-md">
         <p className="font-display text-[2rem] leading-[1.1] font-semibold tracking-tight text-balance text-foreground xl:text-[2.4rem]">
-          Your agent shops.
+          Your agent pays.
           <br />
-          <span className="text-primary">You keep the keys.</span>
+          <span className="text-primary">You hold the limits.</span>
         </p>
         <p className="mt-4 max-w-sm text-[0.95rem] leading-relaxed text-muted">
-          Every purchase clears guardrails you set, on the server, before a rupee moves. Anything above your line waits
-          for your tap.
+          Every payment clears the Spend Pass you set, on the server, before any USDC moves. Anything above your line
+          waits for your yes.
         </p>
       </div>
 
@@ -67,7 +67,7 @@ function Vignette() {
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-[0_18px_50px_-24px_rgba(11,16,32,0.35)]">
           <div className="flex justify-end">
             <p className="max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-tint">
-              🥤 Get me 2 Coke Zero, keep it under ₹150
+              Token risk for this mint, at most 0.01 USDC
             </p>
           </div>
           <ol className="mt-5 space-y-3">

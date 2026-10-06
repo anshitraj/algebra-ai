@@ -10,9 +10,9 @@ export function DashboardSection() {
             Every decision, on the record.
           </h2>
           <p className="mt-4 text-[1.0625rem] leading-relaxed text-muted">
-            The same console an operator uses to approve a purchase — live
-            stage tracking and the real audit trail underneath it, not a
-            spinner standing in for what actually happened.
+            The same console you use to approve a payment: the real coordinator events
+            underneath it, and a signed receipt at the end, not a spinner standing in
+            for what actually happened.
           </p>
         </div>
 

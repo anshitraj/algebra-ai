@@ -3,38 +3,38 @@ import { Container } from "./container";
 const rows = [
   {
     word: "WHO",
-    body: "The agent and the user it acts for.",
-    field: "Input.AgentID / UserID",
+    body: "The agent, and the Spend Pass it acts under.",
+    field: "Reservation.ExecutorAgentID / ExecutorPassID",
   },
   {
     word: "WHAT",
-    body: "The item the agent is trying to buy.",
-    field: "PurchaseIntent.Items[].Query",
+    body: "The outcome it asked for: a capability and a hash of its input.",
+    field: "Intent.Capability / InputHash",
   },
   {
     word: "WHERE",
-    body: "The merchant the purchase would go through.",
-    field: "Input.Merchant",
+    body: "The provider that would be paid, which the pass must allow.",
+    field: "Reservation.ProviderID",
   },
   {
     word: "HOW MUCH",
-    body: "The amount, and what's already been spent today.",
-    field: "Input.AmountMinorUnits / SpendTodayMinorUnits",
+    body: "The quote against the budget, and what the pass has already used.",
+    field: "QuoteMinor / PassExposure",
   },
   {
     word: "WITH WHAT",
-    body: "The payment source — card, wallet, or UPI alias.",
-    field: "Input.PaymentProfile",
+    body: "The rail and the asset: USDC at Circle's real address on Solana, and nothing else.",
+    field: "Rail / Network / Asset",
   },
   {
     word: "WHY",
-    body: "The category the purchase falls under.",
-    field: "Input.Category",
+    body: "The category the pass allows, such as digital services.",
+    field: "Pass.AllowedCategories",
   },
   {
     word: "UNDER WHAT CONDITIONS",
-    body: "Per-transaction and daily caps, blocked categories, international rules.",
-    field: "Rules{MaxPerTransactionMinorUnits, ...}",
+    body: "Per-call and total budget, the ask-me line, expiry, and one live attempt per intent.",
+    field: "Pass{MaxPerPurchase, Budget, ApproveAbove, ExpiresAt}",
   },
 ];
 
@@ -49,10 +49,10 @@ export function PolicyDimensions() {
             </h2>
             <p className="mt-4 max-w-sm text-[1.0625rem] leading-relaxed text-muted">
               <code className="font-mono text-sm text-foreground">
-                policy.Input
+                Spend Pass + intent
               </code>{" "}
-              is the full context a decision is made from — assembled by
-              Algebra from persisted state, never supplied by the agent.
+              is the full context a decision is made from, assembled by
+              Algebra from persisted state and never supplied by the agent.
             </p>
           </div>
 

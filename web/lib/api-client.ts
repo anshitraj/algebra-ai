@@ -11,6 +11,8 @@ import type {
   BillingStatus,
   CheckoutSession,
   CommerceProfile,
+  EconIntent,
+  EconStats,
   ExecuteResult,
   Guardrails,
   GuardrailsResponse,
@@ -31,6 +33,8 @@ import type {
   PaymentSource,
   Plugin,
   PolicyDecision,
+  ProviderDetail,
+  ProviderListing,
   Quote,
   SessionInfo,
   ShippingProfile,
@@ -202,6 +206,46 @@ export function createPass(p: NewPass) {
 
 export function revokePass(id: string) {
   return apiFetch<{ ok: boolean }>(`/api/v1/me/passes/${encodeURIComponent(id)}/revoke`, { method: "POST" });
+}
+
+// --- the catalogs of paid APIs (public) ---
+
+export function listProviders(params: { q?: string; category?: string; source?: string; limit?: number; offset?: number } = {}) {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.category) qs.set("category", params.category);
+  if (params.source) qs.set("source", params.source);
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.offset) qs.set("offset", String(params.offset));
+  const query = qs.toString();
+  return apiFetch<ProviderListing>(`/api/v1/providers${query ? `?${query}` : ""}`);
+}
+
+/** id is a provider ID ("paysh:birdeye.data", "circle:birdeye") or a catalog's own name for it. */
+export function getProvider(id: string) {
+  return apiFetch<ProviderDetail>(`/api/v1/providers/${id.split("/").map(encodeURIComponent).join("/")}`);
+}
+
+// --- economic intents ---
+
+export function listMyEconomicIntents(limit = 50) {
+  return apiFetch<{ intents: EconIntent[] | null }>(`/api/v1/me/economic-intents?limit=${limit}`);
+}
+
+export function getMyEconomicIntent(id: string) {
+  return apiFetch<EconIntent>(`/api/v1/me/economic-intents/${encodeURIComponent(id)}`);
+}
+
+export function getMyEconomicStats(days = 30) {
+  return apiFetch<{ days: number; stats: EconStats; note: string }>(`/api/v1/me/economic-intents/stats?days=${days}`);
+}
+
+export function approveEconomicIntent(id: string) {
+  return apiFetch<EconIntent>(`/api/v1/me/economic-intents/${encodeURIComponent(id)}/approve`, { method: "POST" });
+}
+
+export function cancelEconomicIntent(id: string) {
+  return apiFetch<EconIntent>(`/api/v1/me/economic-intents/${encodeURIComponent(id)}/cancel`, { method: "POST" });
 }
 
 /** Public: anyone can check a receipt — it carries nothing personal. */

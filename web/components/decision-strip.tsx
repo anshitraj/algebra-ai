@@ -10,9 +10,9 @@ type Step = {
 };
 
 const steps: Step[] = [
-  { intent: "Coke Zero + chips, under ₹400", decision: "ALLOW", reason: "AMOUNT_OK · MERCHANT_OK" },
-  { intent: "Noise-cancelling headphones, ₹18,500", decision: "REQUIRE_APPROVAL", reason: "AT_OR_ABOVE_APPROVAL_THRESHOLD" },
-  { intent: "Amazon gift card, ₹2,000", decision: "DENY", reason: "CATEGORY_BLOCKED" },
+  { intent: "Token risk for a new mint, up to 0.01 USDC", decision: "ALLOW", reason: "PASS_OK" },
+  { intent: "Arkham entity balances, 1.00 USDC", decision: "REQUIRE_APPROVAL", reason: "PASS_APPROVAL_REQUIRED" },
+  { intent: "Any provider that isn't on this pass", decision: "DENY", reason: "PASS_MERCHANT_NOT_ALLOWED" },
 ];
 
 const decisionStyle: Record<Step["decision"], string> = {
@@ -34,9 +34,9 @@ export function DecisionStrip() {
   return (
     <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-[0_1px_2px_rgba(11,16,32,0.06),0_12px_28px_-16px_rgba(11,16,32,0.18)]">
       <div className="flex items-center gap-2 text-xs text-muted">
-        <span className="font-mono">purchase_intent</span>
+        <span className="font-mono">economic_intent</span>
         <span className="h-1 w-1 rounded-full bg-border-strong" />
-        <span>evaluated by policy.LocalProvider</span>
+        <span>checked against the Spend Pass</span>
       </div>
 
       <AnimatePresence mode="wait">

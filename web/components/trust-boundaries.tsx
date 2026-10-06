@@ -3,23 +3,23 @@ import { Container } from "./container";
 const boundaries = [
   {
     pair: "User ↔ Agent",
-    body: "User authentication is separate from agent authorization. Logging in as a person and being trusted as an agent are two different facts.",
+    body: "User authentication is separate from agent authorization. Logging in as a person and being trusted as an agent are two different facts: an agent's token can't approve a payment, change a limit or issue itself more authority.",
   },
   {
     pair: "Agent ↔ Algebra",
-    body: "Every mutating call carries a user, agent, and client ID. Agents get scoped capabilities — shopping.create_intent, payments.request — never raw credentials.",
+    body: "An agent is bound to one Spend Pass and asks for an outcome, never for a payment. It never holds a key, a card or a payment value, and what a provider sends back is handed over as data to read, not instructions to follow.",
   },
   {
     pair: "Algebra ↔ Policy",
-    body: "ALLOW / DENY / REQUIRE_APPROVAL is computed server-side from persisted state and logged. A DENY is terminal — no agent or LLM can talk its way past it.",
+    body: "ALLOW / DENY / REQUIRE_APPROVAL is computed server-side from persisted state and logged. A DENY is terminal. The pass budget is checked under a database lock, so two requests can't both fit into the same remaining budget.",
   },
   {
-    pair: "Algebra ↔ Privacy",
-    body: "An alias like shipping:home resolves to a real address only at merchant-execution time. The agent never sees the resolved value; every resolution is audited.",
+    pair: "Algebra ↔ Providers",
+    body: "Providers are untrusted, and so are the catalogs' listings. Algebra reaches them only at public addresses, asks for a price before paying and checks it again at payment, never follows a redirect with a payment attached, and refuses a token that merely calls itself USDC.",
   },
   {
-    pair: "Algebra ↔ Payment rails",
-    body: "No PAN, CVV, or private key ever reaches Algebra's process. Cards go through a tokenization vault; crypto is non-custodial — the wallet signs, Algebra never touches the key.",
+    pair: "Algebra ↔ Solana",
+    body: "Algebra pays from a wallet it controls, so the pass is the cap and a hard per-payment ceiling sits in the payment rail itself. A payment is proven from chain state, not from a provider's word, and an unknown outcome is never retried as if it had failed.",
   },
 ];
 
