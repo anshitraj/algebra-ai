@@ -486,6 +486,11 @@ func parse(p Profile, items []netItem, now time.Time) (*snapshot, error) {
 		if !slices.Contains(methods, method) {
 			continue
 		}
+		// Express-style ":param" segments become {param}: one placeholder form
+		// is all the runner has to fill in.
+		if t := catalog.BraceTemplate(u.Path); t != u.Path {
+			u.Path, u.RawPath = t, ""
+		}
 		host := strings.ToLower(u.Hostname())
 		name := catalog.CleanText(firstNonEmpty(it.Metadata.Provider.Name, it.ServiceName, it.Metadata.ServiceName, host), catalog.MaxTitle)
 		slug := catalog.Slug(name, 48)
@@ -511,7 +516,9 @@ func parse(p Profile, items []netItem, now time.Time) (*snapshot, error) {
 		if pay.PriceMinor < 0 {
 			continue // not payable in Circle's USDC on this cluster
 		}
-		path := strings.TrimPrefix(u.EscapedPath(), "/")
+		// A URL writes braces as %7B and %7D; a person reading the path doesn't
+		// want to see that.
+		path := catalog.UnescapeBraces(strings.TrimPrefix(u.EscapedPath(), "/"))
 		if u.RawQuery != "" {
 			path += "?" + u.RawQuery
 		}
@@ -536,13 +543,10 @@ func parse(p Profile, items []netItem, now time.Time) (*snapshot, error) {
 				desc: catalog.CleanText(it.Metadata.Provider.Description, catalog.MaxDescription),
 				ep: catalog.Endpoint{
 					Capability: catalog.CapabilityID(p.CapabilityPrefix+slug, method, path),
-					Method:     method, Path: path, URL: u.String(),
+					Method:     method, Path: path, URL: catalog.UnescapeBraces(u.String()), PathParams: catalog.PathParams(path),
 					Description: catalog.CleanText(firstNonEmpty(it.Metadata.Description, it.Description), catalog.MaxDescription),
 					InputSchema: inputOf(it), Callable: true,
 				},
-			}
-			if strings.ContainsAny(u.Path, "{}") || strings.Contains(u.Path, "/:") {
-				r.ep.Callable, r.ep.Reason = false, "the path has parameters, which Algebra can't fill in yet"
 			}
 			recs[key] = r
 			order = append(order, key)

@@ -121,6 +121,8 @@ export type ProviderEndpoint = {
   /** The request's JSON Schema, when the catalog publishes one. */
   input_schema?: unknown;
   description: string;
+  /** The parameters of a templated path, in order. The call's input must name each. */
+  path_params?: string[];
   callable: boolean;
   not_callable_reason?: string;
 };

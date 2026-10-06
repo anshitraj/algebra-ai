@@ -93,8 +93,8 @@ func TestCircleRealSample(t *testing.T) {
 		!e.Callable || len(e.Payments) != 1 || e.Payments[0].PayTo == "" {
 		t.Errorf("endpoint: %+v", e)
 	}
-	if e := snap.endpoints["circle:agentic-reservations"][0]; e.Callable {
-		t.Errorf("a templated path is listed but not callable: %+v", e)
+	if e := snap.endpoints["circle:agentic-reservations"][0]; !e.Callable || len(e.PathParams) == 0 || strings.Contains(e.Path, "%7B") {
+		t.Errorf("a templated path is callable, names its parameters and reads as braces: %+v", e)
 	}
 	for _, e := range snap.endpoints["circle:exa"] {
 		if e.Method != "POST" || len(e.InputSchema) == 0 {
@@ -382,5 +382,45 @@ func TestClientRefusesNonPublicAddresses(t *testing.T) {
 	c := New(Config{Profile: p, HTTP: safehttp.New(safehttp.Options{})})
 	if _, err := c.List(context.Background(), catalog.Filter{}); !errors.Is(err, catalog.ErrUnavailable) || f.hits != 0 {
 		t.Errorf("loopback must not be read: %v hits=%d", err, f.hits)
+	}
+}
+
+func TestTemplatedPathsAreCallableAndKeepOneFormOfPlaceholder(t *testing.T) {
+	express := item(func(m map[string]any) { m["resource"] = "https://api.ok.example/api/token/:mint/price/:chain" })
+	braces := item(func(m map[string]any) { m["resource"] = "https://api.ok.example/v1/{address}/info" })
+	plain := item(nil)
+	snap, err := parse(Circle(""), listed("solana", express, braces, plain), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	eps := snap.endpoints["circle:ok-provider"]
+	if len(eps) != 3 {
+		t.Fatalf("endpoints: %d", len(eps))
+	}
+	by := map[string]catalog.Endpoint{}
+	for _, e := range eps {
+		by[e.Path] = e
+	}
+	if e := by["api/token/{mint}/price/{chain}"]; !e.Callable || strings.Join(e.PathParams, ",") != "mint,chain" || e.URL != "https://api.ok.example/api/token/{mint}/price/{chain}" {
+		t.Errorf("an express-style path becomes braces and lists its parameters: %+v", e)
+	}
+	if e := by["v1/{address}/info"]; !e.Callable || strings.Join(e.PathParams, ",") != "address" || e.URL != "https://api.ok.example/v1/{address}/info" {
+		t.Errorf("a braced path reads as braces, not %%7B: %+v", e)
+	}
+	if e := by["v1/thing"]; !e.Callable || len(e.PathParams) != 0 {
+		t.Errorf("a plain path has no parameters: %+v", e)
+	}
+
+	// And the candidates the runner gets still carry the template.
+	d := &catalog.Detail{Provider: snap.providers[0], Endpoints: eps}
+	cands, _ := catalog.Candidates(d, routing.SourceCircle, nil)
+	var templated int
+	for _, c := range cands {
+		if strings.Contains(c.Endpoint, "%7Bmint%7D") || strings.Contains(c.Endpoint, "%7Baddress%7D") {
+			templated++
+		}
+	}
+	if len(cands) != 3 || templated != 2 {
+		t.Errorf("candidates: %d, templated %d", len(cands), templated)
 	}
 }

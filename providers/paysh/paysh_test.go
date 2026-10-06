@@ -17,6 +17,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/platform/safehttp"
+	"github.com/project-algebra/algebra/providers/catalog"
 )
 
 func fixture(t testing.TB, name string) []byte {
@@ -171,8 +172,8 @@ func TestBuildEndpoints(t *testing.T) {
 	if e := byPath["zero"]; !e.Free {
 		t.Errorf("$0 is free: %+v", e)
 	}
-	if e := byPath["v1/{id}/x"]; e.Callable || e.Reason == "" || e.PriceMinor != 2000 {
-		t.Errorf("a templated path is listed but can't be called yet: %+v", e)
+	if e := byPath["v1/{id}/x"]; !e.Callable || e.Reason != "" || e.PriceMinor != 2000 || !slices.Equal(e.PathParams, []string{"id"}) {
+		t.Errorf("a templated path is callable and names its parameters: %+v", e)
 	}
 	if e := byPath["unclear"]; !e.Callable || e.Free || e.PriceMinor != 0 {
 		t.Errorf("an unreadable price is not free: %+v", e)
@@ -301,14 +302,23 @@ func TestDetailCandidates(t *testing.T) {
 		t.Errorf("candidate: %+v", c)
 	}
 
-	// Templated paths are listed, not offered.
+	// Templated paths are offered too, with their parameters named.
 	tp, _ := cat.find("solana-foundation/google/translate")
 	td := &Detail{Provider: tp, Endpoints: buildEndpoints(tp, parseEndpointTable(string(fixture(t, "google-translate.md"))))}
 	if len(td.Endpoints) != 7 {
 		t.Fatalf("endpoints = %d", len(td.Endpoints))
 	}
-	if c, _ := candidatesOf(td); len(c) != 0 {
-		t.Errorf("every Google Translate path has parameters, so none is callable yet: %d", len(c))
+	tc, _ := candidatesOf(td)
+	if len(tc) != 7 {
+		t.Fatalf("every Google Translate path has parameters and every one is callable: %d", len(tc))
+	}
+	for _, e := range td.Endpoints {
+		if len(e.PathParams) == 0 || e.PathParams[0] != "projectsId" {
+			t.Errorf("%s names its parameters: %v", e.Path, e.PathParams)
+		}
+	}
+	if c := tc[0]; !strings.Contains(c.Endpoint, "%7BprojectsId%7D") {
+		t.Errorf("the candidate keeps the template for the runner to fill: %s", c.Endpoint)
 	}
 
 	// A provider whose gateway is a private address is dropped with a reason, not offered.
@@ -684,8 +694,8 @@ func FuzzParseEndpointTable(f *testing.F) {
 			if !strings.HasPrefix(e.URL, "https://gw.example/") || strings.Contains(e.Path, "..") || !slices.Contains(httpMethods, e.Method) {
 				t.Fatalf("endpoint %+v", e)
 			}
-			if e.Callable && strings.ContainsAny(e.Path, "{}") {
-				t.Fatalf("a templated path can't be callable: %+v", e)
+			if got, want := len(e.PathParams), len(catalog.PathParams(e.Path)); got != want {
+				t.Fatalf("a templated path names its parameters: %+v", e)
 			}
 		}
 	})

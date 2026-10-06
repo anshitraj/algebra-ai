@@ -47,6 +47,8 @@ export const AGENT_TOOLS: AgentTool[] = [
     description:
       "List one provider's endpoints: the capability ID to pay for, HTTP method and path, what it does, its listed price on this " +
       "chat's network, whether Algebra can call it, and the input it expects (JSON Schema, when the catalog publishes one). " +
+      "An endpoint with path_params has placeholders in its path: pass each as a field of the same name in pay_and_call's input " +
+      "(it fills the path; the other fields become the query or the body). " +
       "Call it before pay_and_call so you pass the right capability and input.",
     parameters: {
       type: "object",
@@ -73,7 +75,8 @@ export const AGENT_TOOLS: AgentTool[] = [
         ...providerIdParam,
         input: {
           type: "object",
-          description: "The request: query parameters for a GET, the JSON body for a POST. Follow the endpoint's input schema.",
+          description:
+            "The request: query parameters for a GET, the JSON body for a POST. Follow the endpoint's input schema, and include a field for each of the endpoint's path_params.",
           properties: {},
         },
         max_price_usdc: {

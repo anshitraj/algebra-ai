@@ -66,8 +66,8 @@ func splitRow(line string) []string {
 }
 
 // buildEndpoints turns table rows into endpoints, dropping any whose method or
-// path can't be trusted. An endpoint with {parameters} in its path is listed
-// but not callable: the runner calls a concrete URL.
+// path can't be trusted. An endpoint with {parameters} in its path is callable
+// and lists them (PathParams): the runner fills the path from the call's input.
 func buildEndpoints(p Provider, rows []endpointRow) []Endpoint {
 	out := make([]Endpoint, 0, len(rows))
 	for _, r := range rows {
@@ -76,7 +76,7 @@ func buildEndpoints(p Provider, rows []endpointRow) []Endpoint {
 			continue
 		}
 		e := Endpoint{
-			Capability: capabilityID(p.FQN, r.method, r.path), Method: r.method, Path: r.path,
+			Capability: capabilityID(p.FQN, r.method, r.path), Method: r.method, Path: r.path, PathParams: catalog.PathParams(r.path),
 			URL: p.ServiceURL + "/" + r.path, Pricing: cleanText(r.pricing, 60), Description: cleanText(r.description, maxDescription),
 		}
 		price := strings.ToLower(e.Pricing)
@@ -89,9 +89,7 @@ func buildEndpoints(p Provider, rows []endpointRow) []Endpoint {
 				e.PriceMinor, e.Free = v, v == 0
 			}
 		}
-		if strings.ContainsAny(r.path, "{}") {
-			e.Reason = "the path has parameters, which Algebra can't fill in yet"
-		} else if u, err := url.Parse(e.URL); err != nil || u.Host == "" {
+		if u, err := url.Parse(e.URL); err != nil || u.Host == "" {
 			e.Reason = "the endpoint isn't a valid URL"
 		} else {
 			e.Callable = true

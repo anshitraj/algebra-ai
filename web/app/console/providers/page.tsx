@@ -303,6 +303,11 @@ function EndpointRow({ e, here, selected, onPick }: { e: ProviderEndpoint; here:
           /{e.path}
         </p>
         {e.description && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{e.description}</p>}
+        {e.callable && e.path_params && e.path_params.length > 0 && (
+          <p className="mt-0.5 text-xs text-muted">
+            Takes {e.path_params.map((p) => `{${p}}`).join(", ")} in the path: give each in the input.
+          </p>
+        )}
         {!e.callable && e.not_callable_reason && <p className="mt-0.5 text-xs text-accent">Listed only: {e.not_callable_reason}.</p>}
         {e.callable && !here && <p className="mt-0.5 text-xs text-muted">Not payable on this network: switch at the top.</p>}
       </div>
@@ -331,10 +336,12 @@ function EndpointRow({ e, here, selected, onPick }: { e: ProviderEndpoint; here:
 function UseIt({ provider, e, network }: { provider: ProviderDetail; e: ProviderEndpoint; network: string }) {
   const price = e.payments?.find((p) => p.network === network)?.price_minor ?? e.price_minor;
   const budget = Math.max(price * 2, 10_000);
+  // A templated path takes its parameters from the input: one field for each.
+  const input = Object.fromEntries((e.path_params ?? []).map((p) => [p, `<${p}>`]));
   const body = {
     capability: e.capability,
     providers: [provider.id],
-    input: {},
+    input,
     budget_max_minor: budget,
     constraints: { allowed_networks: [network] },
   };
@@ -345,7 +352,7 @@ function UseIt({ provider, e, network }: { provider: ProviderDetail; e: Provider
   const mcp = `algebra.execute({
   capability: "${e.capability}",
   providers: ["${provider.id}"],
-  input: { ... },
+  input: ${JSON.stringify(input).replace(/"([A-Za-z_]+)":/g, "$1: ").replace(/^{}$/, "{ ... }")},
   max_price_usdc: "${(budget / 1_000_000).toString()}"
 })`;
   return (

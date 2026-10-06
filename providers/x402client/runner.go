@@ -249,7 +249,9 @@ func (r *Runner) Run(ctx context.Context, call app.StepCall) app.StepObservation
 		}
 	}
 
-	auth, err := call.Pay(ctx, app.PaymentRequest{Requirements: reqs, Resource: q.Endpoint})
+	// The resource being paid for is the URL actually called, with its path
+	// parameters filled in, not the template.
+	auth, err := call.Pay(ctx, app.PaymentRequest{Requirements: reqs, Resource: spec.url})
 	if err != nil {
 		return fail(routing.FailPayment, "payment authority refused: %v", err)
 	}
@@ -400,13 +402,18 @@ func (s callSpec) hash() string {
 	return econ.HashBytes(b)
 }
 
-// buildSpec turns an intent's canonical input into a request. For GET and
-// DELETE the input's top-level scalar fields become query parameters; for
-// POST, PUT and PATCH the input is the JSON body. With no method, an empty
-// input means GET and anything else POST.
+// buildSpec turns an intent's canonical input into a request. A templated
+// endpoint (".../{chain}/tokens/{mint}") is first filled in from the input
+// fields of the same names, which then leave the input (see expandPath). For
+// GET and DELETE the input's remaining top-level scalar fields become query
+// parameters; for POST, PUT and PATCH the remaining input is the JSON body.
+// With no method, an empty input means GET and anything else POST.
 func buildSpec(endpoint, method string, input json.RawMessage) (callSpec, error) {
 	canon, err := econ.Canonicalize(input)
 	if err != nil {
+		return callSpec{}, err
+	}
+	if endpoint, canon, err = expandPath(endpoint, canon); err != nil {
 		return callSpec{}, err
 	}
 	method = strings.ToUpper(strings.TrimSpace(method))

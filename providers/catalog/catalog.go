@@ -138,6 +138,10 @@ type Endpoint struct {
 	Path       string `json:"path"`
 	// URL is where the call goes; for a templated path it still has {params}.
 	URL string `json:"url"`
+	// PathParams are the parameters of a templated path, in order. A call's
+	// input must name each of them: they fill the path, and the rest of the
+	// input becomes the query or the body.
+	PathParams []string `json:"path_params,omitempty"`
 	// Pricing is the price as the catalog states it.
 	Pricing    string `json:"pricing"`
 	PriceMinor int64  `json:"price_minor"`
@@ -151,7 +155,8 @@ type Endpoint struct {
 	Description string `json:"description"`
 	// InputSchema is the request's JSON Schema when the catalog publishes one.
 	InputSchema json.RawMessage `json:"input_schema,omitempty"`
-	// Callable: Algebra can run it today. When it can't, Reason says why.
+	// Callable: Algebra can run it. When it can't, Reason says why. A
+	// templated endpoint is callable: the runner fills the path from the input.
 	Callable bool   `json:"callable"`
 	Reason   string `json:"not_callable_reason,omitempty"`
 }
