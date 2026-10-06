@@ -41,8 +41,9 @@ type StepRunner interface {
 // StepCall is what a runner is given for one attempt.
 type StepCall struct {
 	Quote routing.Quote
-	// Input is the intent's own canonical input: the call must be made with
-	// exactly this, since it is what the intent's identity commits to.
+	// Input is the intent's own canonical input, through the quote's input
+	// adapter when it has one: the call must be made with exactly this, since
+	// the intent's identity commits to the one and the quote to the other.
 	Input       json.RawMessage
 	Reservation econ.Reservation
 	// Pay asks the coordinator for single-use payment authority bound to this
@@ -155,6 +156,8 @@ type ExecutionService struct {
 	quoteTimeout time.Duration
 	// results keeps the answers to paid calls (see SetResults).
 	results *ResultVault
+	// health is the free probe's record of providers; nil runs without it.
+	health *HealthService
 }
 
 // NewExecutionService builds the service with the generic evaluator
@@ -250,10 +253,15 @@ func (s *ExecutionService) quote(ctx context.Context, view *IntentView, c routin
 	if !ok {
 		return routing.Quote{}, fmt.Errorf("%w: nothing can run %s candidates yet", shared.ErrNotImplemented, c.ExecutionType)
 	}
-	q, err := runner.Quote(ctx, c, view.Input)
+	input, err := c.Input.Apply(view.Input)
+	if err != nil {
+		return routing.Quote{}, fmt.Errorf("%w: the input doesn't fit %s: %s", shared.ErrConflict, c.Provider, err)
+	}
+	q, err := runner.Quote(ctx, c, input)
 	if err != nil {
 		return routing.Quote{}, err
 	}
+	q.Input = c.Input
 	now := s.now().UTC()
 	q.ID, q.CandidateID, q.Capability, q.Provider = newID("quo"), c.ID, c.Capability, c.Provider
 	q.ExecutionType, q.Endpoint, q.Method, q.QuotedAt = c.ExecutionType, c.Endpoint, c.Method, now
@@ -375,6 +383,10 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 	var cands []routing.Candidate
 	var rejected []routing.Rejection
 	seen := map[string]bool{}
+	// The router's own guards (see execution_guards.go): what is down, priced
+	// like a trap, or on a network the intent can't pay on never takes one of
+	// the pricing slots below.
+	g := s.newGuards(ctx, req.Candidates)
 	for _, raw := range req.Candidates {
 		c, err := raw.Normalize()
 		if err != nil {
@@ -385,6 +397,11 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 			continue
 		}
 		seen[c.ID] = true
+		var held *routing.Rejection
+		if c, held = g.before(view, c); held != nil {
+			rejected = append(rejected, *held)
+			continue
+		}
 		if len(cands) >= MaxQuotedCandidates {
 			rejected = append(rejected, routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: RejectOutranked, Detail: fmt.Sprintf("only %d candidates are priced per request", MaxQuotedCandidates)})
 			continue
@@ -411,6 +428,10 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 			continue
 		}
 		if r := screen(view, c, quotes[i].q); r != nil {
+			rejected = append(rejected, *r)
+			continue
+		}
+		if r := g.after(c, quotes[i].q); r != nil {
 			rejected = append(rejected, *r)
 			continue
 		}
@@ -671,6 +692,12 @@ func (s *ExecutionService) Execute(ctx context.Context, req ExecuteRequest) (*Ex
 		return nil, fmt.Errorf("%w: the quote is for %q but the intent wants %q", shared.ErrConflict, q.Capability, view.Capability)
 	}
 
+	// The provider is called with the input its quote priced: the intent's
+	// own, through the candidate's adapter when it names things differently.
+	input, err := q.Input.Apply(view.Input)
+	if err != nil {
+		return nil, fmt.Errorf("%w: the input doesn't fit %s: %s", shared.ErrConflict, q.Provider, err)
+	}
 	rsv, err := s.econ.Reserve(ctx, req.AgentID, req.IntentID, ReserveRequest{
 		ProviderID: q.Provider, Rail: rail, QuoteMinor: q.Cost.Total(), Semantics: q.Semantics,
 	})
@@ -695,7 +722,7 @@ func (s *ExecutionService) Execute(ctx context.Context, req ExecuteRequest) (*Ex
 		Payment: routing.PaymentNotAttempted, Delivery: econ.FulfillmentNone, Network: q.Network, Asset: q.Asset, Test: q.Test,
 	}
 	obs := s.run(ctx, runner, StepCall{
-		Quote: q, Input: view.Input, Reservation: *begun,
+		Quote: q, Input: input, Reservation: *begun,
 		Pay: func(ctx context.Context, pr PaymentRequest) (*PaymentAuthority, error) {
 			return s.econ.AuthorizePayment(ctx, req.AgentID, req.IntentID, rsv.ID, pr)
 		},

@@ -29,6 +29,15 @@ type CandidateResolver struct {
 	Configured map[string][]routing.Candidate
 	// Catalog may be nil.
 	Catalog CatalogSource
+	// Classes may be nil. With it, a capability that names a class
+	// ("token.price") is every provider of that class, not one endpoint.
+	Classes ClassSource
+}
+
+// ClassSource gives the candidates of a class of work across every catalog
+// (see routing.Class), each with the input adapter that fits its provider.
+type ClassSource interface {
+	ClassCandidates(ctx context.Context, classID string) ([]routing.Candidate, error)
 }
 
 // Resolve is ResolveCandidates plus the catalog:
@@ -41,6 +50,9 @@ type CandidateResolver struct {
 //     catalog;
 //   - endpoints the agent supplies are, as always, unverified web finds.
 func (r CandidateResolver) Resolve(ctx context.Context, capability string, named []string, supplied []CandidateInput) ([]routing.Candidate, []routing.Rejection) {
+	if class, ok := routing.ClassByID(capability); ok && r.Classes != nil {
+		return r.resolveClass(ctx, class, named, supplied)
+	}
 	if r.Catalog == nil {
 		return ResolveCandidates(capability, named, supplied, r.Configured)
 	}

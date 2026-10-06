@@ -89,6 +89,11 @@ func main() {
 		}
 	}()
 
+	// Free provider health probes (unpaid requests only).
+	if bundle.Health != nil {
+		go bundle.Health.Run(ctx)
+	}
+
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)

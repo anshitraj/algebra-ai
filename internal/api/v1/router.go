@@ -174,6 +174,10 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/merchants", api.listMerchants)
 	mux.HandleFunc("GET /api/v1/providers", api.listProviders)
 	mux.HandleFunc("GET /api/v1/providers/{id...}", api.getProvider)
+	mux.HandleFunc("GET /api/v1/classes", api.listClasses)
+	mux.HandleFunc("GET /api/v1/classes/{id}", api.getClass)
+	mux.HandleFunc("GET /api/v1/classes/{id}/health", api.getClassHealth)
+	mux.HandleFunc("POST /api/v1/classes/{id}/probe", api.probeClass)
 	mux.HandleFunc("GET /api/v1/rails", api.listRails)
 
 	mux.HandleFunc("POST /api/v1/profiles/shipping", api.createShippingProfile)

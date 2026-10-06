@@ -81,6 +81,9 @@ type Quote struct {
 	// Requirements is what the rail needs to pay: for x402, the provider's
 	// payment requirements verbatim.
 	Requirements json.RawMessage `json:"requirements,omitempty"`
+	// Input is the candidate's input adapter, carried so the paid call is
+	// made with exactly the input the quote priced.
+	Input *InputAdapter `json:"input_adapter,omitempty"`
 
 	QuotedAt   time.Time `json:"quoted_at"`
 	ValidUntil time.Time `json:"valid_until"`
@@ -116,6 +119,8 @@ func (q Quote) Validate() error {
 		return errors.New("payment requirements are too large")
 	case len(q.Requirements) > 0 && !json.Valid(q.Requirements):
 		return errors.New("payment requirements are not valid JSON")
+	case q.Input.Validate() != nil:
+		return q.Input.Validate()
 	}
 	if id, err := econ.NormalizeCapability(q.Capability); err != nil || id != q.Capability {
 		return errors.New("a quote's capability must be a normalised capability ID")
@@ -156,8 +161,11 @@ func (q Quote) Hash() string {
 		SlippageBps  int             `json:"slippage_bps"`
 		ImpactBps    int             `json:"price_impact_bps"`
 		Requirements json.RawMessage `json:"requirements"`
+		// Input is left out when nil, so a quote without an adapter hashes
+		// as it always did.
+		Input *InputAdapter `json:"input_adapter,omitempty"`
 	}{1, q.CandidateID, q.Capability, q.Provider, q.ExecutionType, q.Endpoint, q.Method, q.Cost, q.Asset, q.AssetAddress, q.Network,
-		q.PayTo, q.Semantics, q.ExpectedOutput, q.SlippageBps, q.PriceImpactBps, reqs}
+		q.PayTo, q.Semantics, q.ExpectedOutput, q.SlippageBps, q.PriceImpactBps, reqs, q.Input}
 	if terms.Requirements == nil {
 		terms.Requirements = json.RawMessage("null")
 	}

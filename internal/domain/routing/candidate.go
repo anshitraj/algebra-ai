@@ -194,6 +194,10 @@ type Candidate struct {
 	// PaymentRequirements is the provider's own requirements, verbatim
 	// (for x402, one entry of a 402 response's "accepts").
 	PaymentRequirements json.RawMessage `json:"payment_requirements,omitempty"`
+
+	// Input, when set, turns the intent's canonical input into the one this
+	// provider takes (see Class). Nil means the provider takes it as it is.
+	Input *InputAdapter `json:"input_adapter,omitempty"`
 }
 
 const (
@@ -299,6 +303,9 @@ func (c Candidate) Normalize() (Candidate, error) {
 			return c, errors.New("payment requirements are not valid JSON")
 		}
 		c.PaymentRequirements = slices.Clone(c.PaymentRequirements)
+	}
+	if err := c.Input.Validate(); err != nil {
+		return c, err
 	}
 
 	c.ID = c.computeID()
@@ -503,6 +510,9 @@ func mergeInto(a, b Candidate) Candidate {
 	}
 	if len(out.PaymentRequirements) == 0 {
 		out.PaymentRequirements = slices.Clone(b.PaymentRequirements)
+	}
+	if out.Input == nil {
+		out.Input = b.Input
 	}
 	return out
 }

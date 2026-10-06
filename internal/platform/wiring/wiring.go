@@ -106,6 +106,12 @@ type Bundle struct {
 	// simulated one, plus the Pay.sh catalog and the endpoints an agent
 	// supplies itself.
 	Candidates app.CandidateResolver
+	// Classes groups the catalogs' endpoints by the work they do, for routing
+	// across providers and for the console's comparison. Nil when the
+	// catalogs are off.
+	Classes *catalog.ClassIndex
+	// Health probes providers without paying, for the router and console.
+	Health *app.HealthService
 	// SolanaRails are the Solana payment rails running (mainnet, devnet or
 	// both), for the console's wallet status.
 	SolanaRails []*solanax402.Rail
@@ -370,9 +376,29 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	}
 	directory := buildDirectory(cfg)
 	candidates := app.CandidateResolver{Configured: execProviders}
+	var classIndex *catalog.ClassIndex
+	var classes app.ClassSource
 	if directory != nil {
 		candidates.Catalog = catalogSource{directory}
+		classIndex = catalog.NewClassIndex(directory)
+		candidates.Classes, classes = classIndex, classIndex
+		// Build the index now, in the background, so the first agent to ask
+		// for a class doesn't wait for every catalog to be read.
+		go func() {
+			wctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			if _, _, err := classIndex.Summaries(wctx); err != nil {
+				log.Printf("wiring: building the class index failed (it is retried on first use): %v", err)
+			}
+		}()
 	}
+	// The free health probe: unpaid 402 requests, never a payment. Its
+	// findings keep dead and overcharging endpoints out of the router.
+	health := app.NewHealthService(execSvc, postgres.NewHealthRepo(db), classes)
+	if os.Getenv("ALGEBRA_HEALTH_PROBES") == "off" {
+		health.Interval = 0
+	}
+	execSvc.SetHealth(health)
 	onboardingSvc := app.NewOnboardingService(accountSvc, commerceProfileSvc, privacyResolver)
 	demoSvc := app.NewDemoService(accountSvc, onboardingSvc)
 	oauthProviders := map[string]identity.Provider{}
@@ -431,7 +457,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, Execution: execSvc, Candidates: candidates, Directory: directory, SolanaRails: solanaRails, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Directory: directory, SolanaRails: solanaRails, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,
