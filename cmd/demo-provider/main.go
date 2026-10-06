@@ -63,7 +63,23 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	if err := prepare(ctx, rpc, key, mint); err != nil {
-		log.Fatalf("demo-provider: %v", err)
+		if errors.Is(err, errWrongCluster) {
+			log.Fatalf("demo-provider: %v", err)
+		}
+		// Unpaid requests (prices, health probes) still work; payments need
+		// the wallet funded. Try again every minute until it is.
+		log.Printf("demo-provider: not ready to take payments yet: %v", err)
+		go func() {
+			for range time.Tick(time.Minute) {
+				c, done := context.WithTimeout(context.Background(), time.Minute)
+				err := prepare(c, rpc, key, mint)
+				done()
+				if err == nil {
+					log.Printf("demo-provider: ready to take payments")
+					return
+				}
+			}
+		}()
 	}
 	cancel()
 
@@ -119,6 +135,8 @@ func loadOrCreateKey(path string) (*solana.Keypair, bool, error) {
 	return k, true, nil
 }
 
+var errWrongCluster = errors.New("the RPC endpoint isn't devnet; this demo never runs elsewhere")
+
 // prepare checks the cluster, tops up SOL from the devnet faucet if the
 // wallet has almost none, and makes sure the wallet has a USDC account to be
 // paid into.
@@ -128,7 +146,7 @@ func prepare(ctx context.Context, rpc *solana.RPC, key *solana.Keypair, mint sol
 		return err
 	}
 	if g != solana.DevnetGenesisHash {
-		return errors.New("the RPC endpoint isn't devnet; this demo never runs elsewhere")
+		return errWrongCluster
 	}
 	me := key.PublicKey()
 	bal, err := rpc.GetBalance(ctx, me, solana.Confirmed)

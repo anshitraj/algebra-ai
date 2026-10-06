@@ -15,7 +15,9 @@ import (
 	"log"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -390,11 +392,10 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	directory := buildDirectory(cfg)
 	candidates := app.CandidateResolver{Configured: execProviders}
 	var classIndex *catalog.ClassIndex
-	var classes app.ClassSource
 	if directory != nil {
 		candidates.Catalog = catalogSource{directory}
 		classIndex = catalog.NewClassIndex(directory)
-		candidates.Classes, classes = classIndex, classIndex
+		candidates.Classes = classIndex
 		// Build the index now, in the background, so the first agent to ask
 		// for a class doesn't wait for every catalog to be read.
 		go func() {
@@ -407,7 +408,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	}
 	// The free health probe: unpaid 402 requests, never a payment. Its
 	// findings keep dead and overcharging endpoints out of the router.
-	health := app.NewHealthService(execSvc, postgres.NewHealthRepo(db), classes)
+	health := app.NewHealthService(execSvc, postgres.NewHealthRepo(db), candidates)
 	if os.Getenv("ALGEBRA_HEALTH_PROBES") == "off" {
 		health.Interval = 0
 	}
@@ -506,13 +507,16 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 		return nil, nil, nil, fmt.Errorf("ECONOMIC_PROVIDERS: %w", err)
 	}
 	httpOpts := safehttp.Options{}
+	// A provider the operator configured on this machine (the devnet demo
+	// providers, say) may be reached on its own port and no other.
+	httpOpts.LoopbackPorts = configuredLoopbackPorts(providers)
 	networks := map[string]string{}
 	if cfg.EconomicSandbox {
 		networks[chain.Sandbox] = "sandbox"
 		// The sandbox provider is served by this API, on this machine: allow
 		// loopback on its port and no other.
 		if port := listenPort(cfg.HTTPAddr); port > 0 {
-			httpOpts.LoopbackPorts = []int{port}
+			httpOpts.LoopbackPorts = append(httpOpts.LoopbackPorts, port)
 			c, err := routing.Candidate{
 				Capability: "solana.token-risk", Provider: sandboxpay.ProviderID, Name: "Sandbox token risk (simulated)",
 				ExecutionType: routing.ExecX402, Method: "POST", Network: chain.Sandbox, Sources: []routing.DiscoverySource{routing.SourceConfigured},
@@ -656,6 +660,9 @@ func ParseConfiguredProviders(raw string) (map[string][]routing.Candidate, error
 		Endpoint   string `json:"endpoint"`
 		Method     string `json:"method"`
 		Network    string `json:"network"`
+		// PriceMinor is the provider's listed price in micro-USDC, which the
+		// router holds its live 402 to.
+		PriceMinor int64 `json:"price_minor"`
 	}
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -667,6 +674,7 @@ func ParseConfiguredProviders(raw string) (map[string][]routing.Candidate, error
 		c, err := routing.Candidate{
 			Capability: e.Capability, Provider: e.Provider, Name: e.Name, ExecutionType: routing.ExecX402,
 			Endpoint: e.Endpoint, Method: e.Method, Network: e.Network, Sources: []routing.DiscoverySource{routing.SourceConfigured},
+			PriceMinor: e.PriceMinor, Asset: assetIfPriced(e.PriceMinor),
 		}.Normalize()
 		if err != nil {
 			return nil, fmt.Errorf("entry %d (%s): %w", i+1, e.Provider, err)
@@ -692,4 +700,31 @@ func listenPort(addr string) int {
 		return 0
 	}
 	return n
+}
+
+// assetIfPriced is USDC for a listed price, nothing otherwise.
+func assetIfPriced(minor int64) string {
+	if minor > 0 {
+		return "USDC"
+	}
+	return ""
+}
+
+// configuredLoopbackPorts are the ports of operator-configured providers on
+// this machine. Only the operator can configure a provider, so this opens no
+// door an agent controls.
+func configuredLoopbackPorts(providers map[string][]routing.Candidate) []int {
+	var ports []int
+	for _, cs := range providers {
+		for _, c := range cs {
+			u, err := url.Parse(c.Endpoint)
+			if err != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") {
+				continue
+			}
+			if p, err := strconv.Atoi(u.Port()); err == nil && p > 0 && !slices.Contains(ports, p) {
+				ports = append(ports, p)
+			}
+		}
+	}
+	return ports
 }

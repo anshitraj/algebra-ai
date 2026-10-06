@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"net/url"
 	"slices"
 	"strings"
@@ -92,4 +93,27 @@ func orderForClass(cs []routing.Candidate) {
 	slices.SortStableFunc(cs, func(a, b routing.Candidate) int {
 		return cmp.Or(cmp.Compare(trusted(a), trusted(b)), cmp.Compare(price(a), price(b)), strings.Compare(a.ID, b.ID))
 	})
+}
+
+// ClassCandidates is every candidate of a class, the operator's providers and
+// the catalogs', in the resolver's order: what the health probe sweeps.
+func (r CandidateResolver) ClassCandidates(ctx context.Context, classID string) ([]routing.Candidate, error) {
+	class, ok := routing.ClassByID(classID)
+	if !ok {
+		return nil, fmt.Errorf("unknown class %q", classID)
+	}
+	if r.Classes == nil {
+		var out []routing.Candidate
+		for _, cs := range r.Configured {
+			for _, c := range cs {
+				if c.Capability == class.ID {
+					out = append(out, c)
+				}
+			}
+		}
+		orderForClass(out)
+		return out, nil
+	}
+	out, _ := r.resolveClass(ctx, class, nil, nil)
+	return out, nil
 }
