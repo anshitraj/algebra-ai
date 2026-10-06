@@ -87,7 +87,11 @@ func (g guards) before(view *IntentView, c routing.Candidate) (routing.Candidate
 	}
 	if h, ok := g.health[c.ID]; ok {
 		if h.Status != HealthUp && h.Failures >= downAfter {
-			return reject(RejectProviderDown, fmt.Sprintf("%s on its last %d probes (%s)", h.Status, h.Failures, h.Error))
+			detail := fmt.Sprintf("%s on its last %d probes", h.Status, h.Failures)
+			if h.Error != "" {
+				detail += " (" + h.Error + ")"
+			}
+			return reject(RejectProviderDown, detail)
 		}
 		if h.Overcharges {
 			return reject(RejectPriceAboveListing, fmt.Sprintf("its last probe asked %s; it lists %s", usd(h.LivePriceMinor), usd(h.ListedPriceMinor)))

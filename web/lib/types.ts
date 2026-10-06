@@ -28,6 +28,10 @@ export type SpendPass = {
   spent_minor_units: number;
   remaining_minor_units: number;
   window_starts_at: string;
+  /** Velocity limits and the new-provider rule (see lib/routing-types). */
+  controls?: import("./routing-types").PassControls;
+  /** Set while the kill switch is on for this pass. */
+  frozen_at?: string;
 };
 
 export type PassConnect = { api_base: string; mcp_url?: string };

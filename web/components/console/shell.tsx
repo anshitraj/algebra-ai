@@ -10,7 +10,9 @@ import type { User } from "@/lib/types";
 import {
   IconChat,
   IconChevronDown,
+  IconGauge,
   IconGrid,
+  IconLock,
   IconInbox,
   IconList,
   IconLogOut,
@@ -32,11 +34,13 @@ const PRIMARY: NavItem[] = [
   { href: "/console/agent", label: "Agent chat", icon: <IconChat /> },
   { href: "/console", label: "Overview", icon: <IconGrid /> },
   { href: "/console/providers", label: "Providers", icon: <IconStore /> },
+  { href: "/console/routing", label: "Routing", icon: <IconGauge /> },
   { href: "/console/executions", label: "Executions", icon: <IconList />, badge: "approvals" },
 ];
 
 const CONTROLS: NavItem[] = [
   { href: "/console/passes", label: "Spend passes", icon: <IconShield /> },
+  { href: "/console/firewall", label: "Spend firewall", icon: <IconLock /> },
   { href: "/console/connect", label: "Connect an agent", icon: <IconPlug /> },
 ];
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -72,6 +73,26 @@ type HealthStore interface {
 	HealthFor(ctx context.Context, candidateIDs []string) (map[string]EndpointHealth, error)
 	// HealthForCapability lists one capability's records, newest first.
 	HealthForCapability(ctx context.Context, capability string) ([]EndpointHealth, error)
+}
+
+// ProbeResult is what an unpaid request found.
+type ProbeResult struct {
+	Status int
+	// Priced: a 402 offered USDC on Solana; PriceMinor is the cheapest such
+	// option, on Network, in Scheme ("exact" or "upto").
+	Priced     bool
+	PriceMinor int64
+	Network    string
+	Scheme     string
+	// Payable: this server has a rail for that network.
+	Payable bool
+	Detail  string
+}
+
+// Prober is a runner that can ask a provider's price without needing a rail
+// to pay it, so a probe's verdict is about the provider, not this server.
+type Prober interface {
+	Probe(ctx context.Context, c routing.Candidate, input json.RawMessage) (ProbeResult, error)
 }
 
 // MemHealthStore is a HealthStore in memory, for tests and for a server with
@@ -224,6 +245,46 @@ func (h *HealthService) probeOne(ctx context.Context, c routing.Candidate, input
 	pctx, cancel := context.WithTimeout(ctx, h.Timeout)
 	defer cancel()
 	start := h.now()
+	if prober, ok := h.exec.runners[c.ExecutionType].(Prober); ok {
+		res, err := func() (res ProbeResult, err error) {
+			defer func() {
+				if p := recover(); p != nil {
+					err = errors.New("the runner crashed")
+				}
+			}()
+			in, err := c.Input.Apply(input)
+			if err != nil {
+				return res, err
+			}
+			return prober.Probe(pctx, c, in)
+		}()
+		rec.LatencyMS = int(h.now().Sub(start) / time.Millisecond)
+		rec.CheckedAt = h.now().UTC()
+		rec.Checks++
+		rec.HTTPStatus = res.Status
+		switch {
+		case err != nil:
+			rec.Status, rec.Error = HealthDown, briefly(err.Error())
+			if errors.Is(err, context.DeadlineExceeded) {
+				rec.Error = "timed out"
+			}
+		case res.Status == 402 && res.Priced:
+			rec.Status, rec.LivePriceMinor = HealthUp, res.PriceMinor
+			rec.Overcharges = rec.ListedPriceMinor > 0 && rec.LivePriceMinor*100 > rec.ListedPriceMinor*105
+		case res.Status == 402:
+			rec.Status, rec.Error = HealthUnpayable, res.Detail
+		case res.Status >= 200 && res.Status < 300:
+			rec.Status = HealthUp
+		case res.Status >= 400 && res.Status < 500:
+			rec.Status = HealthInputRejected
+		default:
+			rec.Status = HealthDown
+		}
+		if rec.Status != HealthUp && rec.Error == "" && res.Status > 0 {
+			rec.Error = fmt.Sprintf("answered %d", res.Status)
+		}
+		return h.record(ctx, rec)
+	}
 	q, err := func() (q routing.Quote, err error) {
 		defer func() {
 			if p := recover(); p != nil {
@@ -259,6 +320,11 @@ func (h *HealthService) probeOne(ctx context.Context, c routing.Candidate, input
 	if err != nil && rec.Error == "" {
 		rec.Error = briefly(err.Error())
 	}
+	return h.record(ctx, rec)
+}
+
+// record counts a probe into the running totals and saves it.
+func (h *HealthService) record(ctx context.Context, rec EndpointHealth) EndpointHealth {
 	if rec.Status == HealthUp {
 		rec.Ups++
 		rec.Failures = 0
@@ -266,7 +332,7 @@ func (h *HealthService) probeOne(ctx context.Context, c routing.Candidate, input
 		rec.Failures++
 	}
 	if err := h.store.SaveHealth(context.WithoutCancel(ctx), rec); err != nil {
-		h.log.Warn("health: saving a probe failed", "candidate", c.ID, "err", err)
+		h.log.Warn("health: saving a probe failed", "candidate", rec.CandidateID, "err", err)
 	}
 	return rec
 }

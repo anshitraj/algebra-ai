@@ -19,6 +19,15 @@ import type {
   SpendPass,
   User,
 } from "./types";
+import type {
+  ClassDetail,
+  ClassRow,
+  EndpointHealth,
+  KillSwitchState,
+  PassControls,
+  SimulateBody,
+  Simulation,
+} from "./routing-types";
 
 export class ApiError extends Error {
   status: number;
@@ -202,4 +211,44 @@ export function cancelEconomicIntent(id: string) {
 /** Public: anyone can check a receipt — it carries nothing personal. */
 export function verifyReceipt(receipt: string) {
   return apiFetch<ReceiptVerification>("/api/v1/receipts/verify", { method: "POST", body: { receipt } });
+}
+
+// --- classes of work, provider health (public reads) ---
+
+export function listClasses() {
+  return apiFetch<{ classes: ClassRow[]; built_at: string }>("/api/v1/classes");
+}
+
+export function getClass(id: string) {
+  return apiFetch<{ class: ClassDetail; health?: EndpointHealth[] }>(`/api/v1/classes/${encodeURIComponent(id)}`);
+}
+
+/** Probe every provider of a class now: unpaid requests only. */
+export function probeClass(id: string) {
+  return apiFetch<{ class: string; probed: number; up: number; health: EndpointHealth[] }>(`/api/v1/classes/${encodeURIComponent(id)}/probe`, {
+    method: "POST",
+  });
+}
+
+// --- the spend firewall ---
+
+export function getKillSwitch() {
+  return apiFetch<KillSwitchState>("/api/v1/me/killswitch");
+}
+
+export function setKillSwitch(engaged: boolean) {
+  return apiFetch<KillSwitchState>("/api/v1/me/killswitch", { method: "POST", body: { engaged } });
+}
+
+export function freezePass(id: string, frozen: boolean) {
+  return apiFetch<SpendPass>(`/api/v1/me/passes/${encodeURIComponent(id)}/freeze`, { method: "POST", body: { frozen } });
+}
+
+export function setPassControls(id: string, c: PassControls) {
+  return apiFetch<SpendPass>(`/api/v1/me/passes/${encodeURIComponent(id)}/controls`, { method: "PUT", body: c });
+}
+
+/** "Would this be allowed, and who would do it?" Nothing is reserved or paid. */
+export function simulatePolicy(b: SimulateBody) {
+  return apiFetch<Simulation>("/api/v1/policy/simulate", { method: "POST", body: b });
 }
