@@ -340,6 +340,28 @@ func (u *econUnit) PassExposure(passID string, since time.Time) (int64, error) {
 	return total, nil
 }
 
+func (u *econUnit) PassAttemptsSince(passID, provider string, since time.Time) (int, error) {
+	var n int
+	err := u.tx.QueryRow(u.ctx, `
+		SELECT COUNT(*) FROM economic_reservations
+		WHERE executor_pass_id = $1 AND created_at >= $2 AND ($3 = '' OR provider_id = $3)`, passID, since, provider).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("postgres: counting pass attempts: %w", err)
+	}
+	return n, nil
+}
+
+func (u *econUnit) ProviderPaid(principalID, provider string) (bool, error) {
+	var paid bool
+	err := u.tx.QueryRow(u.ctx, `
+		SELECT EXISTS (SELECT 1 FROM economic_reservations r JOIN economic_intents i ON i.id = r.intent_id
+		               WHERE r.provider_id = $2 AND r.state = 'COMMITTED' AND i.principal_id = $1)`, principalID, provider).Scan(&paid)
+	if err != nil {
+		return false, fmt.Errorf("postgres: checking whether a provider was paid: %w", err)
+	}
+	return paid, nil
+}
+
 // PassSpend implements app.PassEconomicSpend: the same number the
 // coordinator checks under the pass's row lock, read on its own for the
 // pass's view and the shopping check, which read orders the same way. Grants

@@ -76,6 +76,14 @@ type Pass struct {
 	// means no restriction beyond the person's guardrails.
 	AllowedCategories []string `json:"allowed_categories"`
 	AllowedMerchants  []string `json:"allowed_merchants"`
+	// Controls are the limits an autonomous agent needs that a shopping
+	// budget doesn't: how fast it may spend and how it treats providers it
+	// has never paid (see controls.go).
+	Controls Controls `json:"controls"`
+	// FrozenAt is set while the kill switch is on for this pass: nothing is
+	// authorized, not even a payment already in flight. Unlike revoking, it
+	// can be lifted.
+	FrozenAt *time.Time `json:"frozen_at,omitempty"`
 
 	CreatedAt time.Time  `json:"created_at"`
 	ExpiresAt time.Time  `json:"expires_at"`
@@ -140,6 +148,10 @@ func (p Pass) Normalize(now time.Time, knownCategories []string) (Pass, error) {
 		}
 	}
 	p.AllowedMerchants = merchants
+	var err error
+	if p.Controls, err = p.Controls.Normalize(p.Currency); err != nil {
+		return p, err
+	}
 	if !p.ExpiresAt.After(now) {
 		return p, errors.New("the pass must expire in the future")
 	}
@@ -196,6 +208,8 @@ func (p Pass) Evaluate(now time.Time, in Purchase) *policy.PolicyDecision {
 	switch {
 	case p.RevokedAt != nil:
 		return deny(ReasonRevoked)
+	case p.FrozenAt != nil:
+		return deny(ReasonFrozen)
 	case !now.Before(p.ExpiresAt):
 		return deny(ReasonExpired)
 	case in.Currency != "" && !strings.EqualFold(in.Currency, p.Currency):

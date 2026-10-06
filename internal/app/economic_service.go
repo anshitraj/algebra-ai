@@ -163,6 +163,9 @@ func (s *EconomicService) executorPass(ctx context.Context, agentID string) (*sp
 	if !p.Active(s.now()) {
 		return nil, fmt.Errorf("%w: the agent's Spend Pass is revoked or expired", shared.ErrUnauthorized)
 	}
+	if p.FrozenAt != nil {
+		return nil, fmt.Errorf("%w: the agent's Spend Pass is frozen by its owner's kill switch", shared.ErrUnauthorized)
+	}
 	return p, nil
 }
 
@@ -421,6 +424,13 @@ func (s *EconomicService) Reserve(ctx context.Context, agentID, intentID string,
 		if req.QuoteMinor > 0 && req.QuoteMinor < hold {
 			hold = req.QuoteMinor
 		}
+		// The pass's controls: how fast its agent may spend, and how it may
+		// treat a provider its person has never paid (policy_controls.go).
+		if reason, codes, err := s.passControls(u, p, in, req.ProviderID, hold, now); err != nil {
+			return err
+		} else if reason != "" {
+			return reject(reason, false, codes, "")
+		}
 		exposure, err := u.PassExposure(p.ID, p.WindowStart(now))
 		if err != nil {
 			return err
@@ -578,6 +588,11 @@ func (s *EconomicService) Begin(ctx context.Context, agentID, intentID, reservat
 // holding a key. Recorded before it's returned: once released, "nothing
 // happened" needs proof from the rail.
 func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentID, reservationID string, req PaymentRequest) (*PaymentAuthority, error) {
+	// The last moment before money can move: a pass frozen by the kill switch
+	// (or revoked) since the attempt began releases nothing.
+	if _, err := s.executorPass(ctx, agentID); err != nil {
+		return nil, err
+	}
 	var snapshot econ.Reservation
 	err := s.store.Atomically(ctx, intentID, "", func(u EconUnit) error {
 		in := u.Intent()

@@ -41,7 +41,10 @@ const (
 
 var intentTransitions = map[State][]State{
 	StateAwaitingApproval: {StateOpen, StateCancelled, StateExpired},
-	StateOpen:             {StateReserved, StateCancelled, StateExpired},
+	// OPEN -> AWAITING_APPROVAL: every provider that could do it needs a
+	// person's yes the intent didn't need when it was made (a provider never
+	// paid before, say).
+	StateOpen: {StateReserved, StateCancelled, StateExpired, StateAwaitingApproval},
 	// A reservation that never began execution can be released, cancelled
 	// or outlived by the intent's expiry: nothing irreversible happened.
 	StateReserved:  {StateExecuting, StateOpen, StateCancelled, StateExpired},

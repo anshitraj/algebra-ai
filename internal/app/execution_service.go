@@ -460,7 +460,8 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 	if rep != nil {
 		rep.Rejected = append(slices.Clone(rejected), rep.Rejected...)
 	}
-	return rep, err
+	// Held back only by the new-provider rule: ask the person (policy_controls.go).
+	return rep, s.escalateIfGated(ctx, view, rep, err)
 }
 
 // attachHistory gives each candidate Algebra's own record of it: how often it
@@ -657,6 +658,10 @@ func skippable(err error) (string, bool) {
 			return routing.RejectExcluded, true
 		case RejectQuoteOverBudget:
 			return routing.RejectOverBudget, true
+		case RejectNewProvider:
+			return RejectNewProviderGate, true
+		case RejectProviderRateLimited:
+			return RejectProviderRateLimited, true
 		}
 		return "", false
 	}

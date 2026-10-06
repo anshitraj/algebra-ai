@@ -56,6 +56,12 @@ type EconUnit interface {
 	// PassExposure is what the pass has committed to economic intents in
 	// its window plus every live hold: money that is spent or may be.
 	PassExposure(passID string, since time.Time) (int64, error)
+	// PassAttemptsSince counts the reservations a pass was granted since a
+	// time, to one provider or (provider "") to any: the velocity limit.
+	PassAttemptsSince(passID, provider string, since time.Time) (int, error)
+	// ProviderPaid reports whether the principal has ever committed money to
+	// the provider: the new-provider gate.
+	ProviderPaid(principalID, provider string) (bool, error)
 	AppendEvent(e EconEvent) error
 }
 

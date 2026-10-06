@@ -25,6 +25,9 @@ type createPassRequest struct {
 	AllowedCategories        []string `json:"allowed_categories"`
 	AllowedMerchants         []string `json:"allowed_merchants"`
 	ExpiresInDays            int      `json:"expires_in_days"`
+	// Controls: calls per minute and the new-provider rule; omitted fields
+	// take the defaults.
+	Controls spendpass.Controls `json:"controls"`
 }
 
 // Connect is how the new pass's agent reaches Algebra.
@@ -71,7 +74,7 @@ func (a *API) createMyPass(w http.ResponseWriter, r *http.Request) {
 		Label: req.Label, AgentKind: spendpass.AgentKind(strings.ToLower(req.AgentKind)), Currency: req.Currency,
 		BudgetMinorUnits: req.BudgetMinorUnits, BudgetPeriod: spendpass.Period(strings.ToLower(req.BudgetPeriod)),
 		MaxPerPurchaseMinorUnits: req.MaxPerPurchaseMinorUnits, ApproveAboveMinorUnits: req.ApproveAboveMinorUnits,
-		AllowedCategories: req.AllowedCategories, AllowedMerchants: req.AllowedMerchants,
+		AllowedCategories: req.AllowedCategories, AllowedMerchants: req.AllowedMerchants, Controls: req.Controls,
 		ExpiresAt: time.Now().Add(time.Duration(days) * 24 * time.Hour),
 	})
 	if err != nil {
