@@ -49,6 +49,25 @@ func (m *memExecStore) ForIntent(_ context.Context, intentID string) ([]StoredEx
 	return out, nil
 }
 
+func (m *memExecStore) Recent(_ context.Context, candidateIDs []string, since time.Time, depth int) (map[string][]StoredExecution, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string][]StoredExecution{}
+	for _, r := range m.recs {
+		if slices.Contains(candidateIDs, r.Result.CandidateID) && !r.Result.StartedAt.Before(since) {
+			out[r.Result.CandidateID] = append(out[r.Result.CandidateID], r)
+		}
+	}
+	for id, recs := range out {
+		sort.Slice(recs, func(i, j int) bool { return recs[i].Result.StartedAt.After(recs[j].Result.StartedAt) })
+		if len(recs) > depth {
+			recs = recs[:depth]
+		}
+		out[id] = recs
+	}
+	return out, nil
+}
+
 func (m *memExecStore) ForReservation(_ context.Context, reservationID string) (*StoredExecution, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -66,15 +85,24 @@ func (m *memExecStore) ForReservation(_ context.Context, reservationID string) (
 type fakeRunner struct {
 	mu        sync.Mutex
 	costs     map[string]int64
+	latencies map[string]int // expected milliseconds per provider; zero means 300
 	quoteErrs map[string]error
 	behaviors map[string]func(ctx context.Context, call StepCall) StepObservation
 	runs      map[string]int
 	quotes    map[string]int
+
+	// quotePanics makes pricing a provider panic; quoteDelay makes every
+	// price take that long (or until the caller gives up); maxInflight is the
+	// most prices that were being worked out at once.
+	quotePanics map[string]bool
+	quoteDelay  time.Duration
+	inflight    int
+	maxInflight int
 }
 
 func newFakeRunner() *fakeRunner {
 	return &fakeRunner{
-		costs: map[string]int64{}, quoteErrs: map[string]error{},
+		costs: map[string]int64{}, latencies: map[string]int{}, quotePanics: map[string]bool{}, quoteErrs: map[string]error{},
 		behaviors: map[string]func(context.Context, StepCall) StepObservation{}, runs: map[string]int{}, quotes: map[string]int{},
 	}
 }
@@ -94,10 +122,28 @@ func (f *fakeRunner) ran(provider string) int {
 	return f.runs[provider]
 }
 
-func (f *fakeRunner) Quote(_ context.Context, c routing.Candidate, _ json.RawMessage) (routing.Quote, error) {
+func (f *fakeRunner) Quote(ctx context.Context, c routing.Candidate, _ json.RawMessage) (routing.Quote, error) {
 	f.mu.Lock()
 	f.quotes[c.Provider]++
+	panics, delay, latency := f.quotePanics[c.Provider], f.quoteDelay, f.latencies[c.Provider]
+	f.inflight++
+	f.maxInflight = max(f.maxInflight, f.inflight)
 	f.mu.Unlock()
+	defer func() {
+		f.mu.Lock()
+		f.inflight--
+		f.mu.Unlock()
+	}()
+	if panics {
+		panic("the provider's pricing blew up")
+	}
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return routing.Quote{}, ctx.Err()
+		}
+	}
 	if err := f.quoteErrs[c.Provider]; err != nil {
 		return routing.Quote{}, err
 	}
@@ -105,9 +151,12 @@ func (f *fakeRunner) Quote(_ context.Context, c routing.Candidate, _ json.RawMes
 	if cost == 0 {
 		cost = 3_000
 	}
+	if latency == 0 {
+		latency = 300
+	}
 	return routing.Quote{
 		Cost: routing.Cost{ProviderMinor: cost}, Asset: "USDC", Network: "sandbox", PayTo: "payee-" + c.Provider,
-		Semantics: econ.SemanticsPrepaidExact, EstimatedLatencyMS: 300,
+		Semantics: econ.SemanticsPrepaidExact, EstimatedLatencyMS: latency,
 	}, nil
 }
 

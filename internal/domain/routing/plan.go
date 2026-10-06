@@ -16,8 +16,8 @@ const MaxPlanSteps = 5
 
 // Score explains why a step ranks where it does. Components are named so the
 // explanation reads the same in the console, a receipt and a log: "cost",
-// "latency", "quality", "reliability", "policy_fit" for most capabilities,
-// and capability-specific ones (output, slippage) for a trade.
+// "latency", "quality", "reliability", "trust" and "price_honesty" (see
+// Rank), and capability-specific ones (output, slippage) for a trade.
 type Score struct {
 	// Total is 0 to 1; higher is better.
 	Total      float64            `json:"total"`

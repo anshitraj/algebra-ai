@@ -114,3 +114,64 @@ func TestExecutionRepo_NoQualityAndNoReservation(t *testing.T) {
 		t.Error("an unknown payment status must be refused by the database")
 	}
 }
+
+func TestExecutionRepo_RecentIsPerCandidateNewestFirstWithinTheWindowAndDepth(t *testing.T) {
+	f := newEconFixture(t, 1, 10_000_000)
+	repo := NewExecutionRepo(f.db)
+	ctx := context.Background()
+	in := f.intent(t, `{"mint":"RECENT"}`, 50_000)
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	save := func(id, candidate string, age time.Duration) {
+		t.Helper()
+		started := now.Add(-age)
+		res := routing.ExecutionResult{
+			ID: id, IntentID: in.ID, CandidateID: candidate, Provider: "prov", Capability: "solana.token-risk", ExecutionType: routing.ExecX402,
+			StartedAt: started, CompletedAt: started.Add(time.Second), LatencyMS: 1_000, Payment: routing.PaymentSettled, Delivery: econ.FulfillmentFulfilled,
+			ActualCostMinor: 3_000,
+		}
+		if err := repo.SaveResult(ctx, f.userID, app.StoredExecution{Result: res}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Candidate A: five attempts, one of them 40 days old. Candidate B: one.
+	save("recent-a1-"+in.ID, "cand_recent_a", 1*time.Hour)
+	save("recent-a2-"+in.ID, "cand_recent_a", 2*time.Hour)
+	save("recent-a3-"+in.ID, "cand_recent_a", 3*time.Hour)
+	save("recent-a4-"+in.ID, "cand_recent_a", 4*time.Hour)
+	save("recent-old-"+in.ID, "cand_recent_a", 40*24*time.Hour)
+	save("recent-b1-"+in.ID, "cand_recent_b", 5*time.Hour)
+
+	got, err := repo.Recent(ctx, []string{"cand_recent_a", "cand_recent_b", "cand_recent_none"}, now.Add(-30*24*time.Hour), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := got["cand_recent_a"]
+	if len(a) != 3 || a[0].Result.ID != "recent-a1-"+in.ID || a[2].Result.ID != "recent-a3-"+in.ID {
+		t.Fatalf("depth 3, newest first, the 40-day-old attempt left out: %+v", ids(a))
+	}
+	if len(got["cand_recent_b"]) != 1 || len(got["cand_recent_none"]) != 0 {
+		t.Errorf("each candidate has its own record: %d %d", len(got["cand_recent_b"]), len(got["cand_recent_none"]))
+	}
+	// The window decides what counts; a wider one brings the old attempt back.
+	wide, err := repo.Recent(ctx, []string{"cand_recent_a"}, now.Add(-60*24*time.Hour), 100)
+	if err != nil || len(wide["cand_recent_a"]) != 5 || wide["cand_recent_a"][4].Result.ID != "recent-old-"+in.ID {
+		t.Errorf("a wider window: %v %d", err, len(wide["cand_recent_a"]))
+	}
+	// And the records summarise the way the router expects.
+	h := app.SummarizeHistory(wide["cand_recent_a"])
+	if h.Calls != 5 || h.SuccessRate != 1 || h.P50LatencyMS != 1_000 {
+		t.Errorf("summary of what was stored: %+v", h)
+	}
+	if none, err := repo.Recent(ctx, nil, now, 10); err != nil || len(none) != 0 {
+		t.Errorf("nothing asked, nothing returned: %v %v", none, err)
+	}
+}
+
+func ids(recs []app.StoredExecution) []string {
+	out := make([]string, len(recs))
+	for i, r := range recs {
+		out[i] = r.Result.ID
+	}
+	return out
+}

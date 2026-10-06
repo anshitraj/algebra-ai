@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/chain"
@@ -147,6 +148,8 @@ type ExecutionService struct {
 	now     func() time.Time
 
 	quoteTTL time.Duration
+	// quoteTimeout bounds one provider's pricing (see quoteAll).
+	quoteTimeout time.Duration
 }
 
 // NewExecutionService builds the service with the generic evaluator
@@ -155,7 +158,7 @@ func NewExecutionService(e *EconomicService, store ExecutionStore) *ExecutionSer
 	s := &ExecutionService{
 		econ: e, store: store,
 		runners: map[routing.ExecutionType]StepRunner{}, evals: map[string]Evaluator{},
-		caps: StaticCatalog{}, log: slog.Default(), now: time.Now, quoteTTL: DefaultQuoteTTL,
+		caps: StaticCatalog{}, log: slog.Default(), now: time.Now, quoteTTL: DefaultQuoteTTL, quoteTimeout: quoteTimeout,
 	}
 	s.RegisterEvaluator(GenericEvaluatorName, GenericEvaluator{})
 	// When reconciliation later settles an attempt this service ran, bring
@@ -305,18 +308,35 @@ func screen(view *IntentView, c routing.Candidate, q routing.Quote) *routing.Rej
 	return nil
 }
 
-// CandidatesRequest asks for an intent to be done by the given candidates,
-// tried in the order given: the first is the primary and the rest are
-// fallbacks. (Ranking candidates against each other is the router's job; this
-// is the call it will make once it has ranked them.)
+// CandidatesRequest asks for an intent to be done by the given candidates. The
+// router quotes them, sets aside what the intent's limits and the person's
+// Spend Pass rule out, ranks the rest for the intent's strategy (cheapest,
+// fastest or auto) and runs the best, falling back down the ranking only when
+// the coordinator shows an attempt moved no money.
 type CandidatesRequest struct {
 	AgentID    string
 	IntentID   string
 	Candidates []routing.Candidate
 }
 
+const (
+	// MaxQuotedCandidates bounds how many candidates are priced for one
+	// request. Each is an unpaid request to a provider, so the router looks at
+	// enough to have a real choice and no more.
+	MaxQuotedCandidates = 12
+	// quoteConcurrency is how many providers are asked for a price at once.
+	quoteConcurrency = 4
+	// quoteTimeout is how long one provider has to price a request. A slow
+	// provider is skipped, not waited for: the others are priced meanwhile.
+	quoteTimeout = 20 * time.Second
+)
+
+// RejectOutranked: a candidate that could have done the work but ranked below
+// the plan's last step.
+const RejectOutranked = "outranked"
+
 // ExecuteCandidates quotes each candidate, screens it against the intent's
-// limits, builds a plan from the ones that pass and runs it.
+// limits, ranks the ones that pass, builds a plan from the best and runs it.
 func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req CandidatesRequest) (*PlanReport, error) {
 	view, err := s.agentView(ctx, req.AgentID, req.IntentID)
 	if err != nil {
@@ -339,7 +359,10 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", shared.ErrConflict, err)
 	}
-	var steps []routing.PlanStep
+
+	// 1. Who could do it: normalised, de-duplicated, and allowed by the pass.
+	// None of this asks a provider anything.
+	var cands []routing.Candidate
 	var rejected []routing.Rejection
 	seen := map[string]bool{}
 	for _, raw := range req.Candidates {
@@ -352,8 +375,9 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 			continue
 		}
 		seen[c.ID] = true
-		if len(steps) >= routing.MaxPlanSteps {
-			break
+		if len(cands) >= MaxQuotedCandidates {
+			rejected = append(rejected, routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: RejectOutranked, Detail: fmt.Sprintf("only %d candidates are priced per request", MaxQuotedCandidates)})
+			continue
 		}
 		// A provider the Spend Pass doesn't allow is not even asked for a
 		// price. The pass is applied again, with the amount, when the attempt
@@ -362,19 +386,38 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 			rejected = append(rejected, routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: routing.RejectPolicy, Detail: strings.Join(d.ReasonCodes, ", ")})
 			continue
 		}
-		q, err := s.quote(ctx, view, c)
-		if err != nil {
-			rejected = append(rejected, routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: routing.RejectUnquotable, Detail: briefly(err.Error())})
+		cands = append(cands, c)
+	}
+
+	// 2. What Algebra already knows about them, then what each asks right now.
+	s.attachHistory(ctx, cands)
+	quotes := s.quoteAll(ctx, view, cands)
+
+	// 3. Which of them the intent's own limits allow.
+	var opts []routing.Option
+	for i, c := range cands {
+		if quotes[i].err != nil {
+			rejected = append(rejected, routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: routing.RejectUnquotable, Detail: briefly(quotes[i].err.Error())})
 			continue
 		}
-		if r := screen(view, c, q); r != nil {
+		if r := screen(view, c, quotes[i].q); r != nil {
 			rejected = append(rejected, *r)
 			continue
 		}
-		steps = append(steps, routing.PlanStep{Quote: q, Trust: c.Trust(), Score: routing.Score{Notes: []string{"candidates are tried in the order given"}}})
+		opts = append(opts, routing.Option{Candidate: c, Quote: quotes[i].q})
 	}
-	if len(steps) == 0 {
+	if len(opts) == 0 {
 		return nil, &NoRoute{Rejected: rejected}
+	}
+
+	// 4. Rank them for the intent's strategy; the best few become the plan.
+	steps := routing.Rank(mode, opts)
+	if len(steps) > routing.MaxPlanSteps {
+		for _, st := range steps[routing.MaxPlanSteps:] {
+			rejected = append(rejected, routing.Rejection{CandidateID: st.Quote.CandidateID, Provider: st.Quote.Provider, Code: RejectOutranked,
+				Detail: fmt.Sprintf("ranked %d; a plan holds %d", st.Rank, routing.MaxPlanSteps)})
+		}
+		steps = steps[:routing.MaxPlanSteps]
 	}
 	plan, err := routing.NewPlan(newID("plan"), routing.PlanSpec{
 		IntentID: view.ID, IntentHash: view.IntentHash, Capability: view.Capability, Mode: mode, Steps: steps, Rejected: rejected,
@@ -387,6 +430,75 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 		rep.Rejected = append(slices.Clone(rejected), rep.Rejected...)
 	}
 	return rep, err
+}
+
+// attachHistory gives each candidate Algebra's own record of it: how often it
+// has delivered, how fast, how good. A store that can't be read leaves the
+// candidates as they are, ranked on what they advertise; the record is an
+// input to ranking, never a precondition for paying.
+func (s *ExecutionService) attachHistory(ctx context.Context, cands []routing.Candidate) {
+	if s.store == nil || len(cands) == 0 {
+		return
+	}
+	ids := make([]string, len(cands))
+	for i, c := range cands {
+		ids[i] = c.ID
+	}
+	recent, err := s.store.Recent(ctx, ids, s.now().Add(-HistoryWindow), HistoryDepth)
+	if err != nil {
+		s.log.Warn("execution: reading provider history failed; ranking without it", "err", err)
+		return
+	}
+	for i := range cands {
+		recs := recent[cands[i].ID]
+		if len(recs) == 0 {
+			continue
+		}
+		h := SummarizeHistory(recs)
+		if h.Calls == 0 || h.Validate() != nil {
+			continue
+		}
+		// The candidate's own record (a source that brought one) stands if it
+		// is longer than ours.
+		if cands[i].History == nil || h.Calls > cands[i].History.Calls {
+			cands[i].History = &h
+		}
+	}
+}
+
+type pricing struct {
+	q   routing.Quote
+	err error
+}
+
+// quoteAll prices every candidate for the intent's input, a few at a time, each
+// with its own deadline. The answers keep the candidates' order, whichever
+// provider answered first. A runner that panics fails its own quote and
+// nothing else.
+func (s *ExecutionService) quoteAll(ctx context.Context, view *IntentView, cands []routing.Candidate) []pricing {
+	out := make([]pricing, len(cands))
+	sem := make(chan struct{}, quoteConcurrency)
+	var wg sync.WaitGroup
+	for i, c := range cands {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			defer func() {
+				if p := recover(); p != nil {
+					s.log.Error("execution: runner panicked while pricing", "provider", c.Provider, "panic", fmt.Sprint(p))
+					out[i] = pricing{err: errors.New("the runner crashed while pricing")}
+				}
+			}()
+			qctx, cancel := context.WithTimeout(ctx, s.quoteTimeout)
+			defer cancel()
+			q, err := s.quote(qctx, view, c)
+			out[i] = pricing{q: q, err: err}
+		}()
+	}
+	wg.Wait()
+	return out
 }
 
 // DoRequest is everything an agent says in one go: the outcome it wants, what
@@ -431,6 +543,7 @@ func (s *ExecutionService) RunPlan(ctx context.Context, agentID, intentID string
 	}
 	s.event(ctx, intentID, "routing.plan_selected", map[string]any{
 		"plan_id": plan.ID, "plan_hash": plan.Hash, "mode": string(plan.Mode), "providers": providers, "rejected": len(plan.Rejected),
+		"ranking": rankingEvent(plan),
 	})
 	var attempted []string
 loop:

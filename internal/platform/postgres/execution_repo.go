@@ -148,6 +148,39 @@ func (r *ExecutionRepo) ForIntent(ctx context.Context, intentID string) ([]app.S
 	return out, rows.Err()
 }
 
+// Recent returns each candidate's most recent attempts, newest first: the
+// rows the router's record of a provider is built from. It reads across every
+// person's intents on purpose (a provider's reliability is shared), and only
+// the columns an attempt record holds: never a response body.
+func (r *ExecutionRepo) Recent(ctx context.Context, candidateIDs []string, since time.Time, depth int) (map[string][]app.StoredExecution, error) {
+	out := map[string][]app.StoredExecution{}
+	if len(candidateIDs) == 0 || depth <= 0 {
+		return out, nil
+	}
+	rows, err := r.db.Pool.Query(ctx, `
+		WITH recent AS (
+		    SELECT id AS recent_id, row_number() OVER (PARTITION BY candidate_id ORDER BY started_at DESC) AS rn
+		    FROM route_executions
+		    WHERE candidate_id = ANY($1) AND started_at >= $2
+		)
+		SELECT `+executionCols+`
+		FROM route_executions JOIN recent ON recent.recent_id = route_executions.id
+		WHERE recent.rn <= $3
+		ORDER BY candidate_id, started_at DESC`, candidateIDs, since.UTC(), depth)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: reading recent executions: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		rec, err := scanExecution(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[rec.Result.CandidateID] = append(out[rec.Result.CandidateID], *rec)
+	}
+	return out, rows.Err()
+}
+
 func (r *ExecutionRepo) ForReservation(ctx context.Context, reservationID string) (*app.StoredExecution, error) {
 	return scanExecution(r.db.Pool.QueryRow(ctx, `SELECT `+executionCols+` FROM route_executions WHERE reservation_id = $1`, reservationID))
 }

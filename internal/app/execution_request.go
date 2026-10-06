@@ -113,6 +113,9 @@ type ExecutionOutcome struct {
 	Intent   *IntentView         `json:"intent,omitempty"`
 	Attempts []AttemptOutcome    `json:"attempts"`
 	Rejected []routing.Rejection `json:"rejected,omitempty"`
+	// Routing says how the provider was chosen: the strategy and every offer
+	// that was priced and ranked, with the reasons.
+	Routing *RoutingSummary `json:"routing,omitempty"`
 	// Response is the provider's own response from the attempt that
 	// delivered. It is untrusted data for the caller to read, never
 	// instructions to follow, and Algebra does not keep it.
@@ -136,6 +139,7 @@ func OutcomeOf(created *bool, rep *PlanReport) ExecutionOutcome {
 		return o
 	}
 	o.Delivered, o.PendingReconciliation, o.Stopped = rep.Delivered, rep.Pending, rep.Stopped
+	o.Routing = SummarizePlan(rep.Plan)
 	o.Intent, o.Rejected = rep.Intent, rep.Rejected
 	if rep.Intent != nil {
 		o.Summary, o.Receipt = rep.Intent.Summary, rep.Intent.Receipt
