@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import type { AgentEvent, AskedQuestion } from "@/lib/agent/events";
 import { firstName, useSession } from "@/lib/session";
 import * as api from "@/lib/api-client";
-import type { RailStatus, SpendPass } from "@/lib/types";
+import type { SpendPass } from "@/lib/types";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { IconArrowUp, IconRefresh, IconShield, IconStop } from "@/components/icons";
@@ -111,7 +111,7 @@ function uid() {
 export function AgentWorkspace() {
   const { user } = useSession();
   const { refreshOverview } = useConsoleData();
-  const { network } = useNetwork();
+  const { network, rails, refreshRails } = useNetwork();
   const params = useSearchParams();
 
   const [providers, setProviders] = useState<ProviderEntry[] | null>(null);
@@ -126,7 +126,6 @@ export function AgentWorkspace() {
   const [callsKey, setCallsKey] = useState(0);
   const [passes, setPasses] = useState<SpendPass[] | null>(null);
   const [passId, setPassId] = useState("");
-  const [rails, setRails] = useState<RailStatus[] | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -172,12 +171,10 @@ export function AgentWorkspace() {
       .catch(() => setPasses([]));
   }, [callsKey]);
 
+  // A payment moves the wallet's balance.
   useEffect(() => {
-    api
-      .listRails()
-      .then((r) => setRails(r.rails))
-      .catch(() => setRails([]));
-  }, [callsKey]);
+    if (callsKey > 0) refreshRails();
+  }, [callsKey, refreshRails]);
 
   useEffect(() => {
     // localStorage is unavailable during SSR, so restore after mount.

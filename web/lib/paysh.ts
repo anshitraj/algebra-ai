@@ -151,6 +151,11 @@ export function catalogName(source: string): string {
   return CATALOGS.find((c) => c.id === source)?.name ?? source;
 }
 
+/** "A", "A and B", "A, B and C". */
+export function joinNames(names: string[]): string {
+  return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   ai_ml: "AI & ML",
   finance: "Finance & markets",

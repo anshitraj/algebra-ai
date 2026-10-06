@@ -1,23 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import * as api from "@/lib/api-client";
-import type { RailStatus } from "@/lib/types";
 import { NETWORKS, useNetwork } from "@/lib/network";
 import { formatUSDC } from "@/lib/money";
 
 /** Mainnet or devnet, for the whole console, with the wallet that pays there. */
 export function NetworkSwitch({ compact = false }: { compact?: boolean }) {
-  const { network, setNetwork } = useNetwork();
-  const [rails, setRails] = useState<RailStatus[] | null>(null);
-
-  useEffect(() => {
-    api
-      .listRails()
-      .then((r) => setRails(r.rails))
-      .catch(() => setRails([]));
-  }, []);
-
+  const { network, setNetwork, rails } = useNetwork();
   const rail = rails?.find((r) => r.network === network);
   return (
     <div className="flex items-center gap-3">

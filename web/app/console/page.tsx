@@ -6,7 +6,7 @@ import * as api from "@/lib/api-client";
 import { firstName, useSession } from "@/lib/session";
 import type { EconIntent, EconStats, ProviderListing, SpendPass } from "@/lib/types";
 import { formatMoney, formatUSDC } from "@/lib/money";
-import { catalogName } from "@/lib/paysh";
+import { catalogName, joinNames } from "@/lib/paysh";
 import { ErrorNote, Skeleton, StatusBadge, timeAgo } from "@/components/console/ui";
 import { IconArrowRight, IconCheck, IconInbox, IconPlug, IconShield, IconStore } from "@/components/icons";
 
@@ -147,7 +147,8 @@ export default function OverviewPage() {
           </div>
           {catalog?.sources && (
             <p className="mt-4 text-xs text-muted">
-              {catalog.total} providers available from {catalog.sources.filter((s) => !s.error).map((s) => catalogName(s.name)).join(" and ")}.
+              {catalog.total} provider{catalog.total === 1 ? "" : "s"} available from{" "}
+              {joinNames(catalog.sources.filter((s) => !s.error).map((s) => catalogName(s.name)))}.
             </p>
           )}
         </section>

@@ -1,6 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import * as api from "./api-client";
+import type { RailStatus } from "./types";
 
 /** The Solana cluster the console is working on. */
 export type Network = "solana" | "solana-devnet";
@@ -16,9 +18,16 @@ export function networkLabel(n: string | undefined): string {
 
 const KEY = "algebra:network";
 
-type NetworkState = { network: Network; setNetwork: (n: Network) => void };
+type NetworkState = {
+  network: Network;
+  setNetwork: (n: Network) => void;
+  /** Whether this server can pay on each cluster, from which wallet, with what balance. Null until read. */
+  rails: RailStatus[] | null;
+  /** Reads the wallets again, after a payment moved a balance. */
+  refreshRails: () => void;
+};
 
-const Ctx = createContext<NetworkState>({ network: "solana", setNetwork: () => {} });
+const Ctx = createContext<NetworkState>({ network: "solana", setNetwork: () => {}, rails: null, refreshRails: () => {} });
 
 /**
  * Which cluster the console shows and pays on. It filters the providers to
@@ -28,6 +37,8 @@ const Ctx = createContext<NetworkState>({ network: "solana", setNetwork: () => {
  */
 export function NetworkProvider({ children }: { children: React.ReactNode }) {
   const [network, setState] = useState<Network>("solana");
+  const [rails, setRails] = useState<RailStatus[] | null>(null);
+  const [railsKey, setRailsKey] = useState(0);
 
   useEffect(() => {
     try {
@@ -39,6 +50,16 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Read once for the whole console: the switch, the chat and the panels all show the same wallets.
+  useEffect(() => {
+    api
+      .listRails()
+      .then((r) => setRails(r.rails ?? []))
+      .catch(() => setRails([]));
+  }, [railsKey]);
+
+  const refreshRails = useCallback(() => setRailsKey((k) => k + 1), []);
+
   const setNetwork = useCallback((n: Network) => {
     setState(n);
     try {
@@ -48,7 +69,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  return <Ctx.Provider value={{ network, setNetwork }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ network, setNetwork, rails, refreshRails }}>{children}</Ctx.Provider>;
 }
 
 export function useNetwork() {

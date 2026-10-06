@@ -95,6 +95,20 @@ function pretty(v: unknown): string | undefined {
   return text.length > 4_000 ? `${text.slice(0, 4_000)}\n…` : text;
 }
 
+/** The rail's reasons, in words a person can act on. Anything else is shown as the backend said it. */
+export function friendlyFailure(message: string): string {
+  const net = (n: string | undefined) => (n === "solana-devnet" ? "devnet" : n === "solana" ? "mainnet" : (n ?? "this network"));
+  const none = message.match(/has no USDC account on (S+)/);
+  if (none) {
+    const n = net(none[1]);
+    return `The ${n} wallet has no USDC yet, so nothing was paid.${none[1] === "solana-devnet" ? " Add test USDC at faucet.circle.com (Solana Devnet)." : ""}`;
+  }
+  if (/insufficient USDC/.test(message)) return "The wallet doesn't hold enough USDC for this call, so nothing was paid.";
+  const payee = message.match(/provider's USDC account S+ doesn't exist on (S+)/);
+  if (payee) return `The provider's payout account doesn't exist on ${net(payee[1])}, so it can't be paid. Nothing was paid.`;
+  return message.replace(/^payment authority refused: /, "");
+}
+
 function paidOutcome(d: Record<string, unknown>): StepOutcome {
   const outcome = String(d.outcome ?? "");
   const network = typeof d.network === "string" ? d.network : undefined;
@@ -148,7 +162,7 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
       const failure = d.failure as { class?: string; message?: string } | undefined;
       return {
         status: "error",
-        summary: failure?.message || (typeof d.summary === "string" ? d.summary : "The call failed"),
+        summary: friendlyFailure(failure?.message || (typeof d.summary === "string" ? d.summary : "The call failed")),
         detail: { rows, links: links.slice(-1), response: pretty(d.response), note: (d.paid_minor as number) > 0 ? undefined : "Nothing was paid." },
       };
     }
