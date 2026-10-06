@@ -5,7 +5,6 @@ import { AnimatePresence, motion } from "motion/react";
 import type { ProviderCard, StepDetail, StepHint, StepStatus } from "@/lib/agent/events";
 import { IconBan, IconCheck, IconChevronDown, IconClock, IconExternal, IconX } from "@/components/icons";
 import { LiveActivity, Pulse, ThinkingLine } from "./live-activity";
-import { StoreLogo } from "@/components/store-logo";
 import { ProviderLogo } from "@/components/provider-logo";
 import { networkLabel } from "@/lib/network";
 
@@ -65,14 +64,11 @@ const PILL: Partial<Record<StepStatus, { label: string; cls: string }>> = {
   error: { label: "Failed", cls: "bg-danger-tint text-danger" },
 };
 
-/** One web listing, as chats saved before the Solana pivot show it. */
-export type Listing = NonNullable<StepDetail["products"]>[number];
-
 /** A follow-up the person can send with one tap: "use this provider", "call this endpoint". */
 export type Ask = (text: string) => void;
 
 export function StepRow({ step, last, onAsk }: { step: Step; last: boolean; onAsk?: Ask }) {
-  // Open by default when there's something the user came for (listings) or
+  // Open by default when there's something the user came for (providers, a response) or
   // must act on (waiting/blocked); their own toggle wins after that.
   const [toggled, setToggled] = useState<boolean | null>(null);
   const hasDetail = !!step.detail && Object.values(step.detail).some((v) => (Array.isArray(v) ? v.length > 0 : typeof v === "string" && v.length > 0));
@@ -80,7 +76,6 @@ export function StepRow({ step, last, onAsk }: { step: Step; last: boolean; onAs
     step.status === "waiting" ||
     step.status === "blocked" ||
     (step.detail?.providers?.length ?? 0) > 0 ||
-    (step.detail?.products?.length ?? 0) > 0 ||
     !!step.detail?.response;
   const open = toggled ?? autoOpen;
   const pill = PILL[step.status];
@@ -133,9 +128,6 @@ export function StepRow({ step, last, onAsk }: { step: Step; last: boolean; onAs
 }
 
 function Detail({ detail, onAsk }: { detail: StepDetail; onAsk?: Ask }) {
-  const onPick = onAsk
-    ? (p: Listing) => onAsk(`I'll take this one: "${p.title || p.name}" from ${p.merchant}${p.price ? `, listed at ${p.price}` : ""}.`)
-    : undefined;
   return (
     <div className="mt-2.5 overflow-hidden rounded-xl border border-border bg-background/60 text-sm">
       {detail.providers && detail.providers.length > 0 && (
@@ -166,30 +158,6 @@ function Detail({ detail, onAsk }: { detail: StepDetail; onAsk?: Ask }) {
           <p className="px-3.5 pt-2.5 text-xs font-medium text-muted">Response</p>
           <pre className="max-h-72 overflow-auto px-3.5 py-2 font-mono text-[0.72rem] leading-relaxed whitespace-pre-wrap text-foreground">{detail.response}</pre>
         </div>
-      )}
-      {detail.quotes && detail.quotes.length > 0 && (
-        <ul className="divide-y divide-border">
-          {detail.quotes.map((q, i) => (
-            <li key={i} className="flex items-center justify-between gap-4 px-3.5 py-2.5">
-              <StoreLogo store={q.merchant} size={32} />
-              <div className="min-w-0 flex-1">
-                <p className="font-medium text-foreground">{q.merchant}</p>
-                <p className="truncate text-xs text-muted">{q.items}</p>
-              </div>
-              <div className="shrink-0 text-right">
-                <p className="font-mono text-foreground tabular-nums">{q.total}</p>
-                {q.eta && <p className="text-xs text-muted">{formatEta(q.eta)}</p>}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {detail.products && detail.products.length > 0 && (
-        <ul className="divide-y divide-border">
-          {detail.products.map((p, i) => (
-            <ProductRow key={i} p={p} onPick={onPick} />
-          ))}
-        </ul>
       )}
       {detail.links && detail.links.length > 0 && (
         <ul className="divide-y divide-border">
@@ -272,127 +240,6 @@ function ProviderRow({ p, onAsk }: { p: ProviderCard; onAsk?: Ask }) {
       </div>
     </li>
   );
-}
-
-/** A community code, one click to copy. Unverified, so it never looks like a price. */
-function CodeChip({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        navigator.clipboard?.writeText(code).then(
-          () => {
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1500);
-          },
-          () => {}
-        );
-      }}
-      title="Copy code — it may have expired"
-      className="inline-flex items-center gap-1 rounded-md border border-dashed border-accent/60 bg-accent-tint px-1.5 py-px font-mono text-[0.7rem] font-medium text-accent"
-    >
-      {copied ? "Copied" : code}
-    </button>
-  );
-}
-
-/** Where a community post lives, as an icon: reddit.com for r/…, the site's own otherwise. */
-function tipIcon(merchant: string) {
-  if (merchant.startsWith("r/") || merchant === "Reddit") return "reddit.com";
-  if (merchant === "DesiDime") return "desidime.com";
-  return merchant;
-}
-
-/** The product's own photo when the store publishes one, else the store's icon. */
-function Thumb({ p }: { p: Listing }) {
-  const [broken, setBroken] = useState(false);
-  if (!p.image || broken) return <StoreLogo store={p.posted || p.code ? tipIcon(p.merchant) : p.merchant} size={44} />;
-  return (
-    // Store-published photo from hosts that vary, so a plain img that
-    // falls back to the store's icon rather than next/image.
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={p.image}
-      alt=""
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={() => setBroken(true)}
-      className="h-11 w-11 shrink-0 rounded-xl border border-border bg-white object-contain p-0.5"
-    />
-  );
-}
-
-function ProductRow({ p, onPick }: { p: Listing; onPick?: (p: Listing) => void }) {
-  // Not a single item, or likely a scam listing: nothing to pick.
-  const pickable = !!onPick && !p.storePage && !p.warning;
-  return (
-    <li className="flex items-center gap-3 px-3.5 py-3 transition-colors hover:bg-primary-tint/30">
-      <Thumb p={p} />
-      <div className="min-w-0 flex-1">
-        {p.url ? (
-          <a href={p.url} target="_blank" rel="noopener noreferrer nofollow" className="line-clamp-2 text-foreground decoration-border-strong underline-offset-2 hover:underline">
-            {p.name}
-          </a>
-        ) : (
-          <p className="line-clamp-2 text-foreground">{p.name}</p>
-        )}
-        <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted">
-          <span className="font-medium text-foreground/80">{p.merchant}</span>
-          {p.eta && (
-            <span
-              className="inline-flex items-center gap-1"
-              title={p.etaTypical ? "The store's usual delivery time — yours depends on your pincode" : "Delivery time the listing showed"}
-            >
-              <IconClock size={12} />
-              {p.etaTypical ? `Typically ${p.eta}` : p.eta}
-            </span>
-          )}
-          {p.posted && <span>{p.posted}</span>}
-          {p.storePage && !p.code && !p.posted && <span className="rounded-md bg-background px-1.5 py-px">Store page</span>}
-          {p.code && <CodeChip code={p.code} />}
-        </p>
-        {p.warning && <p className="mt-1 text-xs font-medium text-danger">{p.warning}</p>}
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        {p.price ? (
-          <span className="font-mono text-foreground tabular-nums">{p.price}</span>
-        ) : (
-          <span className="text-xs text-muted">{p.storePage ? "Browse" : "See price"}</span>
-        )}
-        <div className="flex items-center gap-1.5">
-          {pickable && (
-            <button
-              type="button"
-              onClick={() => onPick?.(p)}
-              className="inline-flex h-7 items-center rounded-lg bg-primary px-2.5 text-xs font-medium text-primary-tint transition-transform active:scale-95"
-            >
-              Select
-            </button>
-          )}
-          {p.url && (
-            <a
-              href={p.url}
-              target="_blank"
-              rel="noopener noreferrer nofollow"
-              aria-label={`Open on ${p.merchant}`}
-              className="grid h-7 w-7 place-items-center rounded-lg border border-border text-muted transition-colors hover:border-primary/50 hover:text-primary"
-            >
-              <IconExternal size={13} />
-            </a>
-          )}
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function formatEta(eta: string) {
-  const d = new Date(eta);
-  if (Number.isNaN(d.getTime())) return eta;
-  const mins = Math.round((d.getTime() - Date.now()) / 60000);
-  if (mins > 0 && mins < 120) return `~${mins} min`;
-  return d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
 }
 
 export function Timeline({

@@ -15,15 +15,10 @@ import {
   IconList,
   IconLogOut,
   IconMenu,
-  IconPackage,
-  IconReceipt,
   IconShield,
   IconSettings,
-  IconSliders,
   IconStore,
   IconPlug,
-  IconUser,
-  IconWallet,
   IconX,
   Spinner,
 } from "@/components/icons";
@@ -44,23 +39,6 @@ const CONTROLS: NavItem[] = [
   { href: "/console/passes", label: "Spend passes", icon: <IconShield /> },
   { href: "/console/connect", label: "Connect an agent", icon: <IconPlug /> },
 ];
-
-// The first version of Algebra was a shopping agent. Its pages still work but
-// are off the menu unless NEXT_PUBLIC_LEGACY_SHOPPING=1.
-const LEGACY: NavItem[] =
-  process.env.NEXT_PUBLIC_LEGACY_SHOPPING === "1"
-    ? [
-        { href: "/console/approvals", label: "Approvals", icon: <IconInbox /> },
-        { href: "/console/orders", label: "Orders", icon: <IconPackage /> },
-        { href: "/console/activity", label: "Activity", icon: <IconList /> },
-        { href: "/console/guardrails", label: "Guardrails", icon: <IconSliders /> },
-        { href: "/console/payment-sources", label: "Payment methods", icon: <IconWallet /> },
-        { href: "/console/profile", label: "Profile & address", icon: <IconUser /> },
-        { href: "/console/merchants", label: "Stores", icon: <IconStore /> },
-        { href: "/console/plugins", label: "Plugins", icon: <IconPlug /> },
-        { href: "/console/billing", label: "Plan & billing", icon: <IconReceipt /> },
-      ]
-    : [];
 
 function isActive(pathname: string, href: string) {
   if (href === "/console") return pathname === "/console";
@@ -225,12 +203,6 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
           <p className="px-3 pb-1.5 text-xs font-medium text-muted/80">Your agents</p>
           <div className="flex flex-col gap-0.5">{CONTROLS.map(renderItem)}</div>
         </div>
-        {LEGACY.length > 0 && (
-          <div>
-            <p className="px-3 pb-1.5 text-xs font-medium text-muted/80">Shopping (legacy)</p>
-            <div className="flex flex-col gap-0.5">{LEGACY.map(renderItem)}</div>
-          </div>
-        )}
         <p className="mx-1 mt-auto rounded-xl border border-border px-3.5 py-3 text-xs leading-relaxed text-muted">
           Payments settle in <span className="text-foreground">USDC on Solana</span> over x402. Providers come from Pay.sh, Circle&apos;s Agent Marketplace and PayAI, on mainnet and devnet.
         </p>

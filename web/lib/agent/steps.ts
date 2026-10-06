@@ -4,6 +4,7 @@
 
 import type { ProviderCard, StepDetail, StepHint, StepStatus } from "./events";
 import type { ToolResult } from "./execute-tool";
+import { explorerTx, networkWord } from "../explorer";
 
 const USDC = 1_000_000;
 
@@ -11,29 +12,7 @@ function usdc(minor: unknown): string | undefined {
   return typeof minor === "number" ? `${(minor / USDC).toLocaleString("en-US", { maximumFractionDigits: 6 })} USDC` : undefined;
 }
 
-const NETWORK_LABELS: Record<string, string> = { solana: "mainnet", "solana-devnet": "devnet" };
 const CATALOGS: Record<string, string> = { "pay.sh": "Pay.sh", circle: "Circle Agent Marketplace", payai: "PayAI" };
-
-export function networkWord(n: unknown): string {
-  return typeof n === "string" ? (NETWORK_LABELS[n] ?? n) : "";
-}
-
-/** A Solana transaction on the explorer, on its own cluster. */
-export function explorerTx(sig: string, network: string | undefined): string {
-  return `https://explorer.solana.com/tx/${encodeURIComponent(sig)}${network === "solana-devnet" ? "?cluster=devnet" : ""}`;
-}
-
-/** Pre-pivot store names, still read by the older console pages. */
-const MERCHANT_LABELS: Record<string, string> = {
-  mock: "Demo store (test)",
-  demo_checkout: "Demo checkout",
-  "generic-browser": "Web",
-};
-
-export function merchantLabel(m: string | undefined) {
-  if (!m) return "provider";
-  return MERCHANT_LABELS[m] ?? m;
-}
 
 const REASONS: Record<string, string> = {
   PASS_APPROVAL_REQUIRED: "At or above the pass's approval line",

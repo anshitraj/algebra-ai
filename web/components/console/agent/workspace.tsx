@@ -110,7 +110,7 @@ function uid() {
 
 export function AgentWorkspace() {
   const { user } = useSession();
-  const { refreshOverview } = useConsoleData();
+  const { refresh: refreshConsole } = useConsoleData();
   const { network, rails, refreshRails } = useNetwork();
   const params = useSearchParams();
 
@@ -261,12 +261,12 @@ export function AgentWorkspace() {
                 ? t
                 : { ...t, approvals: [...t.approvals, { intentId: e.intentId, provider: e.provider }] }
             );
-            refreshOverview();
+            refreshConsole();
             break;
           case "spend":
             setSession((s) => ({ ...s, spent: s.spent + e.amount.minor_units, calls: s.calls + 1 }));
             setCallsKey((k) => k + 1);
-            refreshOverview();
+            refreshConsole();
             break;
           case "done":
             finished = true;
@@ -336,7 +336,7 @@ export function AgentWorkspace() {
         inputRef.current?.focus();
       }
     },
-    [running, choice, history, passId, network, updateTurn, refreshOverview]
+    [running, choice, history, passId, network, updateTurn, refreshConsole]
   );
 
   function newChat() {
@@ -364,7 +364,7 @@ export function AgentWorkspace() {
 
   function onApprovalResolved(turnId: string, intentId: string, o: ApprovalOutcome) {
     updateTurn(turnId, (t) => ({ ...t, approvals: t.approvals.map((a) => (a.intentId === intentId ? { ...a, resolved: o } : a)) }));
-    refreshOverview();
+    refreshConsole();
     setCallsKey((k) => k + 1);
     send(o === "approved" ? "I approved it. Run it now." : "I cancelled it. Don't run this call.");
   }

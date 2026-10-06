@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 export function Button({
@@ -21,29 +20,6 @@ export function Button({
     >
       {children}
     </button>
-  );
-}
-
-export function LinkButton({
-  href,
-  children,
-  variant = "primary",
-}: {
-  href: string;
-  children: ReactNode;
-  variant?: "primary" | "secondary";
-}) {
-  const styles =
-    variant === "primary"
-      ? "bg-primary text-primary-tint hover:opacity-90"
-      : "border border-border-strong text-foreground hover:bg-primary-tint";
-  return (
-    <Link
-      href={href}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-opacity ${styles}`}
-    >
-      {children}
-    </Link>
   );
 }
 
@@ -70,10 +46,6 @@ const inputStyles =
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${inputStyles} ${props.className ?? ""}`} />;
-}
-
-export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`${inputStyles} ${props.className ?? ""}`} />;
 }
 
 const statusTone: Record<string, string> = {
@@ -191,10 +163,6 @@ export function timeAgo(iso: string) {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   if (s < 604800) return `${Math.floor(s / 86400)}d ago`;
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-export function itemsSummary(items: { query?: string; name?: string; quantity: number }[]) {
-  return items.map((i) => `${i.quantity > 1 ? `${i.quantity}× ` : ""}${i.query ?? i.name ?? "item"}`).join(", ");
 }
 
 export function formatMoney(m: { minor_units: number; currency: string } | undefined): string {

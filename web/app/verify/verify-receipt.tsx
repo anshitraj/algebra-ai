@@ -3,14 +3,13 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import * as api from "@/lib/api-client";
-import type { ReceiptVerification } from "@/lib/types";
-import { merchantLabel } from "@/lib/agent/steps";
-import { IconCheck, IconX, Spinner } from "@/components/icons";
-
-const money = (minor: number, currency = "INR") =>
-  `${currency === "INR" ? "₹" : `${currency} `}${(minor / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+import type { IntentReceiptClaims, ReceiptMoney, ReceiptVerification } from "@/lib/types";
+import { formatMoney } from "@/lib/money";
+import { explorerTx, networkWord } from "@/lib/explorer";
+import { IconCheck, IconExternal, IconX, Spinner } from "@/components/icons";
 
 const when = (unix: number) => new Date(unix * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const money = (m: ReceiptMoney) => formatMoney(m.minor_units, m.currency);
 
 export function VerifyReceipt() {
   const params = useSearchParams();
@@ -79,6 +78,15 @@ export function VerifyReceipt() {
   );
 }
 
+const FULFILMENT: Record<string, string> = {
+  fulfilled: "The provider delivered a result.",
+  FULFILLED: "The provider delivered a result.",
+  not_fulfilled: "Paid, but the result wasn't usable.",
+  NOT_FULFILLED: "Paid, but the result wasn't usable.",
+  result_unknown: "Paid; the result isn't known.",
+  UNKNOWN: "Paid; the result isn't known.",
+};
+
 function Result({ v }: { v: ReceiptVerification }) {
   if (!v.valid || !v.claims) {
     return (
@@ -93,8 +101,10 @@ function Result({ v }: { v: ReceiptVerification }) {
       </div>
     );
   }
-  const c = v.claims;
-  const human = c.authorization.method === "human";
+  const c: IntentReceiptClaims = v.claims;
+  const human = c.authority.method === "human";
+  const s = c.settlement;
+  const q = c.execution.quality;
   return (
     <div className="mt-6 overflow-hidden rounded-2xl border border-primary/40 bg-surface">
       <div className="flex gap-3 border-b border-border bg-primary-tint/60 px-5 py-4">
@@ -102,42 +112,64 @@ function Result({ v }: { v: ReceiptVerification }) {
           <IconCheck size={14} strokeWidth={2.8} />
         </span>
         <div className="min-w-0">
-          <p className="font-medium text-foreground">
-            Genuine — signed by Algebra{v.recorded ? " and on record" : ""}
-          </p>
+          <p className="font-medium text-foreground">Genuine — signed by Algebra{v.recorded ? " and on record" : ""}</p>
           <p className="mt-0.5 text-sm text-muted">
-            {human ? "The person approved this exact purchase themselves" : "Within the limits the person set, so their rules approved it"} on{" "}
-            {when(c.authorization.approved_at || c.iat)}.
+            {human ? "The person approved this exact call themselves" : "Within the limits of the person's Spend Pass, so their rules approved it"} on{" "}
+            {when(c.iat)}.
           </p>
         </div>
-        {c.test && <span className="ml-auto h-fit shrink-0 rounded-full bg-accent-tint px-2 py-0.5 text-xs font-semibold text-accent">Test order</span>}
+        {c.test && <span className="ml-auto h-fit shrink-0 rounded-full bg-accent-tint px-2 py-0.5 text-xs font-semibold text-accent">Test money</span>}
       </div>
+
       <dl className="grid gap-x-6 gap-y-3 px-5 py-4 text-sm sm:grid-cols-2">
-        <Row label="Amount" value={money(c.amount.minor_units, c.amount.currency)} mono />
-        <Row label="Store" value={merchantLabel(c.merchant)} />
-        <Row label="Order" value={c.merchant_order_id} mono />
-        <Row label="Agent" value={c.agent.name || c.agent.id} />
-        {v.pass && (
-          <Row label="Spend pass" value={`${v.pass.label} — ${v.pass.revoked ? "since revoked" : v.pass.active ? "active" : "expired"}`} />
-        )}
+        <Row label="Asked for" value={c.intent.capability} mono />
+        <Row label="Provider" value={c.provider.id} mono />
+        <Row label="Paid" value={s ? money(s.amount) : "Nothing was paid"} mono />
+        <Row label="Ceiling the person set" value={money(c.intent.budget_max)} mono />
+        {s?.network && <Row label="Network" value={networkWord(s.network) || s.network} />}
+        <Row label="Agent" value={c.reservation.executor.name || c.reservation.executor.id} />
+        {c.authority.spend_pass_id && <Row label="Spend pass" value={c.authority.spend_pass_id} mono />}
         <Row label="Person" value={c.sub} mono />
       </dl>
-      {c.items?.length > 0 && (
-        <ul className="divide-y divide-border border-t border-border text-sm">
-          {c.items.map((it, i) => (
-            <li key={i} className="flex items-baseline justify-between gap-4 px-5 py-2.5">
-              <span className="min-w-0 text-foreground">
-                {it.quantity > 1 ? `${it.quantity}× ` : ""}
-                {it.name}
-              </span>
-              <span className="shrink-0 font-mono text-muted tabular-nums">{money(it.unit_minor_units * it.quantity, c.amount.currency)}</span>
-            </li>
-          ))}
-        </ul>
+
+      {s?.transaction && (
+        <a
+          href={explorerTx(s.transaction, s.network)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-between gap-3 border-t border-border px-5 py-3 text-sm text-foreground hover:bg-primary-tint/40"
+        >
+          <span className="min-w-0">
+            <span className="block text-xs text-muted">Transaction on Solana Explorer</span>
+            <span className="block truncate font-mono text-[0.8rem]">{s.transaction}</span>
+          </span>
+          <IconExternal size={14} className="shrink-0 text-muted" />
+        </a>
       )}
-      <p className="border-t border-border px-5 py-3 text-xs text-muted">
+
+      <ul className="divide-y divide-border border-t border-border text-sm">
+        <Line label="Result" value={FULFILMENT[c.final_state.fulfillment] ?? FULFILMENT[c.execution.status] ?? c.execution.status} />
+        {q && (
+          <Line
+            label="Judged by Algebra"
+            value={`${q.evaluator}${q.schema_valid === undefined ? "" : q.schema_valid ? ", matches the expected shape" : ", doesn't match the expected shape"}${typeof q.score === "number" ? `, ${Math.round(q.score)}/100` : ""}`}
+          />
+        )}
+        {c.routing && (
+          <Line
+            label="How it was chosen"
+            value={`${c.routing.mode.toLowerCase()} routing, ${c.routing.fallback ? `fallback #${c.routing.plan_rank}` : "first choice"}`}
+          />
+        )}
+        <Line
+          label="Safety"
+          value={`${c.coordination.attempts} attempt${c.coordination.attempts === 1 ? "" : "s"}, ${c.coordination.duplicate_commit_attempts_blocked} duplicate payment${c.coordination.duplicate_commit_attempts_blocked === 1 ? "" : "s"} stopped${c.coordination.reconciliation_required ? ", reconciled afterwards" : ""}`}
+        />
+      </ul>
+
+      <p className="border-t border-border px-5 py-3 text-xs break-all text-muted">
         Receipt {c.jti} · issued by {c.iss}
-        {c.authorization.policy_version ? ` · policy ${c.authorization.policy_version}` : ""}
+        {c.authority.policy_version ? ` · policy ${c.authority.policy_version}` : ""} · intent {c.intent.id}
       </p>
     </div>
   );
@@ -149,5 +181,14 @@ function Row({ label, value, mono = false }: { label: string; value: string; mon
       <dt className="text-xs text-muted">{label}</dt>
       <dd className={`truncate text-foreground ${mono ? "font-mono text-[0.8rem]" : ""}`}>{value}</dd>
     </div>
+  );
+}
+
+function Line({ label, value }: { label: string; value: string }) {
+  return (
+    <li className="flex items-baseline justify-between gap-4 px-5 py-2.5">
+      <span className="shrink-0 text-muted">{label}</span>
+      <span className="min-w-0 text-right text-foreground">{value}</span>
+    </li>
   );
 }

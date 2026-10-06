@@ -55,11 +55,6 @@ export const IconChevronDown = (p: IconProps) => (
     <path d="M6 9l6 6 6-6" />
   </Svg>
 );
-export const IconChevronRight = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M9 6l6 6-6 6" />
-  </Svg>
-);
 export const IconEye = (p: IconProps) => (
   <Svg {...p}>
     <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
@@ -90,93 +85,10 @@ export const IconShield = (p: IconProps) => (
     <path d="M8.8 12l2.2 2.2 4.3-4.4" />
   </Svg>
 );
-export const IconSpark = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" />
-  </Svg>
-);
-export const IconCart = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M3 4h2.2l2.3 11.2a1.5 1.5 0 001.5 1.2h8.3a1.5 1.5 0 001.5-1.1L20.5 8H6.2" />
-    <circle cx="9.5" cy="20" r="1.2" />
-    <circle cx="17" cy="20" r="1.2" />
-  </Svg>
-);
-export const IconUtensils = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M6.5 3v7.5a2 2 0 002 2V21M10.5 3v7.5a2 2 0 01-2 2M8.5 3v6" />
-    <path d="M17.5 21V3c-2 1.2-3 3.6-3 7v3.5h3" />
-  </Svg>
-);
-export const IconPill = (p: IconProps) => (
-  <Svg {...p}>
-    <rect x="3.2" y="8.3" width="17.6" height="7.4" rx="3.7" transform="rotate(-45 12 12)" />
-    <path d="M9.4 9.4l5.2 5.2" />
-  </Svg>
-);
-export const IconDevice = (p: IconProps) => (
-  <Svg {...p}>
-    <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
-    <path d="M10.5 18.5h3" />
-  </Svg>
-);
-export const IconShirt = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M8.5 3.5L4 6l1.5 4.5 2-1V20.5h9V9.5l2 1L20 6l-4.5-2.5a3.5 3.5 0 01-7 0z" />
-  </Svg>
-);
-export const IconHome = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 10.5L12 4l8 6.5V20a1 1 0 01-1 1h-4.5v-6h-5v6H5a1 1 0 01-1-1z" />
-  </Svg>
-);
-export const IconDrop = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12 3.5s6 6.4 6 10.5a6 6 0 01-12 0c0-4.1 6-10.5 6-10.5z" />
-  </Svg>
-);
-export const IconRepeat = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M17 3l3 3-3 3M4 11V9.5A3.5 3.5 0 017.5 6H20M7 21l-3-3 3-3M20 13v1.5a3.5 3.5 0 01-3.5 3.5H4" />
-  </Svg>
-);
 export const IconTag = (p: IconProps) => (
   <Svg {...p}>
     <path d="M3.5 12.4V4.5a1 1 0 011-1h7.9a1 1 0 01.7.3l8 8a1 1 0 010 1.4l-7.9 7.9a1 1 0 01-1.4 0l-8-8a1 1 0 01-.3-.7z" />
     <circle cx="8" cy="8" r="1.4" />
-  </Svg>
-);
-export const IconBolt = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M13 2.5L4.5 13.5H12l-1 8 8.5-11H12z" />
-  </Svg>
-);
-export const IconStar = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z" />
-  </Svg>
-);
-export const IconScale = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12 3.5v17M7.5 20.5h9M5 7.5h14M5 7.5l-2.5 6a3 3 0 005 0zM19 7.5l-2.5 6a3 3 0 005 0z" />
-  </Svg>
-);
-export const IconUser = (p: IconProps) => (
-  <Svg {...p}>
-    <circle cx="12" cy="8" r="3.8" />
-    <path d="M4.5 20.5a7.5 7.5 0 0115 0" />
-  </Svg>
-);
-export const IconUsers = (p: IconProps) => (
-  <Svg {...p}>
-    <circle cx="9" cy="8.5" r="3.3" />
-    <path d="M2.8 19.5a6.2 6.2 0 0112.4 0M15.5 5.4a3.3 3.3 0 010 6.3M17.5 13.6a6.2 6.2 0 013.7 5.9" />
-  </Svg>
-);
-export const IconMapPin = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12 21s-7-6.2-7-11.5a7 7 0 0114 0C19 14.8 12 21 12 21z" />
-    <circle cx="12" cy="9.5" r="2.5" />
   </Svg>
 );
 export const IconBan = (p: IconProps) => (
@@ -223,12 +135,6 @@ export const IconInbox = (p: IconProps) => (
     <path d="M3.5 13.5h4.5l1.5 2.5h5l1.5-2.5h4.5" />
   </Svg>
 );
-export const IconPackage = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-    <path d="M4 7.5l8 4.5 8-4.5M12 12v9M8 5.2l8 4.6" />
-  </Svg>
-);
 export const IconWallet = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 7.5A2.5 2.5 0 016.5 5h11A1.5 1.5 0 0119 6.5V8" />
@@ -247,13 +153,6 @@ export const IconStore = (p: IconProps) => (
     <path d="M9.5 20v-5h5v5" />
   </Svg>
 );
-export const IconSliders = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
-    <circle cx="15" cy="7" r="2" />
-    <circle cx="9" cy="17" r="2" />
-  </Svg>
-);
 export const IconPlus = (p: IconProps) => (
   <Svg {...p}>
     <path d="M12 5v14M5 12h14" />
@@ -268,12 +167,6 @@ export const IconSearch = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="11" cy="11" r="6.5" />
     <path d="M20 20l-4.3-4.3" />
-  </Svg>
-);
-export const IconGlobe = (p: IconProps) => (
-  <Svg {...p}>
-    <circle cx="12" cy="12" r="8.5" />
-    <path d="M3.5 12h17M12 3.5c2.3 2.4 3.5 5.2 3.5 8.5s-1.2 6.1-3.5 8.5c-2.3-2.4-3.5-5.2-3.5-8.5s1.2-6.1 3.5-8.5z" />
   </Svg>
 );
 export const IconReceipt = (p: IconProps) => (
@@ -308,18 +201,6 @@ export const IconExternal = (p: IconProps) => (
     <path d="M13.5 4.5h6v6M19.5 4.5L11 13M17.5 14v4a1.5 1.5 0 01-1.5 1.5H6A1.5 1.5 0 014.5 18V8A1.5 1.5 0 016 6.5h4" />
   </Svg>
 );
-export const IconLeaf = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M5 19c0-8 5-13.5 15-14-.4 10-6 15-14 15" />
-    <path d="M5 19l7-7" />
-  </Svg>
-);
-export const IconSkip = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M5 6l8 6-8 6zM17 6v12" />
-  </Svg>
-);
-
 export function Spinner({ size = 16, className = "" }: { size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={`animate-spin ${className}`} aria-hidden="true">

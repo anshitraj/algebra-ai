@@ -51,22 +51,6 @@ export type StepDetail = {
   endpoints?: { capability: string; method: string; path: string; description?: string; price?: string; callable: boolean }[];
   /** The provider's own response, pretty-printed and bounded: untrusted data. */
   response?: string;
-  /** Kept only for chats saved before the Solana pivot. */
-  quotes?: { merchant: string; total: string; eta?: string; items: string }[];
-  products?: {
-    merchant: string;
-    name: string;
-    title?: string;
-    price?: string;
-    url?: string;
-    image?: string;
-    eta?: string;
-    etaTypical?: boolean;
-    storePage?: boolean;
-    code?: string;
-    posted?: string;
-    warning?: string;
-  }[];
   links?: { title: string; url: string }[];
   reasons?: string[];
   /** One line of context shown under the detail. */
