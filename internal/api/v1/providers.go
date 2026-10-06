@@ -15,7 +15,7 @@ import (
 // rate limit still applies. Everything in them is third-party text: clients
 // show it as text and never as instructions.
 
-// listProviders: GET /api/v1/providers?q=&category=&source=&limit=&offset=
+// listProviders: GET /api/v1/providers?q=&category=&source=&network=&limit=&offset=
 func (a *API) listProviders(w http.ResponseWriter, r *http.Request) {
 	if !a.directoryEnabled(w) {
 		return
@@ -24,7 +24,7 @@ func (a *API) listProviders(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
 	l, err := a.b.Directory.List(r.Context(), catalog.Filter{
-		Query: clip(q.Get("q"), 100), Category: clip(q.Get("category"), 32), Source: clip(q.Get("source"), 16), Limit: limit, Offset: offset,
+		Query: clip(q.Get("q"), 100), Category: clip(q.Get("category"), 32), Source: clip(q.Get("source"), 16), Network: clip(q.Get("network"), 32), Limit: limit, Offset: offset,
 	})
 	if err != nil {
 		writeCatalogError(w, err)

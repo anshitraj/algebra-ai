@@ -173,7 +173,7 @@ function GettingStarted({ providers }: { providers?: number }) {
       href: "/console/providers",
       icon: <IconStore size={16} />,
       title: "Pick what it can call",
-      body: providers ? `${providers} paid APIs from Pay.sh and Circle's Agent Marketplace.` : "Paid APIs from Pay.sh and Circle's Agent Marketplace.",
+      body: providers ? `${providers} paid APIs from Pay.sh, Circle's Agent Marketplace and PayAI.` : "Paid APIs from Pay.sh, Circle's Agent Marketplace and PayAI.",
     },
   ];
   return (

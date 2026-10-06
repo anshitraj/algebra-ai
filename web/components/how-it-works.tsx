@@ -12,7 +12,7 @@ const steps = [
   {
     n: "02",
     title: "Discovery",
-    body: "Algebra finds providers in Pay.sh and Circle's Agent Marketplace and asks each for its real price. The agent never talks to a provider directly.",
+    body: "Algebra finds providers in Pay.sh, Circle's Agent Marketplace and PayAI, and asks each for its real price. The agent never talks to a provider directly.",
   },
   {
     n: "03",

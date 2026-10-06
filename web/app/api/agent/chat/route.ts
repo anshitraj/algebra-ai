@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveProvider } from "@/lib/agent/models";
 import { buildSystemPrompt } from "@/lib/agent/system-prompt";
-import { consumeAgentTurn, getAgentToken, getCommerceProfile, getGuardrails, getPlugins, ServerApiError, type TurnQuota } from "@/lib/agent/server-client";
+import { consumeAgentTurn, getAgentToken, getPasses, getRails, ServerApiError, type ServerIdentity, type TurnQuota } from "@/lib/agent/server-client";
 import { toolsFor } from "@/lib/agent/tools";
 import { trimHistory } from "@/lib/agent/history";
 import type { AgentEvent } from "@/lib/agent/events";
@@ -14,6 +14,10 @@ type ChatRequestBody = {
   model?: string;
   message?: string;
   history?: unknown[];
+  /** The Spend Pass this chat pays under; one of the signed-in person's active USDC passes. */
+  spend_pass_id?: string;
+  /** "solana" (mainnet) or "solana-devnet". */
+  network?: string;
 };
 
 const MAX_MESSAGE_CHARS = 4000;
@@ -27,7 +31,9 @@ const MAX_MESSAGE_CHARS = 4000;
  * Identity comes only from the browser's session cookie: it's exchanged
  * server-side for the session's console-agent token, which every tool call
  * then uses. The browser never sends (or holds) an agent token, and the
- * agent token can't approve — approvals stay a human click.
+ * agent token can't approve — approvals stay a human click. Payments go
+ * under the Spend Pass the person picked, on the network they picked, and
+ * nowhere else.
  */
 export async function POST(request: Request) {
   let body: ChatRequestBody;
@@ -50,10 +56,11 @@ export async function POST(request: Request) {
     );
   }
 
+  const network = body.network === "solana-devnet" ? "solana-devnet" : "solana";
   const cookie = request.headers.get("cookie") ?? "";
-  let identity;
+  let token;
   try {
-    identity = await getAgentToken(cookie);
+    token = await getAgentToken(cookie);
   } catch (err) {
     const status = err instanceof ServerApiError ? err.status : 502;
     return NextResponse.json(
@@ -62,22 +69,24 @@ export async function POST(request: Request) {
     );
   }
 
-  // One message = one LLM run plus billed searches; the API holds the daily
-  // count. If the count itself can't be reached, don't block the person.
+  // Rebuilt every turn: a pass revoked or spent down in another tab takes
+  // effect on the very next message. The API checks the pass again on every
+  // payment; this only keeps the agent from promising what it can't do.
+  const wanted = typeof body.spend_pass_id === "string" ? body.spend_pass_id.trim() : "";
+  const [passes, rails] = await Promise.all([wanted ? getPasses(cookie).catch(() => null) : [], getRails(cookie).catch(() => [])]);
+  if (passes === null) return NextResponse.json({ error: "Can't read your Spend Passes right now. Try again in a moment." }, { status: 502 });
+  const pass = wanted ? (passes.find((p) => p.id === wanted && p.active && p.currency === "USDC") ?? null) : null;
+  if (wanted && !pass) {
+    return NextResponse.json({ error: "That Spend Pass isn't active or isn't in USDC. Pick another one, or create one under Spend passes." }, { status: 409 });
+  }
+
+  // One message = one LLM run; the API holds the daily count. If the count
+  // itself can't be reached, don't block the person.
   const quota = await consumeAgentTurn(cookie).catch((): TurnQuota => ({ ok: true }));
   if (!quota.ok) return NextResponse.json({ error: quotaMessage(quota) }, { status: 429 });
-
-  // Rebuilt every turn: a preference saved mid-chat or a guardrail edited in
-  // another tab takes effect on the very next message.
-  const [profile, guardrails, plugins] = await Promise.all([
-    getCommerceProfile(identity).catch(() => null),
-    getGuardrails(cookie).catch(() => null),
-    getPlugins(cookie).catch(() => []),
-  ]);
-  const active = plugins.filter((p) => p.enabled && p.ready);
-  const systemPrompt = buildSystemPrompt(profile, guardrails, identity.mode, active);
-  const tools = toolsFor(new Set(active.map((p) => p.purpose)));
-  if (guardrails?.max_per_purchase_minor_units) identity = { ...identity, defaultBudgetMinor: guardrails.max_per_purchase_minor_units };
+  const identity: ServerIdentity = { ...token, passId: pass?.id, network };
+  const systemPrompt = buildSystemPrompt({ network, pass, rail: rails.find((r) => r.network === network), mode: token.mode });
+  const tools = toolsFor();
   const history = trimHistory(Array.isArray(body.history) ? body.history : []);
 
   const encoder = new TextEncoder();
@@ -141,6 +150,6 @@ function quotaMessage(q: Extract<TurnQuota, { ok: false }>) {
 function friendlyProviderError(detail: string) {
   if (/401|invalid.*api.?key|authentication/i.test(detail)) return "The AI provider rejected this server's API key.";
   if (/429|rate.?limit|quota/i.test(detail)) return "The AI provider is rate-limiting us. Wait a few seconds and try again.";
-  if (/model.*(not found|does not exist)|404/i.test(detail)) return "That model isn't available on this API key. Pick another in the model menu.";
+  if (/model.*(not found|does not exist)/i.test(detail)) return "That model isn't available on this API key. Pick another in the model menu.";
   return detail.length > 240 ? `${detail.slice(0, 240)}…` : detail;
 }

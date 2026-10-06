@@ -1,0 +1,88 @@
+{
+ "x402Version": 2,
+ "items": [
+  {
+   "accepts": [
+    {
+     "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+     "extra": {
+      "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+     },
+     "payTo": "7grNrEi9uoNxH2w4VVAoR48ieH8meUGfRmfFTyZvVAFP",
+     "scheme": "exact",
+     "network": "solana-devnet",
+     "mimeType": "",
+     "resource": "https://donation-template-test-2.vercel.app/api/write-message",
+     "description": "Donate with custom amount and message",
+     "outputSchema": {
+      "input": {
+       "type": "http",
+       "method": "POST",
+       "discoverable": true
+      }
+     },
+     "maxAmountRequired": "1000000",
+     "maxTimeoutSeconds": 60
+    }
+   ],
+   "lastUpdated": "2025-11-16T07:27:31.690Z",
+   "metadata": {},
+   "resource": "https://donation-template-test-2.vercel.app/api/write-message",
+   "type": "http",
+   "x402Version": 1,
+   "description": null,
+   "mimeType": null,
+   "serviceName": null,
+   "tags": null,
+   "iconUrl": null,
+   "extensions": null,
+   "method": null,
+   "toolName": null,
+   "inputSchema": null
+  },
+  {
+   "accepts": [
+    {
+     "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+     "extra": {
+      "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+     },
+     "payTo": "3gQU5PWVgwAEUrCZtpAPTFRcfFQcB6y39PRX8LQZGvKG",
+     "scheme": "exact",
+     "network": "solana-devnet",
+     "mimeType": "",
+     "resource": "https://x402.elixir.games/dynamic-pay",
+     "description": "",
+     "outputSchema": {
+      "input": {
+       "type": "http",
+       "method": "POST",
+       "discoverable": true
+      }
+     },
+     "maxAmountRequired": "59630000",
+     "maxTimeoutSeconds": 60
+    }
+   ],
+   "lastUpdated": "2025-11-16T00:16:54.328Z",
+   "metadata": {},
+   "resource": "https://x402.elixir.games/dynamic-pay",
+   "type": "http",
+   "x402Version": 1,
+   "description": null,
+   "mimeType": null,
+   "serviceName": null,
+   "tags": null,
+   "iconUrl": null,
+   "extensions": null,
+   "method": null,
+   "toolName": null,
+   "inputSchema": null
+  }
+ ],
+ "pagination": {
+  "limit": 1000,
+  "offset": 0,
+  "total": 2
+ }
+}

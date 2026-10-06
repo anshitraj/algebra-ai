@@ -8,6 +8,7 @@ import { catalogName } from "@/lib/paysh";
 import { IconCheck, IconPlus, IconShield, IconX, Spinner } from "@/components/icons";
 import { Button, ErrorNote, Field, Input, PageHeader, Panel, Skeleton } from "@/components/console/ui";
 import { Copy, Snippet } from "@/components/console/snippet";
+import { ProviderLogo } from "@/components/provider-logo";
 
 const AGENTS: { value: AgentKind; label: string; hint: string }[] = [
   { value: "claude", label: "Claude", hint: "Claude Code, Claude Desktop" },
@@ -318,7 +319,8 @@ function ProviderPicker({ picked, onChange }: { picked: ProviderSummary[]; onCha
                   }}
                   className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-tint disabled:opacity-50"
                 >
-                  <span className="min-w-0">
+                  <ProviderLogo name={p.name} logo={p.logo_url} website={p.website} host={p.host} fqn={p.fqn} size={24} />
+                  <span className="min-w-0 flex-1">
                     <span className="block truncate text-foreground">{p.name}</span>
                     <span className="block truncate font-mono text-[0.6875rem] text-muted">{p.id}</span>
                   </span>

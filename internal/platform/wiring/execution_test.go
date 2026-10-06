@@ -92,7 +92,7 @@ func TestBuildSolanaRail(t *testing.T) {
 	// A good setup: the node serves the configured cluster.
 	devnet := solanatest.New(solana.DevnetGenesisHash)
 	rail, err := buildSolanaRail(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: devnet.Serve(t), KeypairFile: path, MaxPaymentMinor: 250_000})
-	if err != nil || rail == nil || rail.Network() != "solana-devnet" || rail.Name() != "x402-solana" {
+	if err != nil || rail == nil || rail.Network() != "solana-devnet" || rail.Name() != solanax402.DevnetRailName {
 		t.Fatalf("a good setup: %v %v", rail, err)
 	}
 

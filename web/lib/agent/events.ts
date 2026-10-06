@@ -16,40 +16,60 @@ export type AgentEvent =
       detail?: StepDetail;
     }
   | { type: "text"; text: string }
-  | { type: "approval"; intentId: string }
+  /** A paid call is waiting for the person: approve or cancel it in the card. */
+  | { type: "approval"; intentId: string; provider?: string }
   /** The agent asked 1-4 multiple-choice questions; the turn ends and the picks come back as the next message. */
   | { type: "question"; questions: AskedQuestion[] }
-  | { type: "spend"; amount: { minor_units: number; currency: string }; orderId: string; merchant: string }
+  /** USDC paid for a delivered call (micro-USDC). */
+  | { type: "spend"; amount: { minor_units: number; currency: string }; intentId: string; provider: string; network?: string }
   | { type: "done"; reply: string; history: unknown[]; provider: string; model: string }
   | { type: "error"; error: string };
 
 /** What a running step is working on, for its live activity panel. */
-export type StepHint = { query?: string; budget?: string };
+export type StepHint = { query?: string; budget?: string; provider?: string; network?: string };
+
+/** A provider as a step card shows it. */
+export type ProviderCard = {
+  id: string;
+  name: string;
+  description?: string;
+  catalog: string;
+  price?: string;
+  endpoints?: number;
+  networks?: string[];
+  host?: string;
+  website?: string;
+  logo?: string;
+  fqn?: string;
+  url?: string;
+};
 
 /** Structured bits of a tool result worth rendering (never raw JSON dumps). */
 export type StepDetail = {
   rows?: { label: string; value: string }[];
+  providers?: ProviderCard[];
+  endpoints?: { capability: string; method: string; path: string; description?: string; price?: string; callable: boolean }[];
+  /** The provider's own response, pretty-printed and bounded: untrusted data. */
+  response?: string;
+  /** Kept only for chats saved before the Solana pivot. */
   quotes?: { merchant: string; total: string; eta?: string; items: string }[];
   products?: {
     merchant: string;
     name: string;
-    /** The listing's own title, for "I'll take this one". */
     title?: string;
     price?: string;
     url?: string;
     image?: string;
-    /** Delivery time — the listing's own, or the store's typical one when `etaTypical`. */
     eta?: string;
     etaTypical?: boolean;
-    /** A store's search or category page rather than one product. */
     storePage?: boolean;
-    /** A coupon code a community post showed — unverified. */
     code?: string;
-    /** How old a community post is, e.g. "2 days ago". */
-    posted?: string; warning?: string }[];
+    posted?: string;
+    warning?: string;
+  }[];
   links?: { title: string; url: string }[];
   reasons?: string[];
-  /** One line of context shown under the detail, e.g. "prices may have changed". */
+  /** One line of context shown under the detail. */
   note?: string;
 };
 

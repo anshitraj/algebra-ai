@@ -28,10 +28,13 @@ import {
   Spinner,
 } from "@/components/icons";
 import { ConsoleDataProvider, useConsoleData } from "./console-data";
+import { NetworkProvider } from "@/lib/network";
+import { NetworkSwitch } from "./network-switch";
 
 type NavItem = { href: string; label: string; icon: React.ReactNode; badge?: "approvals" };
 
 const PRIMARY: NavItem[] = [
+  { href: "/console/agent", label: "Agent chat", icon: <IconChat /> },
   { href: "/console", label: "Overview", icon: <IconGrid /> },
   { href: "/console/providers", label: "Providers", icon: <IconStore /> },
   { href: "/console/executions", label: "Executions", icon: <IconList />, badge: "approvals" },
@@ -47,7 +50,6 @@ const CONTROLS: NavItem[] = [
 const LEGACY: NavItem[] =
   process.env.NEXT_PUBLIC_LEGACY_SHOPPING === "1"
     ? [
-        { href: "/console/agent", label: "Agent", icon: <IconChat /> },
         { href: "/console/approvals", label: "Approvals", icon: <IconInbox /> },
         { href: "/console/orders", label: "Orders", icon: <IconPackage /> },
         { href: "/console/activity", label: "Activity", icon: <IconList /> },
@@ -77,9 +79,11 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ConsoleDataProvider>
-      <ShellFrame user={user}>{children}</ShellFrame>
-    </ConsoleDataProvider>
+    <NetworkProvider>
+      <ConsoleDataProvider>
+        <ShellFrame user={user}>{children}</ShellFrame>
+      </ConsoleDataProvider>
+    </NetworkProvider>
   );
 }
 
@@ -148,8 +152,14 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
             <Logo size={20} />
             <span className="font-display text-sm font-semibold">Algebra</span>
           </Link>
-          <MobileApprovalsPill />
+          <div className="ml-auto flex items-center gap-2">
+            <MobileApprovalsPill />
+            <NetworkSwitch compact />
+          </div>
         </header>
+        <div className="hidden h-12 shrink-0 items-center justify-end gap-3 border-b border-border px-6 md:flex print:hidden">
+          <NetworkSwitch />
+        </div>
         <main className={`min-h-0 flex-1 ${fullBleed ? "overflow-hidden" : "overflow-y-auto"} print:overflow-visible`}>
           {fullBleed ? children : <div className="px-5 py-8 md:px-10 md:py-10">{children}</div>}
         </main>
@@ -164,7 +174,7 @@ function MobileApprovalsPill() {
   return (
     <Link
       href="/console/executions"
-      className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-full bg-accent-tint px-3 text-xs font-medium text-accent"
+      className="inline-flex h-8 items-center gap-1.5 rounded-full bg-accent-tint px-3 text-xs font-medium text-accent"
     >
       <IconInbox size={14} /> {n} waiting
     </Link>
@@ -222,7 +232,7 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
           </div>
         )}
         <p className="mx-1 mt-auto rounded-xl border border-border px-3.5 py-3 text-xs leading-relaxed text-muted">
-          Payments settle in <span className="text-foreground">USDC on Solana</span> over x402. Providers come from Pay.sh and Circle&apos;s Agent Marketplace.
+          Payments settle in <span className="text-foreground">USDC on Solana</span> over x402. Providers come from Pay.sh, Circle&apos;s Agent Marketplace and PayAI, on mainnet and devnet.
         </p>
       </nav>
       <UserMenu user={user} />

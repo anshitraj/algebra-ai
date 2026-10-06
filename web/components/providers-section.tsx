@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Container } from "./container";
-import { ProviderMark } from "./provider-mark";
+import { ProviderLogo } from "./provider-logo";
 import { CATALOGS, FEATURED_PROVIDERS, catalogName, categoryLabel } from "@/lib/paysh";
 import { formatPriceRange } from "@/lib/money";
 import type { ProviderListing } from "@/lib/types";
@@ -47,8 +47,8 @@ export function Providers() {
               Every provider, as its catalog lists it.
             </h2>
             <p className="mt-4 max-w-xl text-[1.0625rem] leading-relaxed text-muted">
-              Algebra reads two catalogs of pay-per-call APIs, Pay.sh and Circle&apos;s Agent Marketplace, and keeps what can
-              be paid in USDC on Solana. A listing is not an endorsement and a listed price is not a quote: Algebra asks
+              Algebra reads three catalogs of pay-per-call APIs, Pay.sh, Circle&apos;s Agent Marketplace and PayAI, and keeps
+              what can be paid in USDC on Solana, mainnet or devnet. A listing is not an endorsement and a listed price is not a quote: Algebra asks
               the endpoint for its real terms before it pays.
             </p>
           </div>
@@ -78,7 +78,7 @@ export function Providers() {
                 <tr key={p.id} className="border-b border-border last:border-b-0">
                   <td className="px-5 py-4">
                     <span className="flex items-start gap-3">
-                      <ProviderMark name={p.name} size={28} />
+                      <ProviderLogo name={p.name} logo={"logo_url" in p ? (p.logo_url as string | undefined) : undefined} website={"website" in p ? (p.website as string | undefined) : undefined} host={p.host} size={28} />
                       <span className="min-w-0">
                         <span className="font-display block text-sm font-semibold text-foreground">{p.name}</span>
                         <span className="mt-0.5 block max-w-md text-xs leading-relaxed text-muted">{p.description}</span>

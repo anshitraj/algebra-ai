@@ -455,6 +455,13 @@ func TestClient_ListFiltersAndCounts(t *testing.T) {
 	if past, _ := c.List(ctx, Filter{Offset: 100}); past.Count != 0 {
 		t.Errorf("an offset past the end is an empty page: %d", past.Count)
 	}
+	// Pay.sh is mainnet only: nothing on devnet, not even in the category counts.
+	if dev, _ := c.List(ctx, Filter{Network: "solana-devnet"}); dev.Total != 0 || len(dev.Categories) != 0 {
+		t.Errorf("devnet: %+v", dev)
+	}
+	if main, _ := c.List(ctx, Filter{Network: "solana"}); main.Total != 9 {
+		t.Errorf("mainnet: %d", main.Total)
+	}
 	if f.count("/api/catalog") != 1 {
 		t.Errorf("one fetch served every call: %d", f.count("/api/catalog"))
 	}

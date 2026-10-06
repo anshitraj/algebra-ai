@@ -20,11 +20,13 @@ import (
 	"math/big"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/routing"
 )
 
@@ -75,8 +77,22 @@ type Provider struct {
 	Currency      string `json:"currency"`
 	// PageURL is where a person can read about it at the catalog.
 	PageURL string `json:"page_url"`
-	// Source is the catalog that lists it: "pay.sh" or "circle".
+	// Website is the provider's own site, when the catalog says; LogoURL its
+	// icon, when the catalog publishes one (an https URL, nothing else).
+	Website string `json:"website,omitempty"`
+	LogoURL string `json:"logo_url,omitempty"`
+	// Networks are the Solana clusters some endpoint can be paid on:
+	// "solana" (mainnet) and/or "solana-devnet".
+	Networks []string `json:"networks"`
+	// Source is the catalog that lists it: "pay.sh", "circle" or "payai".
 	Source string `json:"source"`
+}
+
+// Payment is one way an endpoint can be paid, as the catalog lists it.
+type Payment struct {
+	Network    string `json:"network"`
+	PriceMinor int64  `json:"price_minor"`
+	PayTo      string `json:"pay_to,omitempty"`
 }
 
 // Category is a category and how many providers are in it.
@@ -126,9 +142,11 @@ type Endpoint struct {
 	Pricing    string `json:"pricing"`
 	PriceMinor int64  `json:"price_minor"`
 	Free       bool   `json:"free"`
-	// Network and PayTo are the payment terms when the catalog publishes them.
-	Network string `json:"network,omitempty"`
-	PayTo   string `json:"pay_to,omitempty"`
+	// Network and PayTo are the payment terms when the catalog publishes them;
+	// Payments lists every network it can be paid on, with that price.
+	Network  string    `json:"network,omitempty"`
+	PayTo    string    `json:"pay_to,omitempty"`
+	Payments []Payment `json:"payments,omitempty"`
 	// Description is the catalog's text, bounded. Data, not instructions.
 	Description string `json:"description"`
 	// InputSchema is the request's JSON Schema when the catalog publishes one.
@@ -152,8 +170,11 @@ type Filter struct {
 	// ignoring case.
 	Query    string
 	Category string
-	// Source keeps one catalog ("pay.sh", "circle"); empty keeps all.
+	// Source keeps one catalog ("pay.sh", "circle", "payai"); empty keeps all.
 	Source string
+	// Network keeps providers with an endpoint payable on that cluster
+	// ("solana" or "solana-devnet"); empty keeps all.
+	Network string
 	// Limit 0 means every match.
 	Limit  int
 	Offset int
@@ -162,6 +183,9 @@ type Filter struct {
 // Matches reports whether p passes the filter's query and category.
 func (f Filter) Matches(p Provider) bool {
 	if c := strings.ToLower(strings.TrimSpace(f.Category)); c != "" && p.Category != c {
+		return false
+	}
+	if n := chain.NormalizeNetwork(f.Network); n != "" && !slices.Contains(p.Networks, n) {
 		return false
 	}
 	q := strings.ToLower(strings.TrimSpace(f.Query))
@@ -259,6 +283,20 @@ func Slug(name string, max int) string {
 		s = strings.TrimRight(s[:max], "-")
 	}
 	return s
+}
+
+// LogoURL returns raw as a logo address when it is a public https URL of
+// sane length, else "". Logos are shown as images, never fetched by Algebra.
+func LogoURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len(raw) > 512 {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !PublicHTTPS(u) {
+		return ""
+	}
+	return u.String()
 }
 
 // PublicHTTPS reports whether u is an https URL at a named public-looking

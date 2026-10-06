@@ -37,6 +37,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/platform/safehttp"
 	"github.com/project-algebra/algebra/providers/catalog"
 )
@@ -179,6 +180,10 @@ func (c *Client) List(ctx context.Context, f Filter) (*Listing, error) {
 	counts := map[string]int{}
 	var matched []Provider
 	for _, p := range snap.providers {
+		// Categories count what can be paid on the network asked for, if any.
+		if n := chain.NormalizeNetwork(f.Network); n != "" && !slices.Contains(p.Networks, n) {
+			continue
+		}
 		counts[p.Category]++
 		if f.Matches(p) {
 			matched = append(matched, p)
@@ -403,6 +408,9 @@ func toProvider(r rawProvider, docsURL string) (Provider, bool) {
 		EndpointCount: min(max(r.EndpointCount, 0), maxEndpoints),
 		Metered:       r.HasMetering, FreeTier: r.HasFreeTier, Currency: Currency,
 		PageURL: strings.TrimSuffix(docsURL, "/api") + "/api/" + fqn, Source: Source,
+		// Pay.sh's gateways are paid on Solana mainnet (they answer with
+		// mainnet terms only).
+		Networks: []string{chain.Solana},
 	}
 	if lo, ok := microUSDC(priceText(r.MinPriceUSD)); ok {
 		p.MinPriceMinor = lo

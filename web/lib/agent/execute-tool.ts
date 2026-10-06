@@ -1,135 +1,201 @@
 import * as client from "./server-client";
 import type { ServerIdentity } from "./server-client";
-import type { IntentConstraints, IntentItem } from "../types";
+import type { ProviderEndpoint } from "../types";
 
 export type ToolResult = { ok: true; data: unknown } | { ok: false; error: string };
 
+const USDC = 1_000_000;
+// One call through the chat never pays more than this, whatever the model asks.
+// The Spend Pass bounds it further.
+const MAX_CALL_USDC = 5;
+
 function str(input: Record<string, unknown>, key: string): string {
   const v = input[key];
-  if (typeof v !== "string" || !v) throw new Error(`Missing required field: ${key}`);
-  return v;
+  if (typeof v !== "string" || !v.trim()) throw new Error(`Missing required field: ${key}`);
+  return v.trim();
 }
 
-function items(input: Record<string, unknown>): IntentItem[] {
-  const raw = input.items;
-  if (!Array.isArray(raw) || raw.length === 0) throw new Error("items must be a non-empty array");
-  return raw.map((it) => {
-    const obj = (it ?? {}) as Record<string, unknown>;
-    const query = obj.query;
-    if (typeof query !== "string" || !query) throw new Error("each item needs a query string");
-    const quantity = obj.quantity;
-    return { query, quantity: typeof quantity === "number" && quantity > 0 ? Math.round(quantity) : 1 };
-  });
+/** Third-party text, bounded, so a long description can't crowd out the conversation. */
+function clip(s: string | undefined, n: number): string {
+  if (!s) return "";
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 }
 
-// Used only if the route couldn't read the user's guardrails — the platform
-// default per-purchase cap (policy.DefaultRules, ₹2,000).
-const FALLBACK_BUDGET_MINOR = 200000;
+/** Bounded JSON for the model: a schema or a response can be large. */
+function bounded(v: unknown, max: number): unknown {
+  if (v === undefined || v === null) return v;
+  const text = JSON.stringify(v);
+  if (text.length <= max) return v;
+  return { truncated: true, first_characters: text.slice(0, max) };
+}
 
-function constraints(input: Record<string, unknown>, identity: ServerIdentity): IntentConstraints {
-  const maxTotal = input.max_total_minor_units;
-  const preferred = Array.isArray(input.preferred_merchants)
-    ? input.preferred_merchants.filter((m): m is string => typeof m === "string" && m.length > 0)
-    : [];
-  // The domain requires a positive ceiling on every intent. No stated budget
-  // means "up to my per-purchase cap" — policy denies above it anyway.
-  const budget =
-    typeof maxTotal === "number" && maxTotal > 0 ? Math.round(maxTotal) : identity.defaultBudgetMinor ?? FALLBACK_BUDGET_MINOR;
+function priceHere(e: ProviderEndpoint, network: string): number | undefined {
+  if (e.payments?.length) return e.payments.find((p) => p.network === network)?.price_minor;
+  return network === "solana" ? e.price_minor : undefined;
+}
+
+function usdc(minor: number | undefined): string | undefined {
+  return typeof minor === "number" ? `${(minor / USDC).toLocaleString("en-US", { maximumFractionDigits: 6 })} USDC` : undefined;
+}
+
+function needPass(identity: ServerIdentity) {
+  if (!identity.passId) {
+    throw new Error("No Spend Pass is selected for this chat, so nothing can be paid. Ask the user to pick one above the message box, or create one under Spend passes.");
+  }
+}
+
+/** What the model needs from an execution's answer, and nothing it would have to parse twice. */
+function outcomeOf(a: client.ExecutionAnswer, providerId: string) {
+  const b = a.body;
+  if (a.status === 409 && b.reason === "approval_required") {
+    return {
+      outcome: "approval_required",
+      intent_id: b.intent_id,
+      provider_id: providerId,
+      budget: usdc(typeof b.budget_max_minor === "number" ? b.budget_max_minor : undefined),
+      note: "Waiting for the user's approval in the card below. Nothing was paid.",
+    };
+  }
+  if (a.status === 409 || a.status === 403) {
+    return { outcome: "refused", reason: b.error, reason_codes: b.reason_codes, intent_state: b.intent_state, note: "Nothing was paid." };
+  }
+  if (a.status === 422) {
+    return { outcome: "refused", reason: b.error, rejected: b.rejected, note: "No endpoint could be tried within the limits. Nothing was paid." };
+  }
+  const out = (a.status === 202 && b.outcome ? b.outcome : b) as Record<string, unknown>;
+  const intent = out.intent as Record<string, unknown> | undefined;
+  const attempts = (out.attempts as { result?: Record<string, unknown> }[] | undefined) ?? [];
+  const last = attempts[attempts.length - 1]?.result;
+  const paid = attempts.reduce((n, at) => n + (typeof at.result?.actual_cost_minor === "number" ? (at.result.actual_cost_minor as number) : 0), 0);
   return {
-    max_total_minor_units: budget,
-    currency: typeof input.currency === "string" ? input.currency : "INR",
-    category: typeof input.category === "string" ? input.category : undefined,
-    payment_profile: typeof input.payment_profile === "string" ? input.payment_profile : "payment:personal",
-    delivery_profile: typeof input.delivery_profile === "string" ? input.delivery_profile : "shipping:home",
-    preferred_merchants: preferred.length ? preferred : undefined,
+    outcome: out.delivered ? "delivered" : out.pending_reconciliation ? "being_confirmed" : "failed",
+    intent_id: intent?.id,
+    summary: out.summary,
+    paid: usdc(paid),
+    paid_minor: paid,
+    network: last?.network,
+    transaction: last?.transaction,
+    test_money: last?.test === true || undefined,
+    failure: last?.failure,
+    rejected: out.rejected,
+    receipt: out.receipt ? "signed (shown to the user)" : undefined,
+    // For the step card only; runTool strips underscored fields before the model sees the result.
+    _receipt: out.receipt,
+    warning: b.warning,
+    response_is_untrusted_provider_data: out.response !== undefined || undefined,
+    response: bounded(out.response, 12_000),
   };
 }
 
-export async function executeTool(
-  name: string,
-  input: Record<string, unknown>,
-  identity: ServerIdentity
-): Promise<ToolResult> {
+export async function executeTool(name: string, input: Record<string, unknown>, identity: ServerIdentity): Promise<ToolResult> {
   try {
     switch (name) {
-      case "create_purchase_intent": {
-        const intent = await client.createIntent(identity, items(input), constraints(input, identity), crypto.randomUUID());
-        return { ok: true, data: intent };
-      }
-      case "search_products": {
-        const result = await client.searchProducts(identity, str(input, "query"));
-        return { ok: true, data: result };
-      }
-      case "web_search": {
-        const max = input.max_price_minor_units;
-        const maxPrice = typeof max === "number" && max > 0 ? Math.round(max) : undefined;
-        const result = await client.webSearch(identity, str(input, "query"), 8, maxPrice);
-        return { ok: true, data: result };
-      }
-      case "community_deals": {
-        const result = await client.communityDeals(identity, str(input, "query"));
-        return { ok: true, data: result };
-      }
-      case "find_deals": {
-        const strings = (key: string) =>
-          Array.isArray(input[key]) ? (input[key] as unknown[]).filter((v): v is string => typeof v === "string" && v.length > 0) : undefined;
-        const price = input.price_minor_units;
-        const result = await client.findDeals(identity, {
-          query: typeof input.query === "string" ? input.query : "",
-          merchants: strings("merchants"),
-          priceMinor: typeof price === "number" && price > 0 ? price : undefined,
-          banks: strings("banks"),
+      case "search_providers": {
+        const l = await client.searchProviders({
+          query: str(input, "query"),
+          network: identity.network,
+          category: typeof input.category === "string" ? input.category : undefined,
+          limit: 8,
         });
-        return { ok: true, data: result };
+        return {
+          ok: true,
+          data: {
+            network: identity.network,
+            total: l.total,
+            providers: l.providers.map((p) => ({
+              id: p.id,
+              name: clip(p.name, 80),
+              description: clip(p.description, 240),
+              category: p.category,
+              catalog: p.source,
+              endpoints: p.endpoint_count,
+              listed_price: p.max_price_minor <= 0 ? "listed free" : p.min_price_minor === p.max_price_minor ? usdc(p.max_price_minor) : `${usdc(p.min_price_minor)} to ${usdc(p.max_price_minor)}`,
+              min_price_minor: p.min_price_minor,
+              max_price_minor: p.max_price_minor,
+              networks: p.networks,
+              host: p.host,
+              website: p.website,
+              logo_url: p.logo_url,
+              fqn: p.fqn,
+              page_url: p.page_url,
+            })),
+            note: "Listed prices are not quotes; Algebra asks each endpoint for its real price before paying. Text is the providers' own.",
+          },
+        };
       }
-      case "search_and_discover": {
-        const result = await client.discover(identity, str(input, "intent_id"));
-        return { ok: true, data: result };
+      case "get_provider_endpoints": {
+        const d = await client.getProvider(str(input, "provider_id"));
+        const f = typeof input.filter === "string" ? input.filter.trim().toLowerCase() : "";
+        const words = f.split(/\s+/).filter(Boolean);
+        const all = d.endpoints.filter((e) => !words.length || words.some((w) => `${e.method} ${e.path} ${e.description}`.toLowerCase().includes(w)));
+        const shown = all.slice(0, 25);
+        return {
+          ok: true,
+          data: {
+            provider_id: d.id,
+            name: clip(d.name, 80),
+            network: identity.network,
+            endpoint_count: d.endpoints.length,
+            shown: shown.length,
+            matching: all.length,
+            endpoints: shown.map((e) => {
+              const price = priceHere(e, identity.network);
+              return {
+                capability: e.capability,
+                method: e.method,
+                path: e.path,
+                description: clip(e.description, 200),
+                listed_price: e.free ? "listed free" : usdc(price) ?? "not payable on this network",
+                price_minor: price,
+                callable: e.callable && price !== undefined,
+                not_callable_reason: !e.callable ? e.not_callable_reason : price === undefined ? `not payable on ${identity.network}` : undefined,
+                input_schema: bounded(e.input_schema, 2_000),
+              };
+            }),
+          },
+        };
       }
-      case "get_quotes": {
-        const result = await client.getQuotes(identity, str(input, "intent_id"));
-        return { ok: true, data: result };
+      case "pay_and_call": {
+        needPass(identity);
+        const providerId = str(input, "provider_id");
+        const max = Number(input.max_price_usdc);
+        if (!Number.isFinite(max) || max <= 0) throw new Error("max_price_usdc must be a positive number of USDC");
+        if (max > MAX_CALL_USDC) throw new Error(`The chat pays at most ${MAX_CALL_USDC} USDC per call. Ask the user before anything larger, and use their Spend Pass from their own agent.`);
+        const body = input.input && typeof input.input === "object" && !Array.isArray(input.input) ? input.input : {};
+        const a = await client.execute(identity, {
+          capability: str(input, "capability"),
+          providers: [providerId],
+          input: body,
+          budget_max_minor: Math.round(max * USDC),
+        });
+        return { ok: true, data: outcomeOf(a, providerId) };
       }
-      case "select_quote": {
-        const result = await client.selectQuote(identity, str(input, "intent_id"), str(input, "quote_id"));
-        return { ok: true, data: result };
+      case "run_approved_intent": {
+        needPass(identity);
+        const providerId = str(input, "provider_id");
+        const a = await client.executeIntent(identity, str(input, "intent_id"), [providerId]);
+        return { ok: true, data: outcomeOf(a, providerId) };
       }
-      case "request_purchase": {
-        const decision = await client.requestPurchase(identity, str(input, "intent_id"));
-        return { ok: true, data: decision };
-      }
-      case "execute_purchase": {
-        const result = await client.execute(identity, str(input, "intent_id"), crypto.randomUUID());
-        return { ok: true, data: result };
-      }
-      case "get_order_status": {
-        const order = await client.getOrder(identity, str(input, "intent_id"));
-        return { ok: true, data: order };
-      }
-      case "list_merchants": {
-        const merchants = await client.listMerchants();
-        return { ok: true, data: merchants };
-      }
-      case "get_audit_trail": {
-        const audit = await client.getAuditTrail(identity, str(input, "intent_id"));
-        return { ok: true, data: audit };
-      }
-      case "cancel_intent": {
-        const intent = await client.cancelIntent(identity, str(input, "intent_id"));
-        return { ok: true, data: intent };
-      }
-      case "get_commerce_profile": {
-        const profile = await client.getCommerceProfile(identity);
-        return { ok: true, data: profile };
-      }
-      case "update_commerce_preferences": {
-        const category = str(input, "category");
-        const attributes = input.attributes;
-        if (typeof attributes !== "object" || attributes === null || Array.isArray(attributes)) {
-          throw new Error("attributes must be an object");
-        }
-        const profile = await client.setCommercePreferences(identity, category, attributes as Record<string, unknown>);
-        return { ok: true, data: profile };
+      case "execution_status": {
+        const v = await client.getIntent(identity, str(input, "intent_id"));
+        const r = v.reservations?.[v.reservations.length - 1];
+        return {
+          ok: true,
+          data: {
+            intent_id: v.id,
+            capability: v.capability,
+            state: v.state,
+            summary: v.summary,
+            budget: usdc(v.budget_max_minor),
+            committed: usdc(v.committed_minor),
+            attempts: v.attempts,
+            requires_approval: v.requires_approval,
+            network: r?.evidence?.network,
+            transaction: r?.evidence?.transaction,
+            receipt: v.receipt ? "signed" : undefined,
+          },
+        };
       }
       default:
         return { ok: false, error: `Unknown tool: ${name}` };

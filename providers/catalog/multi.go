@@ -70,7 +70,7 @@ func (m *Multi) List(ctx context.Context, f Filter) (*Listing, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			l, err := s.List(ctx, Filter{Query: f.Query, Category: f.Category})
+			l, err := s.List(ctx, Filter{Query: f.Query, Category: f.Category, Network: f.Network})
 			answers[i] = answer{l, err}
 		}()
 	}

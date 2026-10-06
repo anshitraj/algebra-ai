@@ -403,6 +403,9 @@ type DoResult struct {
 	// existing intent is used, so asking twice never buys twice.
 	Created bool        `json:"created"`
 	Report  *PlanReport `json:"report"`
+	// Intent is the intent the request created or found, even when running it
+	// was refused (say it awaits the person's approval).
+	Intent *IntentView `json:"intent,omitempty"`
 }
 
 // Do creates the intent for an outcome (or finds the one that already exists
@@ -413,7 +416,7 @@ func (s *ExecutionService) Do(ctx context.Context, req DoRequest) (*DoResult, er
 		return nil, err
 	}
 	rep, err := s.ExecuteCandidates(ctx, CandidatesRequest{AgentID: req.AgentID, IntentID: view.ID, Candidates: req.Candidates})
-	return &DoResult{Created: created, Report: rep}, err
+	return &DoResult{Created: created, Report: rep, Intent: view}, err
 }
 
 // RunPlan runs a plan's steps in order. It stops at the first attempt that

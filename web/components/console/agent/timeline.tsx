@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import type { StepDetail, StepHint, StepStatus } from "@/lib/agent/events";
+import type { ProviderCard, StepDetail, StepHint, StepStatus } from "@/lib/agent/events";
 import { IconBan, IconCheck, IconChevronDown, IconClock, IconExternal, IconX } from "@/components/icons";
 import { LiveActivity, Pulse, ThinkingLine } from "./live-activity";
 import { StoreLogo } from "@/components/store-logo";
+import { ProviderLogo } from "@/components/provider-logo";
+import { networkLabel } from "@/lib/network";
 
 export type Step = {
   id: string;
@@ -63,19 +65,23 @@ const PILL: Partial<Record<StepStatus, { label: string; cls: string }>> = {
   error: { label: "Failed", cls: "bg-danger-tint text-danger" },
 };
 
-/** One web listing, as the chat shows it. */
+/** One web listing, as chats saved before the Solana pivot show it. */
 export type Listing = NonNullable<StepDetail["products"]>[number];
 
-export function StepRow({ step, last, onPick }: { step: Step; last: boolean; onPick?: (p: Listing) => void }) {
+/** A follow-up the person can send with one tap: "use this provider", "call this endpoint". */
+export type Ask = (text: string) => void;
+
+export function StepRow({ step, last, onAsk }: { step: Step; last: boolean; onAsk?: Ask }) {
   // Open by default when there's something the user came for (listings) or
   // must act on (waiting/blocked); their own toggle wins after that.
   const [toggled, setToggled] = useState<boolean | null>(null);
-  const hasDetail = !!step.detail && Object.values(step.detail).some((v) => Array.isArray(v) && v.length > 0);
+  const hasDetail = !!step.detail && Object.values(step.detail).some((v) => (Array.isArray(v) ? v.length > 0 : typeof v === "string" && v.length > 0));
   const autoOpen =
     step.status === "waiting" ||
     step.status === "blocked" ||
+    (step.detail?.providers?.length ?? 0) > 0 ||
     (step.detail?.products?.length ?? 0) > 0 ||
-    (step.detail?.links?.length ?? 0) > 0;
+    !!step.detail?.response;
   const open = toggled ?? autoOpen;
   const pill = PILL[step.status];
   const secs = step.endedAt ? ((step.endedAt - step.startedAt) / 1000).toFixed(1) : null;
@@ -117,7 +123,7 @@ export function StepRow({ step, last, onPick }: { step: Step; last: boolean; onP
               transition={{ duration: 0.25, ease: EASE }}
               className="overflow-hidden"
             >
-              <Detail detail={step.detail} onPick={onPick} />
+              <Detail detail={step.detail} onAsk={onAsk} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -126,9 +132,41 @@ export function StepRow({ step, last, onPick }: { step: Step; last: boolean; onP
   );
 }
 
-function Detail({ detail, onPick }: { detail: StepDetail; onPick?: (p: Listing) => void }) {
+function Detail({ detail, onAsk }: { detail: StepDetail; onAsk?: Ask }) {
+  const onPick = onAsk
+    ? (p: Listing) => onAsk(`I'll take this one: "${p.title || p.name}" from ${p.merchant}${p.price ? `, listed at ${p.price}` : ""}.`)
+    : undefined;
   return (
     <div className="mt-2.5 overflow-hidden rounded-xl border border-border bg-background/60 text-sm">
+      {detail.providers && detail.providers.length > 0 && (
+        <ul className="divide-y divide-border">
+          {detail.providers.map((p) => (
+            <ProviderRow key={p.id} p={p} onAsk={onAsk} />
+          ))}
+        </ul>
+      )}
+      {detail.endpoints && detail.endpoints.length > 0 && (
+        <ul className="divide-y divide-border">
+          {detail.endpoints.map((e) => (
+            <li key={e.capability} className={`flex items-start gap-3 px-3.5 py-2.5 ${e.callable ? "" : "opacity-60"}`}>
+              <span className="w-12 shrink-0 rounded-md bg-primary-tint px-1.5 py-0.5 text-center font-mono text-[0.68rem] font-medium text-primary">{e.method}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-mono text-xs text-foreground" title={e.path}>
+                  /{e.path}
+                </p>
+                {e.description && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{e.description}</p>}
+              </div>
+              {e.price && <span className="shrink-0 font-mono text-xs whitespace-nowrap text-foreground tabular-nums">{e.price}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {detail.response && (
+        <div className="border-b border-border last:border-b-0">
+          <p className="px-3.5 pt-2.5 text-xs font-medium text-muted">Response</p>
+          <pre className="max-h-72 overflow-auto px-3.5 py-2 font-mono text-[0.72rem] leading-relaxed whitespace-pre-wrap text-foreground">{detail.response}</pre>
+        </div>
+      )}
       {detail.quotes && detail.quotes.length > 0 && (
         <ul className="divide-y divide-border">
           {detail.quotes.map((q, i) => (
@@ -157,7 +195,7 @@ function Detail({ detail, onPick }: { detail: StepDetail; onPick?: (p: Listing) 
         <ul className="divide-y divide-border">
           {detail.links.map((l, i) => (
             <li key={i}>
-              <a href={l.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between gap-3 px-3.5 py-2.5 text-foreground hover:bg-primary-tint/50">
+              <a href={l.url} target={l.url.startsWith("/") ? undefined : "_blank"} rel="noopener noreferrer" className="flex items-center justify-between gap-3 px-3.5 py-2.5 text-foreground hover:bg-primary-tint/50">
                 <span className="truncate">{l.title}</span>
                 <IconExternal size={14} className="shrink-0 text-muted" />
               </a>
@@ -186,6 +224,53 @@ function Detail({ detail, onPick }: { detail: StepDetail; onPick?: (p: Listing) 
         </dl>
       )}
     </div>
+  );
+}
+
+/** A provider from the catalogs: logo, what it does, listed price, and one tap to use it. */
+function ProviderRow({ p, onAsk }: { p: ProviderCard; onAsk?: Ask }) {
+  return (
+    <li className="flex items-start gap-3 px-3.5 py-3 transition-colors hover:bg-primary-tint/30">
+      <ProviderLogo name={p.name} logo={p.logo} website={p.website} host={p.host} fqn={p.fqn} size={36} className="mt-0.5" />
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="font-medium text-foreground">{p.name}</span>
+          <span className="text-xs text-muted">{p.catalog}</span>
+          {p.networks?.map((n) => (
+            <span key={n} className={`rounded-full px-1.5 py-px text-[0.65rem] font-medium ${n === "solana" ? "bg-primary-tint text-primary" : "bg-accent-tint text-accent"}`}>
+              {networkLabel(n)}
+            </span>
+          ))}
+        </p>
+        {p.description && <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted">{p.description}</p>}
+        <p className="mt-1 truncate font-mono text-[0.68rem] text-muted/80">{p.id}</p>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        {p.price && <span className="font-mono text-xs whitespace-nowrap text-foreground tabular-nums">{p.price}</span>}
+        <div className="flex items-center gap-1.5">
+          {onAsk && (
+            <button
+              type="button"
+              onClick={() => onAsk(`Use ${p.name} (${p.id}).`)}
+              className="inline-flex h-7 items-center rounded-lg bg-primary px-2.5 text-xs font-medium text-primary-tint transition-transform active:scale-95"
+            >
+              Use
+            </button>
+          )}
+          {p.url && (
+            <a
+              href={p.url}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              aria-label={`${p.name} in its catalog`}
+              className="grid h-7 w-7 place-items-center rounded-lg border border-border text-muted transition-colors hover:border-primary/50 hover:text-primary"
+            >
+              <IconExternal size={13} />
+            </a>
+          )}
+        </div>
+      </div>
+    </li>
   );
 }
 
@@ -314,13 +399,13 @@ export function Timeline({
   steps,
   running,
   defaultOpen,
-  onPick,
+  onAsk,
 }: {
   steps: Step[];
   running: boolean;
   defaultOpen: boolean;
-  /** Present only while the user can act on this turn's listings. */
-  onPick?: (p: Listing) => void;
+  /** Present only while the user can act on this turn's results. */
+  onAsk?: Ask;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   if (steps.length === 0) return null;
@@ -328,7 +413,11 @@ export function Timeline({
   const done = steps.filter((s) => s.status === "done").length;
   const first = steps[0].startedAt;
   const last = steps[steps.length - 1].endedAt ?? steps[steps.length - 1].startedAt;
-  const outcome = steps.find((s) => s.status === "waiting" || s.status === "blocked") ?? steps[steps.length - 1];
+  // What the run came to: something waiting on the person, else the last step that found something.
+  const outcome =
+    steps.find((s) => s.status === "waiting" || s.status === "blocked") ??
+    [...steps].reverse().find((s) => s.status !== "done" || (s.detail && Object.keys(s.detail).length > 0)) ??
+    steps[steps.length - 1];
   const current = steps.find((s) => s.status === "running");
 
   return (
@@ -360,7 +449,7 @@ export function Timeline({
           >
             <ol className="border-t border-border px-4 pt-4 pb-4">
               {steps.map((s, i) => (
-                <StepRow key={s.id} step={s} last={i === steps.length - 1 && !(running && !current)} onPick={onPick} />
+                <StepRow key={s.id} step={s} last={i === steps.length - 1 && !(running && !current)} onAsk={onAsk} />
               ))}
               {running && !current && (
                 // Between steps the model is reading results — show that, not a frozen list.

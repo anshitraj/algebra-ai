@@ -42,8 +42,8 @@ import (
 	"github.com/project-algebra/algebra/internal/platform/solana"
 	"github.com/project-algebra/algebra/policy"
 	"github.com/project-algebra/algebra/providers/arcium"
+	"github.com/project-algebra/algebra/providers/bazaar"
 	"github.com/project-algebra/algebra/providers/catalog"
-	"github.com/project-algebra/algebra/providers/circleagents"
 	"github.com/project-algebra/algebra/providers/paymentdemo"
 	"github.com/project-algebra/algebra/providers/paysh"
 	"github.com/project-algebra/algebra/providers/razorpay"
@@ -106,6 +106,9 @@ type Bundle struct {
 	// simulated one, plus the Pay.sh catalog and the endpoints an agent
 	// supplies itself.
 	Candidates app.CandidateResolver
+	// SolanaRails are the Solana payment rails running (mainnet, devnet or
+	// both), for the console's wallet status.
+	SolanaRails []*solanax402.Rail
 	// Directory is the catalogs of paid APIs agents can browse and name
 	// (Pay.sh and Circle's Agent Marketplace), nil when both are off.
 	Directory *catalog.Multi
@@ -360,7 +363,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		sandboxProvider = sandboxpay.NewProvider(rail, cfg.Auth.PublicWebURL+"/api/v1/sandbox/x402/token-risk", 0)
 		econSvc.RegisterRecovery(sandboxpay.ProviderID, sandboxProvider)
 	}
-	execSvc, execProviders, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db))
+	execSvc, execProviders, solanaRails, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db))
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("wiring: %w", err)
@@ -428,7 +431,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, Execution: execSvc, Candidates: candidates, Directory: directory, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, Execution: execSvc, Candidates: candidates, Directory: directory, SolanaRails: solanaRails, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,
@@ -453,14 +456,15 @@ func envWebhookSecret(provider string) string {
 // buildExecution wires the executor: the x402 runner over an HTTP client that
 // can only reach public addresses (plus the sandbox provider's own port in
 // sandbox mode), the capability catalog, and the providers an agent can name.
-func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.EconomicService, store app.ExecutionStore) (*app.ExecutionService, map[string][]routing.Candidate, error) {
+func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.EconomicService, store app.ExecutionStore) (*app.ExecutionService, map[string][]routing.Candidate, []*solanax402.Rail, error) {
+	var solanaRails []*solanax402.Rail
 	catalog, err := app.NewStaticCatalog(app.DefaultCapabilities()...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("capability catalog: %w", err)
+		return nil, nil, nil, fmt.Errorf("capability catalog: %w", err)
 	}
 	providers, err := ParseConfiguredProviders(cfg.EconomicProviders)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ECONOMIC_PROVIDERS: %w", err)
+		return nil, nil, nil, fmt.Errorf("ECONOMIC_PROVIDERS: %w", err)
 	}
 	httpOpts := safehttp.Options{}
 	networks := map[string]string{}
@@ -476,19 +480,20 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 				Endpoint: "http://127.0.0.1:" + strconv.Itoa(port) + "/api/v1/sandbox/x402/token-risk",
 			}.Normalize()
 			if err != nil {
-				return nil, nil, fmt.Errorf("sandbox candidate: %w", err)
+				return nil, nil, nil, fmt.Errorf("sandbox candidate: %w", err)
 			}
 			providers[c.Provider] = append(providers[c.Provider], c)
 		}
 	}
-	if cfg.Solana.Cluster != "" {
-		rail, err := buildSolanaRail(ctx, cfg.Solana)
+	for _, sc := range cfg.SolanaRails {
+		rail, err := buildSolanaRail(ctx, sc)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if rail != nil {
 			econSvc.RegisterRail(rail)
-			networks[rail.Network()] = solanax402.RailName
+			networks[rail.Network()] = rail.Name()
+			solanaRails = append(solanaRails, rail)
 		}
 	}
 	exec := app.NewExecutionService(econSvc, store)
@@ -496,11 +501,12 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 	exec.RegisterRunner(x402client.New(x402client.Config{
 		HTTP: safehttp.New(httpOpts), Networks: networks, ReuseQuoteFor: 15 * time.Second,
 	}))
-	return exec, providers, nil
+	return exec, providers, solanaRails, nil
 }
 
-// buildDirectory builds the catalogs agents can browse and name: Pay.sh and
-// Circle's Agent Marketplace, each on unless turned off, or nil when both are.
+// buildDirectory builds the catalogs agents can browse and name: Pay.sh,
+// Circle's Agent Marketplace and PayAI's bazaar, each on unless turned off,
+// or nil when all are.
 // Nothing is fetched until somebody asks. The HTTP client reaches public
 // addresses only, never follows a redirect, and refuses an oversized body.
 func buildDirectory(cfg *config.Config) *catalog.Multi {
@@ -511,11 +517,16 @@ func buildDirectory(cfg *config.Config) *catalog.Multi {
 			HTTP: safehttp.New(safehttp.Options{Timeout: 15 * time.Second, MaxBody: 2 << 20}),
 		}))
 	}
-	if cfg.Circle.Enabled {
-		sources = append(sources, circleagents.New(circleagents.Config{
-			DiscoveryURL: cfg.Circle.DiscoveryURL,
-			HTTP:         safehttp.New(safehttp.Options{Timeout: 20 * time.Second, MaxBody: 8 << 20}),
-		}))
+	for _, d := range []struct {
+		on      bool
+		profile bazaar.Profile
+	}{{cfg.Circle.Enabled, bazaar.Circle(cfg.Circle.DiscoveryURL)}, {cfg.PayAI.Enabled, bazaar.PayAI(cfg.PayAI.DiscoveryURL)}} {
+		if d.on {
+			sources = append(sources, bazaar.New(bazaar.Config{
+				Profile: d.profile,
+				HTTP:    safehttp.New(safehttp.Options{Timeout: 30 * time.Second, MaxBody: 16 << 20}),
+			}))
+		}
 	}
 	if len(sources) == 0 {
 		return nil

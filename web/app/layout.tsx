@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 const description =
-  "The policy-aware execution layer for autonomous agents on Solana. An agent asks for an outcome; Algebra finds a paid API on Pay.sh or Circle's Agent Marketplace, checks the Spend Pass, pays in USDC over x402, verifies the result and signs a receipt, without ever handing the agent a key.";
+  "The policy-aware execution layer for autonomous agents on Solana. An agent asks for an outcome; Algebra finds a paid API on Pay.sh, Circle's Agent Marketplace or PayAI, checks the Spend Pass, pays in USDC over x402, verifies the result and signs a receipt, without ever handing the agent a key.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.PUBLIC_WEB_URL || "http://localhost:3000"),

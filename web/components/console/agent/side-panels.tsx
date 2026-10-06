@@ -3,14 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
-import type { Merchant, Order, Overview } from "@/lib/types";
-import { merchantLabel } from "@/lib/agent/steps";
-import { StoreLogo } from "@/components/store-logo";
-import { useSession } from "@/lib/session";
-import { IconBan, IconGauge, IconGlobe, IconShield, IconTag } from "@/components/icons";
-import { formatMoney } from "../ui";
-
-const rupees = (m: number) => `₹${(m / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+import type { EconIntent, RailStatus, SpendPass } from "@/lib/types";
+import { formatUSDC } from "@/lib/money";
+import { networkLabel } from "@/lib/network";
+import { IconGauge, IconShield, IconTag, IconWallet } from "@/components/icons";
 
 function PanelHeading({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -21,7 +17,7 @@ function PanelHeading({ children, action }: { children: React.ReactNode; action?
   );
 }
 
-function GuardRow({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint: string }) {
+function Row({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint: string }) {
   return (
     <li className="flex gap-3 px-5 py-3">
       <span className="mt-0.5 text-muted [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
@@ -36,46 +32,48 @@ function GuardRow({ icon, label, value, hint }: { icon: React.ReactNode; label: 
   );
 }
 
-export function GuardsPanel({
-  overview,
+/** The pass this chat pays under, the wallet that pays, and what the chat has spent. */
+export function PassPanel({
+  pass,
+  rail,
+  network,
   session,
 }: {
-  overview: Overview | null;
-  session: { spent: number; orders: number; steps: number };
+  pass: SpendPass | null | undefined;
+  rail: RailStatus | undefined;
+  network: string;
+  session: { spent: number; calls: number; steps: number };
 }) {
-  const g = overview?.guardrails;
-  const spent = overview?.spent_today.minor_units ?? 0;
-  const pct = g && g.max_per_day_minor_units > 0 ? Math.min(100, (spent / g.max_per_day_minor_units) * 100) : 0;
+  const used = pass ? pass.budget_minor_units - pass.remaining_minor_units : 0;
+  const pct = pass && pass.budget_minor_units > 0 ? Math.min(100, (used / pass.budget_minor_units) * 100) : 0;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <PanelHeading action={<Link href="/console/guardrails" className="text-xs font-medium text-primary hover:underline">Edit</Link>}>
-        Active guardrails
+      <PanelHeading action={<Link href="/console/passes" className="text-xs font-medium text-primary hover:underline">Passes</Link>}>
+        Spend Pass
       </PanelHeading>
-      {!g ? (
+      {pass === undefined ? (
         <div className="space-y-3 px-5">
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1, 2].map((i) => (
             <div key={i} className="h-10 animate-pulse rounded-lg bg-border/60" />
           ))}
         </div>
+      ) : pass === null ? (
+        <p className="px-5 text-sm leading-relaxed text-muted">
+          No pass picked. The agent can search the catalogs and read endpoints, but it can&apos;t pay until you pick a USDC pass under the chat box.
+        </p>
       ) : (
         <ul className="divide-y divide-border border-y border-border">
-          <GuardRow
-            icon={<IconShield />}
-            label="Auto-approve"
-            value={g.approval_threshold_minor_units <= 1 ? "Never" : `< ${rupees(g.approval_threshold_minor_units)}`}
-            hint={g.approval_threshold_minor_units <= 1 ? "Every purchase waits for you" : "Above this, you approve"}
-          />
-          <GuardRow icon={<IconTag />} label="Per purchase" value={rupees(g.max_per_purchase_minor_units)} hint="Hard cap — denied above" />
           <li className="px-5 py-3">
-            <div className="flex gap-3">
+            <p className="truncate text-sm font-medium text-foreground">{pass.label}</p>
+            <div className="mt-2 flex gap-3">
               <span className="mt-0.5 text-muted">
                 <IconGauge size={16} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm text-foreground">Daily cap</span>
-                  <span className="font-mono text-sm text-primary tabular-nums">{rupees(g.max_per_day_minor_units)}</span>
+                  <span className="text-sm text-foreground">Budget{pass.budget_period === "total" ? "" : ` / ${pass.budget_period}`}</span>
+                  <span className="font-mono text-sm text-primary tabular-nums">{formatUSDC(pass.budget_minor_units)}</span>
                 </div>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
                   <div
@@ -83,30 +81,60 @@ export function GuardsPanel({
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-                <p className="mt-1.5 text-xs text-muted">{rupees(spent)} spent today</p>
+                <p className="mt-1.5 text-xs text-muted">{formatUSDC(pass.remaining_minor_units)} left</p>
               </div>
             </div>
           </li>
-          <GuardRow
-            icon={<IconBan />}
-            label="Never buys"
-            value={String(g.blocked_categories.length)}
-            hint={g.blocked_categories.length ? g.blocked_categories.map((c) => c.replace(/_/g, " ")).join(", ") : "Nothing blocked"}
+          <Row
+            icon={<IconTag />}
+            label="Per call"
+            value={pass.max_per_purchase_minor_units ? formatUSDC(pass.max_per_purchase_minor_units) : "Budget"}
+            hint="Refused above this, before anything is paid"
           />
-          <GuardRow
-            icon={<IconGlobe />}
-            label="International"
-            value={g.international_requires_approval ? "Ask" : "Allow"}
-            hint="Foreign merchants"
+          <Row
+            icon={<IconShield />}
+            label="Approval"
+            value={pass.approve_above_minor_units ? `≥ ${formatUSDC(pass.approve_above_minor_units)}` : "Never"}
+            hint={pass.approve_above_minor_units ? "From this price, a call waits for your tap" : "Calls within the limits run on their own"}
+          />
+          <Row
+            icon={<IconShield />}
+            label="Providers"
+            value={pass.allowed_merchants.length ? String(pass.allowed_merchants.length) : "Any"}
+            hint={pass.allowed_merchants.length ? pass.allowed_merchants.slice(0, 3).join(", ") : "Any provider in the catalogs"}
           />
         </ul>
       )}
 
+      <PanelHeading>Wallet · {networkLabel(network)}</PanelHeading>
+      <div className="flex gap-3 border-y border-border px-5 py-3">
+        <span className="mt-0.5 text-muted">
+          <IconWallet size={16} />
+        </span>
+        {!rail ? (
+          <div className="h-8 flex-1 animate-pulse rounded-lg bg-border/60" />
+        ) : !rail.configured ? (
+          <p className="text-xs leading-relaxed text-muted">
+            No {networkLabel(network).toLowerCase()} wallet on this server. Calls can be searched and priced, not paid.
+          </p>
+        ) : (
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-mono text-xs text-foreground" title={rail.address}>
+              {rail.address}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              {rail.error ? "Node unreachable right now" : rail.usdc_minor != null ? `${formatUSDC(rail.usdc_minor)} available` : "No USDC yet"}
+              {rail.max_payment_minor ? ` · at most ${formatUSDC(rail.max_payment_minor)} a call` : ""}
+            </p>
+          </div>
+        )}
+      </div>
+
       <PanelHeading>This chat</PanelHeading>
       <dl className="grid grid-cols-3 gap-px overflow-hidden border-y border-border bg-border">
         {[
-          { k: "Spent", v: rupees(session.spent) },
-          { k: "Orders", v: String(session.orders) },
+          { k: "Paid", v: formatUSDC(session.spent).replace(" USDC", "") },
+          { k: "Calls", v: String(session.calls) },
           { k: "Steps", v: String(session.steps) },
         ].map((s) => (
           <div key={s.k} className="bg-background px-3 py-3 text-center">
@@ -116,89 +144,58 @@ export function GuardsPanel({
         ))}
       </dl>
       <p className="mt-auto px-5 py-5 text-xs leading-relaxed text-muted">
-        Guardrails are checked on Algebra&apos;s server for every purchase. The agent can read them; it can&apos;t change them.
+        The pass is checked on Algebra&apos;s server before every payment. The agent can read it; it can&apos;t change it or approve for you.
       </p>
     </div>
   );
 }
 
-function capabilityLabel(m: Merchant) {
-  if (m.capabilities.checkout) return "Checkout";
-  if (m.capabilities.search) return "Search only";
-  if (m.status?.integration === "deep_link_handoff") return "Handoff link";
-  return "Not connected";
+function stateTone(state: string) {
+  if (state === "COMMITTED") return "bg-primary";
+  if (state.includes("UNKNOWN") || state.includes("APPROVAL")) return "bg-accent";
+  if (state === "FAILED" || state === "CANCELLED" || state === "EXPIRED") return "bg-border-strong";
+  return "bg-primary/50";
 }
 
-export function StoresPanel({ refreshKey }: { refreshKey: number }) {
-  const { user } = useSession();
-  const mode = user?.mode;
-  const [merchants, setMerchants] = useState<Merchant[] | null>(null);
-  const [orders, setOrders] = useState<Order[] | null>(null);
+/** The person's latest paid calls, from any agent. */
+export function RecentCallsPanel({ refreshKey }: { refreshKey: number }) {
+  const [intents, setIntents] = useState<EconIntent[] | null>(null);
 
   useEffect(() => {
     api
-      .listMerchants()
-      .then((list) => setMerchants(api.merchantsFor(list, mode)))
-      .catch(() => setMerchants([]));
-  }, [mode]);
-
-  useEffect(() => {
-    api
-      .listMyOrders(4)
-      .then(setOrders)
-      .catch(() => setOrders([]));
+      .listMyEconomicIntents(8)
+      .then((r) => setIntents(r.intents ?? []))
+      .catch(() => setIntents([]));
   }, [refreshKey]);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <PanelHeading action={<Link href="/console/merchants" className="text-xs font-medium text-primary hover:underline">All</Link>}>
-        Stores
+      <PanelHeading action={<Link href="/console/executions" className="text-xs font-medium text-primary hover:underline">All</Link>}>
+        Recent paid calls
       </PanelHeading>
-      <ul className="divide-y divide-border border-y border-border">
-        {merchants === null
-          ? [0, 1, 2].map((i) => (
-              <li key={i} className="px-5 py-3">
-                <div className="h-8 animate-pulse rounded-lg bg-border/60" />
-              </li>
-            ))
-          : merchants.map((m) => {
-              const ready = !!m.status?.ready;
-              return (
-                <li key={m.name} className="flex items-center gap-3 px-5 py-3" title={m.status?.detail}>
-                  <span className="relative shrink-0">
-                    <StoreLogo store={m.name} size={30} className={ready ? "" : "opacity-70 grayscale"} />
-                    <span
-                      className={`absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full border-2 border-background ${ready ? "bg-success" : "bg-border-strong"}`}
-                      aria-hidden="true"
-                    />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-foreground">{merchantLabel(m.name)}</p>
-                    <p className="truncate text-xs text-muted">{ready ? capabilityLabel(m) : "Needs setup"}</p>
-                  </div>
-                  <span className="font-mono text-[0.68rem] text-muted uppercase">{m.mode}</span>
-                </li>
-              );
-            })}
-      </ul>
-
-      <PanelHeading action={<Link href="/console/orders" className="text-xs font-medium text-primary hover:underline">All</Link>}>
-        Recent orders
-      </PanelHeading>
-      {orders && orders.length === 0 && <p className="px-5 text-sm text-muted">No orders yet. Your first one will land here.</p>}
-      {orders && orders.length > 0 && (
+      {intents === null && (
+        <div className="space-y-3 px-5">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-10 animate-pulse rounded-lg bg-border/60" />
+          ))}
+        </div>
+      )}
+      {intents && intents.length === 0 && <p className="px-5 text-sm text-muted">No paid calls yet. The first one lands here, with its receipt.</p>}
+      {intents && intents.length > 0 && (
         <ul className="divide-y divide-border border-y border-border">
-          {orders.map((o) => (
-            <li key={o.order_id}>
-              <Link href={`/console/intents/${o.intent_id}`} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-primary-tint/40">
-                <StoreLogo store={o.merchant} size={28} />
+          {intents.map((i) => (
+            <li key={i.id}>
+              <Link href="/console/executions" className="flex items-center gap-3 px-5 py-3 hover:bg-primary-tint/40">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${stateTone(i.state)}`} aria-hidden="true" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-foreground">{o.items.map((i) => i.name).join(", ") || merchantLabel(o.merchant)}</p>
+                  <p className="truncate font-mono text-xs text-foreground">{i.capability}</p>
                   <p className="text-xs text-muted">
-                    {merchantLabel(o.merchant)} · {new Date(o.placed_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    {i.state.toLowerCase().replace(/_/g, " ")} · {new Date(i.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   </p>
                 </div>
-                <span className="shrink-0 font-mono text-sm text-foreground tabular-nums">{formatMoney(o.total)}</span>
+                <span className="shrink-0 font-mono text-xs text-foreground tabular-nums">
+                  {i.committed_minor > 0 ? formatUSDC(i.committed_minor) : "—"}
+                </span>
               </Link>
             </li>
           ))}

@@ -4,20 +4,16 @@ import { stepHint, stepTitle, summarizeStep } from "./steps";
 import type { AskedQuestion, EmitFn } from "./events";
 import type { ServerIdentity } from "./server-client";
 
-// Web searches are live, grounded model calls taking seconds each, and
-// models sometimes fan out one per idea. Past this many in one turn the call
-// is refused and the model answers with what it has. (search_products is a
-// fast catalog lookup and isn't counted, so it can't eat the budget a basket
-// needs.) Counted per identity object, which the route handler creates fresh
-// for every request — so the count is per turn.
-const MAX_SEARCHES_PER_TURN = 4;
-const SEARCH_TOOLS = new Set(["web_search"]);
-const searchesThisTurn = new WeakMap<ServerIdentity, number>();
+// Paid calls are counted per identity object, which the route handler
+// creates fresh for every request — so the count is per turn. A model that
+// loops on paying would otherwise spend the pass down one call at a time.
+const MAX_PAID_CALLS_PER_TURN = 3;
+const PAID_TOOLS = new Set(["pay_and_call", "run_approved_intent"]);
+const paidThisTurn = new WeakMap<ServerIdentity, number>();
 
 // Read-only lookups that are safe to run side by side. A round made only of
-// these runs concurrently — three web searches take one search's time.
-// Anything that changes state runs in the order the model gave.
-const PARALLEL_SAFE = new Set(["web_search", "search_products", "find_deals"]);
+// these runs concurrently. Anything that pays runs in the order the model gave.
+const PARALLEL_SAFE = new Set(["search_providers", "get_provider_endpoints", "execution_status"]);
 
 /** Runs one round's tool calls, in parallel when every call is a read-only lookup. Results keep call order. */
 export async function runRound<C, R>(calls: C[], nameOf: (c: C) => string, run: (c: C) => Promise<R>): Promise<R[]> {
@@ -27,7 +23,7 @@ export async function runRound<C, R>(calls: C[], nameOf: (c: C) => string, run: 
   return out;
 }
 
-/** Runs one tool against Algebra's API. The eval suite (evals/agent) swaps in fixtures. */
+/** Runs one tool against Algebra's API. Tests can swap in fixtures. */
 export type ToolExecutor = (name: string, input: Record<string, unknown>, identity: ServerIdentity) => Promise<ToolResult>;
 
 /**
@@ -64,6 +60,12 @@ export function questionsAsText(qs: AskedQuestion[]): string {
   return qs.map((q) => `${q.question} (${q.options.join(" / ")})`).join("\n");
 }
 
+/** The result the model reads: fields starting with "_" are for the step card only. */
+function forModel(result: ToolResult): ToolResult {
+  if (!result.ok || !result.data || typeof result.data !== "object" || Array.isArray(result.data)) return result;
+  return { ok: true, data: Object.fromEntries(Object.entries(result.data).filter(([k]) => !k.startsWith("_"))) };
+}
+
 /**
  * runTool is the single path every provider loop uses to execute a tool
  * call: it streams a "running" step, runs the real API call, streams the
@@ -89,34 +91,41 @@ export async function runTool(
     };
   }
 
-  if (SEARCH_TOOLS.has(name)) {
-    const used = searchesThisTurn.get(identity) ?? 0;
-    if (used >= MAX_SEARCHES_PER_TURN) {
+  if (PAID_TOOLS.has(name)) {
+    const used = paidThisTurn.get(identity) ?? 0;
+    if (used >= MAX_PAID_CALLS_PER_TURN) {
       return {
         result: {
           ok: false,
-          error: "Search limit for this reply reached. Answer with what you've found, or ask the user which idea to look up next.",
+          error: `This reply has already made ${MAX_PAID_CALLS_PER_TURN} paid calls. Report what you have and ask the user before paying again.`,
         },
       };
     }
-    searchesThisTurn.set(identity, used + 1);
+    paidThisTurn.set(identity, used + 1);
   }
 
   const id = crypto.randomUUID();
   const title = stepTitle(name, input);
-  emit({ type: "step", id, tool: name, status: "running", title, hint: stepHint(name, input) });
+  emit({ type: "step", id, tool: name, status: "running", title, hint: stepHint(name, input, identity.network) });
 
   const result = await execute(name, input, identity);
   const outcome = summarizeStep(name, input, result);
   emit({ type: "step", id, tool: name, title, ...outcome });
 
-  if (name === "execute_purchase" && result.ok) {
-    const order = (result.data as { order?: { order_id?: string; merchant?: string; total?: { minor_units: number; currency: string } } })
-      ?.order;
-    if (order?.total) emit({ type: "spend", amount: order.total, orderId: order.order_id ?? "", merchant: order.merchant ?? "" });
+  if (PAID_TOOLS.has(name) && result.ok) {
+    const d = result.data as { outcome?: string; paid_minor?: number; intent_id?: string; network?: string; provider_id?: string } | undefined;
+    if ((d?.outcome === "delivered" || d?.outcome === "being_confirmed") && (d.paid_minor ?? 0) > 0) {
+      emit({
+        type: "spend",
+        amount: { minor_units: d.paid_minor ?? 0, currency: "USDC" },
+        intentId: d.intent_id ?? "",
+        provider: typeof input.provider_id === "string" ? input.provider_id : "",
+        network: d.network,
+      });
+    }
   }
 
   const pendingApproval = detectPendingApproval(name, input, result);
-  if (pendingApproval) emit({ type: "approval", intentId: pendingApproval.intentId });
-  return { result, pendingApproval };
+  if (pendingApproval) emit({ type: "approval", intentId: pendingApproval.intentId, provider: pendingApproval.provider });
+  return { result: forModel(result), pendingApproval };
 }

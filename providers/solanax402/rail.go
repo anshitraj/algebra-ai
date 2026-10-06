@@ -50,8 +50,12 @@ import (
 // be retried or worked around.
 var ErrWrongCluster = errors.New("solanax402: the RPC node serves a different cluster than the rail is configured for")
 
-// RailName is how reservations name this rail.
-const RailName = "x402-solana"
+// RailName is how reservations name the mainnet rail; DevnetRailName the
+// devnet one. They differ so both can be registered at once.
+const (
+	RailName       = "x402-solana"
+	DevnetRailName = "x402-solana-devnet"
+)
 
 // DefaultMaxPaymentMinor is one USDC: a deliberately small ceiling for a rail
 // that is new. Raise it on purpose.
@@ -138,7 +142,12 @@ func New(cfg Config) (*Rail, error) {
 	return &Rail{cfg: cfg, network: network, mint: mint, payer: cfg.Signer.PublicKey(), now: now}, nil
 }
 
-func (r *Rail) Name() string { return RailName }
+func (r *Rail) Name() string {
+	if r.network == chain.SolanaDevnet {
+		return DevnetRailName
+	}
+	return RailName
+}
 
 // Network is the canonical network this rail pays on.
 func (r *Rail) Network() string { return r.network }
@@ -357,7 +366,7 @@ func (r *Rail) build(ctx context.Context, rv *econ.Reservation, req app.PaymentR
 	return &app.PaymentAuthority{
 		Header: header, Value: value, AmountMinor: amount,
 		Evidence: econ.Evidence{
-			Rail: RailName, Protocol: "x402", Scheme: "exact", Network: r.network, Asset: r.mint.String(),
+			Rail: r.Name(), Protocol: "x402", Scheme: "exact", Network: r.network, Asset: r.mint.String(),
 			PaymentID: paymentID, AmountMinor: amount, Payer: r.payer.String(), PayTo: payTo.String(),
 			ValidUntilHeight: bh.LastValidBlockHeight, Test: chain.IsTestNetwork(r.network),
 		},

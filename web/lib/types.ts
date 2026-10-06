@@ -231,7 +231,7 @@ export type NewPass = {
   expires_in_days: number;
 };
 
-// --- the catalogs of paid APIs: Pay.sh and Circle's Agent Marketplace ---
+// --- the catalogs of paid APIs: Pay.sh, Circle's Agent Marketplace, PayAI ---
 // Names, descriptions and use cases are written by the providers and the
 // catalogs. They are shown as text and never followed as instructions. Prices
 // are listings: Algebra asks the endpoint for its real price before paying.
@@ -253,6 +253,11 @@ export type ProviderSummary = {
   max_price_minor: number;
   currency: string;
   page_url: string;
+  /** The provider's own site, and its logo when the catalog publishes one. */
+  website?: string;
+  logo_url?: string;
+  /** Solana clusters some endpoint can be paid on: "solana" (mainnet), "solana-devnet". */
+  networks: string[];
   source: string;
 };
 
@@ -292,6 +297,8 @@ export type ProviderEndpoint = {
   free: boolean;
   network?: string;
   pay_to?: string;
+  /** Every network the endpoint can be paid on, with its listed price there. */
+  payments?: { network: string; price_minor: number; pay_to?: string }[];
   /** The request's JSON Schema, when the catalog publishes one. */
   input_schema?: unknown;
   description: string;
@@ -359,6 +366,17 @@ export type EconIntent = {
   /** The signed Intent Receipt, once the intent has committed. */
   receipt?: string;
   summary: string;
+};
+
+/** A Solana cluster Algebra can pay on, and the wallet it pays from. */
+export type RailStatus = {
+  network: string;
+  configured: boolean;
+  rail?: string;
+  address?: string;
+  usdc_minor?: number;
+  max_payment_minor?: number;
+  error?: string;
 };
 
 export type EconStats = {

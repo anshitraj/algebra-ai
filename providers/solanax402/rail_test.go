@@ -664,3 +664,19 @@ func TestDryRunReportsAccountProblemsInsteadOfRefusing(t *testing.T) {
 		t.Errorf("a look-alike token is never built, even in a dry run: %v", err)
 	}
 }
+
+// Mainnet and devnet rails can be registered at once, so they must not share
+// a name, and a payment's evidence names the rail that made it.
+func TestRailsAreNamedByCluster(t *testing.T) {
+	main, dev := newRig(t, "mainnet"), newRig(t, "devnet")
+	if main.rail.Name() != RailName || dev.rail.Name() != DevnetRailName || RailName == DevnetRailName {
+		t.Fatalf("names: %q %q", main.rail.Name(), dev.rail.Name())
+	}
+	auth, err := dev.authorize(2, 5000, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev := dev.evidence(auth); ev.Rail != DevnetRailName || ev.Network != "solana-devnet" || !ev.Test {
+		t.Errorf("devnet evidence: %+v", ev)
+	}
+}

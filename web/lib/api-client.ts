@@ -36,6 +36,7 @@ import type {
   ProviderDetail,
   ProviderListing,
   Quote,
+  RailStatus,
   SessionInfo,
   ShippingProfile,
   Subscription,
@@ -210,11 +211,12 @@ export function revokePass(id: string) {
 
 // --- the catalogs of paid APIs (public) ---
 
-export function listProviders(params: { q?: string; category?: string; source?: string; limit?: number; offset?: number } = {}) {
+export function listProviders(params: { q?: string; category?: string; source?: string; network?: string; limit?: number; offset?: number } = {}) {
   const qs = new URLSearchParams();
   if (params.q) qs.set("q", params.q);
   if (params.category) qs.set("category", params.category);
   if (params.source) qs.set("source", params.source);
+  if (params.network) qs.set("network", params.network);
   if (params.limit) qs.set("limit", String(params.limit));
   if (params.offset) qs.set("offset", String(params.offset));
   const query = qs.toString();
@@ -224,6 +226,11 @@ export function listProviders(params: { q?: string; category?: string; source?: 
 /** id is a provider ID ("paysh:birdeye.data", "circle:birdeye") or a catalog's own name for it. */
 export function getProvider(id: string) {
   return apiFetch<ProviderDetail>(`/api/v1/providers/${id.split("/").map(encodeURIComponent).join("/")}`);
+}
+
+/** Mainnet and devnet: whether Algebra can pay on each, from which wallet, with what balance. */
+export function listRails() {
+  return apiFetch<{ rails: RailStatus[]; sandbox: boolean }>("/api/v1/rails");
 }
 
 // --- economic intents ---

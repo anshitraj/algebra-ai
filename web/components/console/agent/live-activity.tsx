@@ -3,8 +3,8 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import type { StepHint } from "@/lib/agent/events";
-import { GoogleMark, IconCheck, IconLock } from "@/components/icons";
-import { StoreLogo } from "@/components/store-logo";
+import { IconCheck, IconLock } from "@/components/icons";
+import { ProviderLogo } from "@/components/provider-logo";
 import { useNow } from "@/lib/use-now";
 
 // Waiting states for the agent: while a step runs, show what it is doing
@@ -84,7 +84,7 @@ function Panel({ children, line, since, badge }: { children: ReactNode; line: st
   );
 }
 
-function SkeletonRows({ rows = 3, thumb = true, stores = [] }: { rows?: number; thumb?: boolean; stores?: string[] }) {
+function SkeletonRows({ rows = 3, thumb = true }: { rows?: number; thumb?: boolean }) {
   const widths = [
     ["72%", "44%"],
     ["58%", "36%"],
@@ -96,15 +96,7 @@ function SkeletonRows({ rows = 3, thumb = true, stores = [] }: { rows?: number; 
         const delay = { "--sweep-delay": `${i * 0.14}s` } as CSSProperties;
         return (
           <li key={i} className="flex items-center gap-3 px-3 py-2.5">
-            {thumb &&
-              (stores[i] ? (
-                // The store this placeholder result is coming from, as it lands.
-                <span key={stores[i]} className="agent-swap relative shrink-0">
-                  <StoreLogo store={stores[i]} size={36} className="opacity-90" />
-                </span>
-              ) : (
-                <span className="agent-skeleton h-9 w-9 shrink-0 rounded-lg" style={delay} />
-              ))}
+            {thumb && <span className="agent-skeleton h-9 w-9 shrink-0 rounded-lg" style={delay} />}
             <span className="min-w-0 flex-1 space-y-1.5">
               <span className="agent-skeleton block h-2.5 rounded-full" style={{ ...delay, width: widths[i % 3][0] }} />
               <span className="agent-skeleton block h-2 rounded-full" style={{ ...delay, width: widths[i % 3][1] }} />
@@ -117,65 +109,42 @@ function SkeletonRows({ rows = 3, thumb = true, stores = [] }: { rows?: number; 
   );
 }
 
-// --- web_search: a small browser working through the stores ---
+// --- search_providers: a small browser working through the catalogs ---
 
 const plus = (q: string) => encodeURIComponent(q).replace(/%20/g, "+");
 
-// The search is grounded on Google, and its listings come back from these
-// stores; each result is then opened to confirm it's a real product page
-// and to fetch its photo. The panel walks the same path.
-const SITES: { host: string; path: (q: string) => string; line: string }[] = [
+// The catalogs Algebra reads, at the addresses it reads them from. The panel
+// walks the same path: each catalog, then the matching and the network filter.
+const CATALOG_SITES: { host: string; name: string; path: (q: string, net: string) => string }[] = [
+  { host: "pay.sh", name: "Pay.sh", path: (q) => `/api/catalog?q=${plus(q)}` },
   {
-    host: "google.com",
-    path: (q) => `/search?q=${plus(q)}`,
-    line: "Searching Google",
+    host: "api.circle.com",
+    name: "Circle Agent Marketplace",
+    path: (q, net) => `/v2/x402/discovery/resources?q=${plus(q)}&network=${net}`,
   },
   {
-    host: "blinkit.com",
-    path: (q) => `/s/?q=${plus(q)}`,
-    line: "Looking on Blinkit",
-  },
-  {
-    host: "zepto.com",
-    path: (q) => `/search?query=${plus(q)}`,
-    line: "Looking on Zepto",
-  },
-  {
-    host: "swiggy.com",
-    path: (q) => `/instamart/search?query=${plus(q)}`,
-    line: "Looking on Swiggy Instamart",
-  },
-  {
-    host: "bigbasket.com",
-    path: (q) => `/ps/?q=${plus(q)}`,
-    line: "Looking on BigBasket",
-  },
-  {
-    host: "amazon.in",
-    path: (q) => `/s?k=${plus(q)}`,
-    line: "Looking on Amazon",
-  },
-  {
-    host: "flipkart.com",
-    path: (q) => `/search?q=${plus(q)}`,
-    line: "Looking on Flipkart",
+    host: "facilitator.payai.network",
+    name: "PayAI",
+    path: (q, net) => `/discovery/resources?q=${plus(q)}&network=${net}`,
   },
 ];
 
-function BrowserActivity({ hint, since }: { hint?: StepHint; since: number }) {
+function CatalogBrowser({ hint, since }: { hint?: StepHint; since: number }) {
   const reduce = useReducedMotion();
-  const tick = useTick(reduce ? 2400 : 1400);
+  const tick = useTick(reduce ? 2400 : 900);
   const q = hint?.query ?? "";
-  const site = SITES[tick % SITES.length];
+  const devnet = hint?.network === "solana-devnet";
+  const net = devnet ? "solana-devnet" : "solana";
+  const site = CATALOG_SITES[tick % CATALOG_SITES.length];
   const afterPass = [
-    "Opening each result to check it's a real product page",
-    "Fetching product photos",
-    hint?.budget ? `Keeping only what's within ${hint.budget}` : "Reading prices and pack sizes",
+    q ? `Matching “${q}” across ${CATALOG_SITES.length} catalogs` : "Matching your request",
+    `Keeping what can be paid on ${devnet ? "devnet" : "mainnet"}`,
+    "Reading listed prices in USDC",
   ];
-  const line = tick < SITES.length ? site.line : afterPass[(tick - SITES.length) % afterPass.length];
+  const line = tick < CATALOG_SITES.length ? `Searching ${site.name}` : afterPass[(tick - CATALOG_SITES.length) % afterPass.length];
 
   return (
-    <Panel line={line} since={since} badge={hint?.budget ? `under ${hint.budget}` : undefined}>
+    <Panel line={line} since={since} badge={devnet ? "devnet" : "mainnet"}>
       <div className="flex items-center gap-2.5 px-3 py-2">
         <span className="flex gap-1" aria-hidden="true">
           {[0, 1, 2].map((i) => (
@@ -186,63 +155,49 @@ function BrowserActivity({ hint, since }: { hint?: StepHint; since: number }) {
           <IconLock size={12} className="shrink-0 text-muted" />
           <span className="block min-w-0 flex-1 overflow-hidden">
             <span key={site.host} className="agent-swap flex min-w-0 items-center gap-1.5">
-              {site.host === "google.com" ? <GoogleMark size={14} /> : <StoreLogo store={site.host} size={14} />}
+              <ProviderLogo name={site.name} host={site.host} size={14} className="!border-0 !p-0" />
               <span className="truncate font-mono text-[0.72rem]">
                 <span className="text-foreground">{site.host}</span>
-                <span className="text-muted">{site.path(q)}</span>
+                <span className="text-muted">{site.path(q, net)}</span>
               </span>
             </span>
           </span>
         </div>
       </div>
       {/* Restarts on every "navigation", like a real browser's bar. */}
-      <div key={site.host} className="agent-loadbar" aria-hidden="true" />
-      <StoreRail sites={SITES.map((s) => s.host)} at={tick % SITES.length} visited={tick} />
-      <SkeletonRows stores={visitedStores(tick)} />
+      <div key={site.host + tick} className="agent-loadbar" aria-hidden="true" />
+      <CatalogRail at={tick % CATALOG_SITES.length} visited={tick} />
+      <SkeletonRows rows={3} thumb />
     </Panel>
   );
 }
 
-/** The last three stores the panel has "visited", newest first, for the placeholder rows. */
-function visitedStores(tick: number) {
-  const out: string[] = [];
-  for (let t = tick; t >= 0 && out.length < 3; t--) {
-    const host = SITES[t % SITES.length].host;
-    if (host !== "google.com" && !out.includes(host)) out.push(host);
-  }
-  return out;
-}
-
 /**
- * Every stop the search makes, as the stores' own icons: the one being read
- * lifts and gets a ring, the ones already read carry a check, the rest wait
- * dimmed. `visited` counts stops so far; after one full pass all are checked.
+ * Every catalog the search reads, as its own icon: the one being read lifts
+ * and gets a ring, the ones already read carry a check, the rest wait dimmed.
  */
-function StoreRail({ sites, at, visited }: { sites: string[]; at: number; visited: number }) {
+function CatalogRail({ at, visited }: { at: number; visited: number }) {
   return (
     <ul className="flex items-center gap-2 border-b border-border px-3 py-2.5" aria-hidden="true">
-      {sites.map((host, i) => {
+      {CATALOG_SITES.map((c, i) => {
         const current = i === at;
-        const seen = visited >= sites.length || i < at;
+        const seen = visited >= CATALOG_SITES.length || i < at;
         return (
           <li
-            key={host}
-            className={`relative rounded-[9px] transition-[transform,opacity,filter] duration-300 ${
-              current ? "-translate-y-0.5 scale-110 opacity-100 ring-2 ring-primary ring-offset-2 ring-offset-background" : seen ? "opacity-100" : "opacity-35 grayscale"
+            key={c.host}
+            className={`relative flex items-center gap-1.5 rounded-[9px] transition-[transform,opacity,filter] duration-300 ${
+              current ? "-translate-y-0.5 scale-105 opacity-100" : seen ? "opacity-100" : "opacity-35 grayscale"
             }`}
           >
-            {host === "google.com" ? (
-              <span className="flex h-[26px] w-[26px] items-center justify-center rounded-[7px] border border-border bg-white">
-                <GoogleMark size={15} />
-              </span>
-            ) : (
-              <StoreLogo store={host} size={26} />
-            )}
-            {seen && !current && (
-              <span className="absolute -right-1 -bottom-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-background bg-success text-white">
-                <IconCheck size={7} strokeWidth={4} />
-              </span>
-            )}
+            <span className={`relative rounded-[9px] ${current ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`}>
+              <ProviderLogo name={c.name} host={c.host} size={26} />
+              {seen && !current && (
+                <span className="absolute -right-1 -bottom-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-background bg-success text-white">
+                  <IconCheck size={7} strokeWidth={4} />
+                </span>
+              )}
+            </span>
+            <span className={`hidden text-[0.7rem] sm:inline ${current ? "text-foreground" : "text-muted"}`}>{c.name}</span>
           </li>
         );
       })}
@@ -290,45 +245,16 @@ function Checklist({ items, every, since, verb }: { items: string[]; every: numb
 
 // --- everything else with a wait worth showing ---
 
-const LINES: Record<string, (h?: StepHint) => { lines: string[]; thumb: boolean; stores?: string[] }> = {
-  search_products: (h) => ({
-    lines: ["Asking your connected stores", h?.query ? `Matching “${h.query}”` : "Matching items", "Reading prices and stock"],
-    thumb: true,
-  }),
-  community_deals: () => ({
-    lines: ["Reading recent posts", "Looking for coupon codes", "Skipping expired deals"],
-    thumb: true,
-    stores: ["reddit.com", "desidime.com"],
-  }),
-  find_deals: () => ({
-    lines: ["Checking Amazon and Flipkart deals", "Comparing against M.R.P.", "Matching bank card offers"],
-    thumb: false,
-    stores: ["amazon.in", "flipkart.com"],
-  }),
-  search_and_discover: () => ({
-    lines: ["Asking stores for live quotes", "Adding delivery fees and offers", "Comparing totals"],
-    thumb: false,
-  }),
-  get_quotes: () => ({
-    lines: ["Fetching the quotes", "Comparing totals"],
-    thumb: false,
-  }),
-};
-
-function LinesActivity({ tool, hint, since }: { tool: string; hint?: StepHint; since: number }) {
-  const reduce = useReducedMotion();
-  const tick = useTick(reduce ? 2600 : 1600);
-  const { lines, thumb, stores = ["blinkit.com", "zepto.com", "swiggy.com", "bigbasket.com", "amazon.in", "flipkart.com"] } = LINES[tool](hint);
-  return (
-    <Panel line={lines[tick % lines.length]} since={since} badge={hint?.budget && tool !== "find_deals" ? `under ${hint.budget}` : undefined}>
-      <StoreRail sites={stores} at={tick % stores.length} visited={tick} />
-      <SkeletonRows rows={thumb ? 3 : 2} thumb={thumb} />
-    </Panel>
-  );
+/** What paying for a call goes through, in order. */
+function payStages(network?: string) {
+  return [
+    "Asking the endpoint for its real price",
+    "Checking it against your Spend Pass",
+    `Paying in USDC on ${network === "solana-devnet" ? "devnet" : "mainnet"}`,
+    "Calling the API with proof of payment",
+    "Confirming the payment on-chain",
+  ];
 }
-
-const GUARD_CHECKS = ["Per-purchase cap", "Today's spending cap", "Blocked categories", "Merchant and payment method", "Approval line"];
-const ORDER_STAGES = ["Locking the agreed price", "Sending the order to the store", "Waiting for the store to confirm"];
 
 /**
  * The live panel under a running step. Fast steps show a shimmering line
@@ -337,14 +263,12 @@ const ORDER_STAGES = ["Locking the agreed price", "Sending the order to the stor
 export function LiveActivity({ tool, hint, since }: { tool: string; hint?: StepHint; since: number }) {
   const settled = useAfter(350);
   const panel =
-    tool === "web_search" ? (
-      <BrowserActivity hint={hint} since={since} />
-    ) : tool === "request_purchase" ? (
-      <Checklist items={GUARD_CHECKS} every={420} since={since} verb="Checking" />
-    ) : tool === "execute_purchase" ? (
-      <Checklist items={ORDER_STAGES} every={1100} since={since} />
-    ) : LINES[tool] ? (
-      <LinesActivity tool={tool} hint={hint} since={since} />
+    tool === "search_providers" ? (
+      <CatalogBrowser hint={hint} since={since} />
+    ) : tool === "pay_and_call" || tool === "run_approved_intent" ? (
+      <Checklist items={payStages(hint?.network)} every={1100} since={since} />
+    ) : tool === "get_provider_endpoints" ? (
+      <Checklist items={["Opening the provider's listing", "Reading its endpoints and prices", "Reading what each one expects"]} every={700} since={since} />
     ) : null;
 
   if (panel && settled) return panel;

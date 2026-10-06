@@ -111,6 +111,31 @@ func TestMultiListMergesAndPages(t *testing.T) {
 	}
 }
 
+func TestMultiListKeepsOnlyTheAskedNetwork(t *testing.T) {
+	pay, circle := twoCatalogs()
+	for i := range pay.providers {
+		pay.providers[i].Networks = []string{"solana"}
+	}
+	circle.providers[0].Networks = []string{"solana"}
+	circle.providers[1].Networks = []string{"solana", "solana-devnet"}
+	m := NewMulti(pay, circle)
+
+	l, err := m.List(context.Background(), Filter{Network: "solana-devnet"})
+	if err != nil || l.Total != 1 || l.Providers[0].ID != "circle:birdeye" {
+		t.Fatalf("only what can be paid on devnet: %v %+v", err, l)
+	}
+	if l.Sources[0].Total != 0 || l.Sources[1].Total != 1 {
+		t.Errorf("each catalog counts what it has there: %+v", l.Sources)
+	}
+	// CAIP-2 names the same cluster.
+	if l, _ := m.List(context.Background(), Filter{Network: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"}); l.Total != 1 {
+		t.Errorf("devnet by its CAIP-2 id: %+v", l)
+	}
+	if l, _ := m.List(context.Background(), Filter{Network: "solana"}); l.Total != 4 {
+		t.Errorf("mainnet: %+v", l)
+	}
+}
+
 func TestMultiListSurvivesOneCatalogBeingDown(t *testing.T) {
 	pay, circle := twoCatalogs()
 	circle.err = ErrUnavailable

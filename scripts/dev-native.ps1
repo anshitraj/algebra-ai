@@ -17,6 +17,8 @@ used or migrated by anything started from here.
   scripts\dev-native.ps1 down     stop both
 
 Environment: PG_BIN overrides where the PostgreSQL binaries are looked up.
+Solana: .data/solana-devnet.json, if present, is the devnet wallet; with
+SOLANA_ALLOW_MAINNET=yes, .data/solana-mainnet.json is the mainnet wallet.
 #>
 param(
     [Parameter(Position = 0)]
@@ -78,6 +80,25 @@ function Set-LocalEnv([string]$database) {
     $env:REDIS_ADDR         = "127.0.0.1:$RedisPort"
     $env:ALGEBRA_MASTER_KEY = (Get-Content $KeyFile -Raw).Trim()
     $env:HTTP_ADDR          = $ApiAddr
+    Set-SolanaWallets
+}
+
+# Wallets under .data/ become the console's devnet and mainnet rails, unless
+# the environment already configures Solana. Devnet: create one with
+#   go run ./cmd/solana-wallet -new -out .data/solana-devnet.json
+# and fund it at faucet.circle.com. Mainnet pays real money, so its wallet
+# (.data/solana-mainnet.json) is only used when SOLANA_ALLOW_MAINNET=yes is
+# already set.
+function Set-SolanaWallets {
+    if ($env:SOLANA_CLUSTER) { return }
+    $devnet = Join-Path $Data 'solana-devnet.json'
+    if (-not $env:SOLANA_DEVNET_KEYPAIR -and -not $env:SOLANA_DEVNET_KEYPAIR_FILE -and (Test-Path $devnet)) {
+        $env:SOLANA_DEVNET_KEYPAIR_FILE = $devnet
+    }
+    $mainnet = Join-Path $Data 'solana-mainnet.json'
+    if ($env:SOLANA_ALLOW_MAINNET -eq 'yes' -and -not $env:SOLANA_MAINNET_KEYPAIR -and -not $env:SOLANA_MAINNET_KEYPAIR_FILE -and (Test-Path $mainnet)) {
+        $env:SOLANA_MAINNET_KEYPAIR_FILE = $mainnet
+    }
 }
 
 function Start-Postgres {

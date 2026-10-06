@@ -90,3 +90,49 @@ func TestLoadPaySh(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadSolanaRails(t *testing.T) {
+	clear := func(t *testing.T) {
+		for _, k := range []string{"SOLANA_DEVNET_KEYPAIR", "SOLANA_DEVNET_KEYPAIR_FILE", "SOLANA_DEVNET_RPC_URL", "SOLANA_MAINNET_KEYPAIR", "SOLANA_MAINNET_KEYPAIR_FILE", "SOLANA_MAINNET_RPC_URL", "SOLANA_ALLOW_MAINNET", "SOLANA_MAX_PAYMENT_USDC"} {
+			t.Setenv(k, "")
+		}
+	}
+	t.Run("none configured is none", func(t *testing.T) {
+		clear(t)
+		if rails, err := loadSolanaRails(SolanaConfig{}); err != nil || len(rails) != 0 {
+			t.Errorf("%v %+v", err, rails)
+		}
+	})
+	t.Run("devnet and mainnet side by side", func(t *testing.T) {
+		clear(t)
+		t.Setenv("SOLANA_DEVNET_KEYPAIR_FILE", ".data/devnet.json")
+		t.Setenv("SOLANA_DEVNET_RPC_URL", "https://devnet.example")
+		t.Setenv("SOLANA_MAINNET_KEYPAIR_FILE", ".data/mainnet.json")
+		t.Setenv("SOLANA_ALLOW_MAINNET", "yes")
+		t.Setenv("SOLANA_MAX_PAYMENT_USDC", "0.25")
+		rails, err := loadSolanaRails(SolanaConfig{})
+		if err != nil || len(rails) != 2 || rails[0].Cluster != "devnet" || rails[0].RPCURL != "https://devnet.example" || rails[1].Cluster != "mainnet" || rails[1].MaxPaymentMinor != 250_000 {
+			t.Errorf("%v %+v", err, rails)
+		}
+	})
+	t.Run("mainnet needs the explicit yes", func(t *testing.T) {
+		clear(t)
+		t.Setenv("SOLANA_MAINNET_KEYPAIR", "[1,2,3]")
+		if _, err := loadSolanaRails(SolanaConfig{}); err == nil || !strings.Contains(err.Error(), "SOLANA_ALLOW_MAINNET") {
+			t.Errorf("got %v", err)
+		}
+	})
+	t.Run("a cluster configured twice is refused", func(t *testing.T) {
+		clear(t)
+		t.Setenv("SOLANA_DEVNET_KEYPAIR_FILE", ".data/devnet.json")
+		if _, err := loadSolanaRails(SolanaConfig{Cluster: "devnet", KeypairFile: "x"}); err == nil || !strings.Contains(err.Error(), "twice") {
+			t.Errorf("got %v", err)
+		}
+	})
+	t.Run("the legacy single rail still counts", func(t *testing.T) {
+		clear(t)
+		if rails, err := loadSolanaRails(SolanaConfig{Cluster: "devnet", KeypairFile: "x", MaxPaymentMinor: 1}); err != nil || len(rails) != 1 || rails[0].Cluster != "devnet" {
+			t.Errorf("%v %+v", err, rails)
+		}
+	})
+}

@@ -139,6 +139,12 @@ export const CATALOGS: { id: string; name: string; url: string; blurb: string }[
     url: "https://agents.circle.com/services",
     blurb: "Circle's catalog of x402 services, with the payment terms each one publishes.",
   },
+  {
+    id: "payai",
+    name: "PayAI",
+    url: "https://payai.network",
+    blurb: "The open bazaar of x402 services that settle through PayAI's facilitator on Solana.",
+  },
 ];
 
 export function catalogName(source: string): string {

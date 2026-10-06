@@ -97,14 +97,19 @@ type Config struct {
 
 	// Solana is the real payment rail (providers/solanax402): Algebra pays
 	// x402 providers in USDC from a wallet it controls. Off unless
-	// SOLANA_CLUSTER is set.
-	Solana SolanaConfig
+	// SOLANA_CLUSTER is set. SolanaRails is every rail to run: that one, and
+	// devnet and mainnet configured on their own (SOLANA_DEVNET_*,
+	// SOLANA_MAINNET_*), so both clusters can be used at once.
+	Solana      SolanaConfig
+	SolanaRails []SolanaConfig
 
 	// PaySh is the Pay.sh catalog of paid APIs (providers/paysh), which
 	// agents can browse and name as providers.
 	PaySh PayShConfig
-	// Circle is Circle's Agent Marketplace catalog (providers/circleagents).
+	// Circle is Circle's Agent Marketplace and PayAI PayAI's facilitator
+	// bazaar (providers/bazaar).
 	Circle CircleConfig
+	PayAI  CircleConfig
 
 	Auth AuthConfig
 
@@ -122,12 +127,13 @@ type PayShConfig struct {
 	DocsURL    string
 }
 
-// CircleConfig configures reading Circle's Agent Marketplace.
+// CircleConfig configures reading an x402 discovery directory (Circle's
+// Agent Marketplace, PayAI's bazaar).
 type CircleConfig struct {
-	// Enabled is on unless CIRCLE_AGENTS_ENABLED=off.
+	// Enabled is on unless CIRCLE_AGENTS_ENABLED=off (PAYAI_ENABLED=off).
 	Enabled bool
-	// DiscoveryURL defaults to Circle's discovery API (CIRCLE_DISCOVERY_URL);
-	// it must be https.
+	// DiscoveryURL defaults to the directory's own (CIRCLE_DISCOVERY_URL,
+	// PAYAI_DISCOVERY_URL); it must be https.
 	DiscoveryURL string
 }
 
@@ -363,10 +369,18 @@ func FromEnv() (*Config, error) {
 	if err := loadSolana(&cfg.Solana); err != nil {
 		return nil, err
 	}
+	rails, err := loadSolanaRails(cfg.Solana)
+	if err != nil {
+		return nil, err
+	}
+	cfg.SolanaRails = rails
 	if err := loadPaySh(&cfg.PaySh); err != nil {
 		return nil, err
 	}
-	if err := loadCircle(&cfg.Circle); err != nil {
+	if err := loadDirectory(&cfg.Circle, "CIRCLE_AGENTS_ENABLED", "CIRCLE_DISCOVERY_URL"); err != nil {
+		return nil, err
+	}
+	if err := loadDirectory(&cfg.PayAI, "PAYAI_ENABLED", "PAYAI_DISCOVERY_URL"); err != nil {
 		return nil, err
 	}
 	switch strings.ToLower(os.Getenv("ECONOMIC_SANDBOX")) {
@@ -604,6 +618,47 @@ func loadSolana(c *SolanaConfig) error {
 	return nil
 }
 
+// loadSolanaRails gathers every Solana rail to run: the one SOLANA_CLUSTER
+// names (if any), plus devnet from SOLANA_DEVNET_KEYPAIR_FILE (or _KEYPAIR)
+// and mainnet from SOLANA_MAINNET_KEYPAIR_FILE (or _KEYPAIR), each with its
+// own optional _RPC_URL. Mainnet still needs SOLANA_ALLOW_MAINNET=yes, and a
+// cluster configured twice is an error rather than a guess.
+func loadSolanaRails(legacy SolanaConfig) ([]SolanaConfig, error) {
+	var out []SolanaConfig
+	if legacy.Cluster != "" {
+		out = append(out, legacy)
+	}
+	for _, cl := range []struct{ cluster, prefix string }{{"devnet", "SOLANA_DEVNET_"}, {"mainnet", "SOLANA_MAINNET_"}} {
+		c := SolanaConfig{
+			Cluster:     cl.cluster,
+			RPCURL:      strings.TrimSpace(os.Getenv(cl.prefix + "RPC_URL")),
+			Keypair:     strings.TrimSpace(os.Getenv(cl.prefix + "KEYPAIR")),
+			KeypairFile: strings.TrimSpace(os.Getenv(cl.prefix + "KEYPAIR_FILE")),
+		}
+		if c.Keypair == "" && c.KeypairFile == "" {
+			continue
+		}
+		if cl.cluster == "mainnet" && strings.ToLower(os.Getenv("SOLANA_ALLOW_MAINNET")) != "yes" {
+			return nil, errors.New("config: SOLANA_MAINNET_KEYPAIR pays with real money; set SOLANA_ALLOW_MAINNET=yes to confirm that is intended")
+		}
+		for _, have := range out {
+			if have.Cluster == cl.cluster {
+				return nil, fmt.Errorf("config: the Solana %s rail is configured twice (SOLANA_CLUSTER and %s*); keep one", cl.cluster, cl.prefix)
+			}
+		}
+		c.MaxPaymentMinor = 1_000_000
+		if v := strings.TrimSpace(os.Getenv("SOLANA_MAX_PAYMENT_USDC")); v != "" {
+			n, err := chain.ParseUnits(v, chain.USDCDecimals)
+			if err != nil || n <= 0 {
+				return nil, fmt.Errorf("config: SOLANA_MAX_PAYMENT_USDC must be a positive amount like 0.50: %v", err)
+			}
+			c.MaxPaymentMinor = n
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 // loadPaySh reads the Pay.sh catalog settings. The URLs, if set, must be
 // https with no credentials: they are fetched by the server, so an operator
 // typo shouldn't turn into a request to somewhere else.
@@ -625,14 +680,15 @@ func loadPaySh(c *PayShConfig) error {
 	return nil
 }
 
-// loadCircle reads Circle's catalog settings, with the same URL rule as Pay.sh's.
-func loadCircle(c *CircleConfig) error {
-	c.Enabled = !strings.EqualFold(strings.TrimSpace(os.Getenv("CIRCLE_AGENTS_ENABLED")), "off")
-	c.DiscoveryURL = strings.TrimSpace(os.Getenv("CIRCLE_DISCOVERY_URL"))
+// loadDirectory reads a discovery directory's settings, with the same URL
+// rule as Pay.sh's.
+func loadDirectory(c *CircleConfig, enabledVar, urlVar string) error {
+	c.Enabled = !strings.EqualFold(strings.TrimSpace(os.Getenv(enabledVar)), "off")
+	c.DiscoveryURL = strings.TrimSpace(os.Getenv(urlVar))
 	if c.DiscoveryURL != "" {
 		u, err := url.Parse(c.DiscoveryURL)
 		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
-			return fmt.Errorf("config: CIRCLE_DISCOVERY_URL must be an https URL without credentials")
+			return fmt.Errorf("config: %s must be an https URL without credentials", urlVar)
 		}
 	}
 	return nil

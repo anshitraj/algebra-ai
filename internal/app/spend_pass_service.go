@@ -157,6 +157,23 @@ func (s *SpendPassService) ForAgent(ctx context.Context, agentID string) (*PassV
 	return s.view(ctx, *p)
 }
 
+// OwnedActive returns the person's pass by ID, if it is theirs and can still
+// spend. Someone else's pass is "not found", never "forbidden": its existence
+// isn't confirmed to anyone but its owner.
+func (s *SpendPassService) OwnedActive(ctx context.Context, userID, passID string) (*spendpass.Pass, error) {
+	p, err := s.store.Get(ctx, passID)
+	if err != nil {
+		return nil, err
+	}
+	if p.UserID != userID {
+		return nil, fmt.Errorf("%w: pass %s", shared.ErrNotFound, passID)
+	}
+	if !p.Active(s.now()) {
+		return nil, fmt.Errorf("%w: that Spend Pass is revoked or expired", shared.ErrUnauthorized)
+	}
+	return p, nil
+}
+
 // Revoke ends a pass and its agent token at once. Only the pass's owner can.
 func (s *SpendPassService) Revoke(ctx context.Context, userID, passID string) error {
 	p, err := s.store.Get(ctx, passID)

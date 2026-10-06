@@ -1,0 +1,862 @@
+{
+ "x402Version": 2,
+ "items": [
+  {
+   "accepts": [
+    {
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "CjNFTjvBhbJJd2B5ePPMHRLx1ELZpa8dwQgGL727eKww"
+     },
+     "payTo": "ATWJ82T8nRdQwZnaysB68N5EpaSvLRsQP4h6eWmaJBH9",
+     "amount": "1000",
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "maxTimeoutSeconds": 300
+    }
+   ],
+   "lastUpdated": "2026-10-06T01:10:41.592Z",
+   "metadata": {
+    "tags": [
+     "x402",
+     "payments",
+     "safety",
+     "pre-payment",
+     "agents"
+    ],
+    "iconUrl": "https://x402-doctor.fizzl.eu/icon.png",
+    "mimeType": "application/json",
+    "description": "Is this x402 endpoint safe to pay? Call it before your AI agent pays an endpoint it has not used before. Returns a go / caution / no_go verdict, the recommended payment option (network and amount) and the reasons (payment would fail, over your budget, price above advertised, not HTTPS, unknown token). Never pays the endpoint. Cached 10 min.",
+    "serviceName": "x402 Doctor"
+   },
+   "resource": "https://x402-doctor.fizzl.eu/api/v1/preflight",
+   "type": "http",
+   "x402Version": 2,
+   "description": "Is this x402 endpoint safe to pay? Call it before your AI agent pays an endpoint it has not used before. Returns a go / caution / no_go verdict, the recommended payment option (network and amount) and the reasons (payment would fail, over your budget, price above advertised, not HTTPS, unknown token). Never pays the endpoint. Cached 10 min.",
+   "mimeType": "application/json",
+   "serviceName": "x402 Doctor",
+   "tags": [
+    "x402",
+    "payments",
+    "safety",
+    "pre-payment",
+    "agents"
+   ],
+   "iconUrl": "https://x402-doctor.fizzl.eu/icon.png",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "type": "http",
+       "method": "GET",
+       "queryParams": {
+        "url": "https://ichimoku-signal.fizzl.eu/signal/BTC-USDT",
+        "max_usd": "0.05"
+       }
+      }
+     },
+     "schema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "required": [
+       "input"
+      ],
+      "properties": {
+       "input": {
+        "type": "object",
+        "required": [
+         "type",
+         "method"
+        ],
+        "properties": {
+         "type": {
+          "type": "string",
+          "const": "http"
+         },
+         "method": {
+          "enum": [
+           "GET"
+          ],
+          "type": "string"
+         },
+         "queryParams": {
+          "type": "object",
+          "required": [
+           "url"
+          ],
+          "properties": {
+           "url": {
+            "type": "string",
+            "description": "The x402 endpoint you are about to pay."
+           },
+           "method": {
+            "enum": [
+             "GET",
+             "POST"
+            ],
+            "type": "string",
+            "description": "HTTP method you will call it with. Default: try GET, then POST."
+           },
+           "max_usd": {
+            "type": "string",
+            "description": "Your budget per call in USD; above it the verdict is no_go."
+           },
+           "network": {
+            "type": "string",
+            "description": "CAIP-2 network you want to pay on, e.g. eip155:8453 or solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp."
+           }
+          }
+         }
+        },
+        "additionalProperties": false
+       },
+       "output": {
+        "type": "object",
+        "required": [
+         "type"
+        ],
+        "properties": {
+         "type": {
+          "type": "string"
+         },
+         "example": {
+          "type": "object",
+          "required": [
+           "url",
+           "verdict",
+           "safe_to_pay",
+           "summary",
+           "options",
+           "reasons"
+          ],
+          "properties": {
+           "url": {
+            "type": "string"
+           },
+           "cached": {
+            "type": "boolean"
+           },
+           "method": {
+            "type": [
+             "string",
+             "null"
+            ]
+           },
+           "options": {
+            "type": "array",
+            "items": {
+             "type": "object",
+             "required": [
+              "index",
+              "payable",
+              "problems"
+             ],
+             "properties": {
+              "usd": {
+               "type": [
+                "number",
+                "null"
+               ]
+              },
+              "index": {
+               "type": "integer"
+              },
+              "amount": {
+               "type": [
+                "string",
+                "null"
+               ]
+              },
+              "method": {
+               "type": [
+                "string",
+                "null"
+               ],
+               "description": "MPP payment method (evm, tempo, stripe); absent for x402 options"
+              },
+              "pay_to": {
+               "type": [
+                "string",
+                "null"
+               ]
+              },
+              "network": {
+               "type": [
+                "string",
+                "null"
+               ]
+              },
+              "payable": {
+               "type": "boolean"
+              },
+              "problems": {
+               "type": "array",
+               "items": {
+                "type": "string"
+               }
+              },
+              "protocol": {
+               "enum": [
+                "x402",
+                "mpp",
+                "l402"
+               ],
+               "type": "string"
+              },
+              "asset_symbol": {
+               "type": [
+                "string",
+                "null"
+               ]
+              },
+              "network_name": {
+               "type": [
+                "string",
+                "null"
+               ]
+              }
+             }
+            }
+           },
+           "reasons": {
+            "type": "array",
+            "items": {
+             "type": "object",
+             "required": [
+              "level",
+              "code",
+              "message"
+             ],
+             "properties": {
+              "code": {
+               "type": "string"
+              },
+              "level": {
+               "enum": [
+                "no_go",
+                "caution",
+                "info"
+               ],
+               "type": "string"
+              },
+              "message": {
+               "type": "string"
+              }
+             }
+            }
+           },
+           "signals": {
+            "type": "object"
+           },
+           "summary": {
+            "type": "string"
+           },
+           "verdict": {
+            "enum": [
+             "go",
+             "caution",
+             "no_go"
+            ],
+            "type": "string"
+           },
+           "checked_at": {
+            "type": "string"
+           },
+           "safe_to_pay": {
+            "type": "boolean"
+           },
+           "recommended_option": {
+            "type": [
+             "integer",
+             "null"
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "method": "GET",
+   "toolName": null,
+   "inputSchema": {
+    "type": "http",
+    "method": "GET",
+    "queryParams": {
+     "url": "https://ichimoku-signal.fizzl.eu/signal/BTC-USDT",
+     "max_usd": "0.05"
+    }
+   }
+  },
+  {
+   "accepts": [
+    {
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+     },
+     "payTo": "7Ac8jXKrYTAPynkM3QtfjECGDevYjMjPF6VfbiVaHPox",
+     "amount": "1000",
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "maxTimeoutSeconds": 300
+    }
+   ],
+   "lastUpdated": "2026-10-06T01:08:57.593Z",
+   "metadata": {
+    "tags": [
+     "gpu",
+     "gpu-sandbox",
+     "cuda",
+     "agent",
+     "compute"
+    ],
+    "iconUrl": "https://nuza.io/brand/nuza-gatekeeper-avatar-256.png",
+    "mimeType": "application/json",
+    "description": "Live private GPU sandbox quote from nuza.io. Per-second-billed full-CUDA machines (RTX 5090 and others) for arbitrary agent code, paid in USDC on Solana, no account or KYC; deposits sit in per-rental on-chain escrow with automatic refunds. Params: ?model=rtx5090&region=us-east&count=1&seconds=3600&mode=spot. Returns live hourly price, per-second rate in USDC micro-units, and the exact deposit a rental would take. Free equivalents exist at /api/v1/pricing and /api/quote; paying this route is how an agent proves the payment rail end-to-end. Rent at https://nuza.io — every settlement is a public receipt at https://nuza.io/tape."
+   },
+   "resource": "https://nuza.io/api/x402/quote",
+   "type": "http",
+   "x402Version": 2,
+   "description": "Live private GPU sandbox quote from nuza.io. Per-second-billed full-CUDA machines (RTX 5090 and others) for arbitrary agent code, paid in USDC on Solana, no account or KYC; deposits sit in per-rental on-chain escrow with automatic refunds. Params: ?model=rtx5090&region=us-east&count=1&seconds=3600&mode=spot. Returns live hourly price, per-second rate in USDC micro-units, and the exact deposit a rental would take. Free equivalents exist at /api/v1/pricing and /api/quote; paying this route is how an agent proves the payment rail end-to-end. Rent at https://nuza.io — every settlement is a public receipt at https://nuza.io/tape.",
+   "mimeType": "application/json",
+   "serviceName": null,
+   "tags": [
+    "gpu",
+    "gpu-sandbox",
+    "cuda",
+    "agent",
+    "compute"
+   ],
+   "iconUrl": "https://nuza.io/brand/nuza-gatekeeper-avatar-256.png",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "type": "http",
+       "method": "GET",
+       "queryParams": {}
+      }
+     },
+     "schema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "required": [
+       "input"
+      ],
+      "properties": {
+       "input": {
+        "type": "object",
+        "required": [
+         "type",
+         "method"
+        ],
+        "properties": {
+         "type": {
+          "type": "string",
+          "const": "http"
+         },
+         "method": {
+          "enum": [
+           "GET"
+          ],
+          "type": "string"
+         },
+         "queryParams": {
+          "type": "object",
+          "properties": {}
+         }
+        },
+        "additionalProperties": false
+       },
+       "output": {
+        "type": "object",
+        "required": [
+         "type"
+        ],
+        "properties": {
+         "type": {
+          "type": "string"
+         },
+         "example": {
+          "type": "object"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "method": "GET",
+   "toolName": null,
+   "inputSchema": {
+    "type": "http",
+    "method": "GET",
+    "queryParams": {}
+   }
+  },
+  {
+   "accepts": [
+    {
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "CjNFTjvBhbJJd2B5ePPMHRLx1ELZpa8dwQgGL727eKww"
+     },
+     "payTo": "J7ZvJEspvwP1oRxQZ7mYmNmT22NTm3GWq3t7HEbvPZYx",
+     "amount": "50000",
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "maxTimeoutSeconds": 300
+    }
+   ],
+   "lastUpdated": "2026-10-05T14:43:35.939Z",
+   "metadata": {
+    "mimeType": "",
+    "description": "Get Smart Money Netflow Data"
+   },
+   "resource": "https://api.nansen.ai/api/v1/smart-money/netflow",
+   "type": "http",
+   "x402Version": 2,
+   "description": "Get Smart Money Netflow Data",
+   "mimeType": "",
+   "serviceName": null,
+   "tags": null,
+   "iconUrl": null,
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "body": {
+        "chains": [
+         "ethereum",
+         "solana"
+        ],
+        "filters": {
+         "include_stablecoins": false,
+         "include_native_tokens": false,
+         "exclude_smart_money_labels": [
+          "30D Smart Trader"
+         ],
+         "include_smart_money_labels": [
+          "Fund",
+          "Smart Trader"
+         ]
+        },
+        "order_by": [
+         {
+          "field": "net_flow_24h_usd",
+          "direction": "DESC"
+         }
+        ]
+       },
+       "type": "http",
+       "method": "POST",
+       "bodyType": "json"
+      }
+     },
+     "schema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "required": [
+       "input"
+      ],
+      "properties": {
+       "input": {
+        "type": "object",
+        "required": [
+         "type",
+         "method",
+         "bodyType",
+         "body"
+        ],
+        "properties": {
+         "body": {
+          "type": "object",
+          "required": [
+           "chains"
+          ],
+          "properties": {
+           "chains": {
+            "type": "array"
+           },
+           "filters": {
+            "type": "object"
+           },
+           "order_by": {
+            "type": "array"
+           },
+           "pagination": {
+            "type": "object"
+           },
+           "premium_labels": {
+            "type": "boolean"
+           }
+          }
+         },
+         "type": {
+          "type": "string",
+          "const": "http"
+         },
+         "method": {
+          "enum": [
+           "POST",
+           "PUT",
+           "PATCH"
+          ],
+          "type": "string"
+         },
+         "bodyType": {
+          "enum": [
+           "json",
+           "form-data",
+           "text"
+          ],
+          "type": "string"
+         }
+        },
+        "additionalProperties": false
+       },
+       "output": {
+        "type": "object",
+        "required": [
+         "type"
+        ],
+        "properties": {
+         "type": {
+          "type": "string"
+         },
+         "example": {
+          "type": "object",
+          "required": [
+           "data",
+           "pagination"
+          ],
+          "properties": {
+           "data": {
+            "type": "array",
+            "items": {
+             "type": "object",
+             "required": [
+              "token_address",
+              "token_symbol",
+              "net_flow_1h_usd",
+              "net_flow_24h_usd",
+              "net_flow_7d_usd",
+              "net_flow_30d_usd",
+              "chain",
+              "token_sectors",
+              "trader_count",
+              "token_age_days"
+             ],
+             "properties": {
+              "chain": {
+               "type": "string"
+              },
+              "token_symbol": {
+               "type": "string"
+              },
+              "trader_count": {
+               "type": "integer"
+              },
+              "token_address": {
+               "type": "string"
+              },
+              "token_sectors": {
+               "type": "array"
+              },
+              "market_cap_usd": {
+               "type": "number"
+              },
+              "token_age_days": {
+               "type": "integer"
+              },
+              "net_flow_1h_usd": {
+               "type": "number"
+              },
+              "net_flow_7d_usd": {
+               "type": "number"
+              },
+              "net_flow_24h_usd": {
+               "type": "number"
+              },
+              "net_flow_30d_usd": {
+               "type": "number"
+              }
+             }
+            }
+           },
+           "pagination": {
+            "type": "object",
+            "properties": {
+             "page": {
+              "type": "integer"
+             },
+             "per_page": {
+              "type": "integer"
+             },
+             "is_last_page": {
+              "type": "boolean"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "method": "POST",
+   "toolName": null,
+   "inputSchema": {
+    "body": {
+     "chains": [
+      "ethereum",
+      "solana"
+     ],
+     "filters": {
+      "include_stablecoins": false,
+      "include_native_tokens": false,
+      "exclude_smart_money_labels": [
+       "30D Smart Trader"
+      ],
+      "include_smart_money_labels": [
+       "Fund",
+       "Smart Trader"
+      ]
+     },
+     "order_by": [
+      {
+       "field": "net_flow_24h_usd",
+       "direction": "DESC"
+      }
+     ]
+    },
+    "type": "http",
+    "method": "POST",
+    "bodyType": "json"
+   }
+  },
+  {
+   "accepts": [
+    {
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "CjNFTjvBhbJJd2B5ePPMHRLx1ELZpa8dwQgGL727eKww"
+     },
+     "payTo": "7G73PLhKvAPBGTzG5ESAE4coE7QrVeTTKfhTxQZbyGgC",
+     "scheme": "exact",
+     "network": "solana",
+     "mimeType": "application/json",
+     "resource": "https://mpp.hyreagent.fun/trenches/new-tokens",
+     "description": "Real-time PumpFun token launches with AI snipe verdict (holder concentration, dev history, freeze/mint authority). Sources: PumpPortal.",
+     "outputSchema": {
+      "input": {
+       "type": "http",
+       "method": "GET",
+       "discoverable": true
+      },
+      "output": {
+       "type": "object",
+       "required": [
+        "data",
+        "signal",
+        "confidence",
+        "sources",
+        "latency_ms",
+        "timestamp"
+       ],
+       "properties": {
+        "data": {
+         "type": "object",
+         "description": "Structured data from upstream sources (shape varies per endpoint)."
+        },
+        "signal": {
+         "enum": [
+          "snipe",
+          "watch",
+          "avoid"
+         ],
+         "type": "string",
+         "description": "Decision signal for the caller."
+        },
+        "insight": {
+         "type": "string",
+         "nullable": true,
+         "description": "AI-generated 1-2 sentence actionable insight."
+        },
+        "sources": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         },
+         "description": "Upstream data sources used."
+        },
+        "timestamp": {
+         "type": "string",
+         "format": "date-time"
+        },
+        "confidence": {
+         "type": "number",
+         "maximum": 1,
+         "minimum": 0,
+         "description": "LLM confidence in the signal (0–1)."
+        },
+        "latency_ms": {
+         "type": "integer",
+         "description": "Total response time in milliseconds."
+        },
+        "model_used": {
+         "type": "string",
+         "nullable": true,
+         "description": "LLM model that produced the insight."
+        }
+       }
+      }
+     },
+     "maxAmountRequired": "80000",
+     "maxTimeoutSeconds": 60
+    }
+   ],
+   "lastUpdated": "2026-10-06T07:41:38.246Z",
+   "metadata": {
+    "mimeType": "application/json",
+    "description": "Real-time PumpFun token launches with AI snipe verdict (holder concentration, dev history, freeze/mint authority). Sources: PumpPortal."
+   },
+   "resource": "https://mpp.hyreagent.fun/trenches/new-tokens",
+   "type": "http",
+   "x402Version": 1,
+   "description": "Real-time PumpFun token launches with AI snipe verdict (holder concentration, dev history, freeze/mint authority). Sources: PumpPortal.",
+   "mimeType": "application/json",
+   "serviceName": null,
+   "tags": null,
+   "iconUrl": null,
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "type": "http",
+       "method": "GET"
+      }
+     },
+     "schema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "required": [
+       "input"
+      ],
+      "properties": {
+       "input": {
+        "type": "object"
+       },
+       "output": {
+        "type": "object"
+       }
+      }
+     }
+    }
+   },
+   "method": "GET",
+   "toolName": null,
+   "inputSchema": {
+    "type": "http",
+    "method": "GET"
+   }
+  },
+  {
+   "accepts": [
+    {
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "tags": [
+       "news",
+       "wire",
+       "intelligence",
+       "markets",
+       "geopolitics"
+      ],
+      "iconUrl": "https://terminal.themonexus.com/favicon-180.png",
+      "feePayer": "CjNFTjvBhbJJd2B5ePPMHRLx1ELZpa8dwQgGL727eKww",
+      "serviceName": "Monexus Terminal"
+     },
+     "payTo": "CVWxHvN9MdWRGN6mEfDtUjmoypMtkTJX4mBRrhmhzKk2",
+     "scheme": "exact",
+     "network": "solana",
+     "mimeType": "application/json",
+     "resource": "https://terminal.themonexus.com/api/v1/capex/summary",
+     "description": "Monexus Terminal API — Metric families present in the capex tracker.",
+     "outputSchema": {
+      "input": {
+       "type": "http",
+       "method": "GET",
+       "discoverable": true
+      },
+      "output": {
+       "metrics": [
+        {
+         "n": 3,
+         "latest": "2026-07-23",
+         "metric": "cloud_growth"
+        }
+       ]
+      }
+     },
+     "maxAmountRequired": "1000",
+     "maxTimeoutSeconds": 60
+    }
+   ],
+   "lastUpdated": "2026-10-06T01:11:01.597Z",
+   "metadata": {
+    "mimeType": "application/json",
+    "description": "Monexus Terminal API — Metric families present in the capex tracker."
+   },
+   "resource": "https://terminal.themonexus.com/api/v1/capex/summary",
+   "type": "http",
+   "x402Version": 1,
+   "description": "Monexus Terminal API — Metric families present in the capex tracker.",
+   "mimeType": "application/json",
+   "serviceName": null,
+   "tags": null,
+   "iconUrl": null,
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "type": "http",
+       "method": "GET"
+      }
+     },
+     "schema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "required": [
+       "input"
+      ],
+      "properties": {
+       "input": {
+        "type": "object"
+       },
+       "output": {
+        "type": "object"
+       }
+      }
+     }
+    }
+   },
+   "method": "GET",
+   "toolName": null,
+   "inputSchema": {
+    "type": "http",
+    "method": "GET"
+   }
+  }
+ ],
+ "pagination": {
+  "limit": 1000,
+  "offset": 0,
+  "total": 5
+ }
+}

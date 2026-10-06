@@ -106,7 +106,7 @@ func run(url, method, body string) error {
 		return err
 	}
 	runner := x402client.New(x402client.Config{
-		HTTP: safehttp.New(safehttp.Options{}), Networks: map[string]string{rail.Network(): solanax402.RailName},
+		HTTP: safehttp.New(safehttp.Options{}), Networks: map[string]string{rail.Network(): rail.Name()},
 	})
 	fmt.Printf("\nAsking %s for its price (an unpaid request)...\n", cand.Endpoint)
 	q, err := runner.Quote(ctx, cand, input)

@@ -2,33 +2,23 @@
 // handlers only. The agent's tool calls authenticate with the session's
 // console-agent token (fetched per request from the user's session cookie —
 // see getAgentToken), never with the human session itself: an agent token
-// can shop within policy but is rejected by every approval endpoint.
+// can pay within a Spend Pass but is rejected by every approval endpoint.
 // Wraps only the endpoints the agent's tools need — see tools.ts.
 
-import type {
-  AuditEvent,
-  CommerceProfile,
-  DealResults,
-  ExecuteResult,
-  Guardrails,
-  Intent,
-  Plugin,
-  IntentConstraints,
-  IntentItem,
-  Merchant,
-  Order,
-  PolicyDecision,
-  Quote,
-} from "../types";
+import type { EconIntent, ProviderDetail, ProviderListing, RailStatus, SpendPass } from "../types";
 
 const API_URL = process.env.ALGEBRA_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
+export type ChatNetwork = "solana" | "solana-devnet";
+
 export type ServerIdentity = {
   agentToken: string;
-  /** "demo" accounts check out through the simulated demo store. */
+  /** "demo" accounts: a person trying Algebra without signing up. */
   mode: "live" | "demo";
-  /** The user's per-purchase cap — the budget when they didn't state one. */
-  defaultBudgetMinor?: number;
+  /** The Spend Pass this chat pays under, picked in the console. Without one the agent can look, not pay. */
+  passId?: string;
+  /** The Solana cluster every payment in this chat is restricted to. */
+  network: ChatNetwork;
 };
 
 export class ServerApiError extends Error {
@@ -47,29 +37,34 @@ type FetchOpts = {
 };
 
 async function apiFetch<T>(path: string, identity: ServerIdentity | null, opts: FetchOpts = {}): Promise<T> {
-  const { method = "GET", body, headers = {} } = opts;
+  const res = await rawFetch(path, identity, opts);
+  return parse<T>(res);
+}
 
+function rawFetch(path: string, identity: ServerIdentity | null, opts: FetchOpts = {}) {
+  const { method = "GET", body, headers = {} } = opts;
   const finalHeaders: Record<string, string> = { ...headers };
   if (body !== undefined) finalHeaders["Content-Type"] = "application/json";
   if (identity) finalHeaders["Authorization"] = `Bearer ${identity.agentToken}`;
-
-  const res = await fetch(`${API_URL}${path}`, {
+  return fetch(`${API_URL}${path}`, {
     method,
     headers: finalHeaders,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     cache: "no-store",
   });
-  return parse<T>(res);
+}
+
+async function readJSON(res: Response): Promise<unknown> {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function parse<T>(res: Response): Promise<T> {
-  const text = await res.text();
-  let data: unknown;
-  try {
-    data = text ? JSON.parse(text) : undefined;
-  } catch {
-    data = undefined;
-  }
+  const data = await readJSON(res);
   if (!res.ok) {
     const message = (data as { error?: string } | undefined)?.error ?? res.statusText;
     throw new ServerApiError(res.status, message);
@@ -85,7 +80,7 @@ async function sessionFetch<T>(path: string, cookie: string, method = "GET"): Pr
 }
 
 /** The session's console-agent token. Throws a 401 ServerApiError if the cookie is missing or stale. */
-export async function getAgentToken(cookie: string): Promise<ServerIdentity> {
+export async function getAgentToken(cookie: string): Promise<{ agentToken: string; mode: "live" | "demo" }> {
   const { token, mode } = await sessionFetch<{ token: string; mode?: string }>("/api/v1/auth/agent-token", cookie, "POST");
   return { agentToken: token, mode: mode === "demo" ? "demo" : "live" };
 }
@@ -94,8 +89,8 @@ export type TurnQuota = { ok: true } | { ok: false; limit: number; demo: boolean
 
 /**
  * Spends one of the user's daily agent messages (POST /api/v1/me/agent-turns).
- * Every message costs an LLM call and billed web searches, so the API caps
- * them per person per day — lower for no-signup demo accounts.
+ * Every message costs an LLM call, so the API caps them per person per day —
+ * lower for no-signup demo accounts.
  */
 export async function consumeAgentTurn(cookie: string): Promise<TurnQuota> {
   const res = await fetch(`${API_URL}/api/v1/me/agent-turns`, { method: "POST", headers: { Cookie: cookie }, cache: "no-store" });
@@ -107,103 +102,78 @@ export async function consumeAgentTurn(cookie: string): Promise<TurnQuota> {
   return { ok: true };
 }
 
-export function getGuardrails(cookie: string) {
-  return sessionFetch<Guardrails>("/api/v1/me/guardrails", cookie);
+/** The person's Spend Passes (session cookie). */
+export async function getPasses(cookie: string): Promise<SpendPass[]> {
+  const r = await sessionFetch<{ passes: SpendPass[] | null }>("/api/v1/me/passes", cookie);
+  return r.passes ?? [];
+}
+
+/** Mainnet and devnet: whether this server can pay there, and from which wallet (signed in only). */
+export async function getRails(cookie: string): Promise<RailStatus[]> {
+  const r = await sessionFetch<{ rails: RailStatus[] | null }>("/api/v1/rails", cookie);
+  return r.rails ?? [];
+}
+
+// --- public ---
+
+export function searchProviders(p: { query: string; network: string; category?: string; limit?: number }) {
+  const qs = new URLSearchParams({ network: p.network, limit: String(p.limit ?? 8) });
+  if (p.query) qs.set("q", p.query);
+  if (p.category) qs.set("category", p.category);
+  return apiFetch<ProviderListing>(`/api/v1/providers?${qs.toString()}`, null);
+}
+
+export function getProvider(id: string) {
+  return apiFetch<ProviderDetail>(`/api/v1/providers/${id.split("/").map(encodeURIComponent).join("/")}`, null);
 }
 
 // --- agent-scoped ---
 
-export function searchProducts(identity: ServerIdentity, query: string, limit = 5) {
-  return apiFetch<{ results: unknown[] }>(`/api/v1/search?q=${encodeURIComponent(query)}&limit=${limit}`, identity);
+/**
+ * An execution's answer, whatever its status: a refusal (approval needed,
+ * nothing to route to, every provider failed) is an outcome the agent must
+ * read and explain, not an exception.
+ */
+export type ExecutionAnswer = { status: number; body: Record<string, unknown> };
+
+async function answer(res: Response): Promise<ExecutionAnswer> {
+  const body = ((await readJSON(res)) ?? {}) as Record<string, unknown>;
+  if (res.status === 401 || res.status === 404 || res.status === 400 || res.status === 501) {
+    throw new ServerApiError(res.status, typeof body.error === "string" ? body.error : res.statusText);
+  }
+  return { status: res.status, body };
 }
 
-export function webSearch(identity: ServerIdentity, query: string, limit = 8, maxPriceMinor?: number) {
-  const budget = maxPriceMinor ? `&max_price=${maxPriceMinor}` : "";
-  return apiFetch<{ results: unknown[] }>(`/api/v1/web-search?q=${encodeURIComponent(query)}&limit=${limit}${budget}`, identity);
-}
+export type ExecuteBody = {
+  capability: string;
+  providers: string[];
+  input: unknown;
+  budget_max_minor: number;
+};
 
-export function communityDeals(identity: ServerIdentity, query: string) {
-  return apiFetch<{ tips: unknown[]; searched: string[] }>(`/api/v1/community-deals?q=${encodeURIComponent(query)}`, identity);
-}
-
-/** The person's plugins (session cookie) — which sources this turn may use. */
-export async function getPlugins(cookie: string): Promise<Plugin[]> {
-  const r = await sessionFetch<{ plugins: Plugin[] }>("/api/v1/me/plugins", cookie);
-  return r.plugins ?? [];
-}
-
-export type DealParams = { query: string; merchants?: string[]; priceMinor?: number; banks?: string[]; limit?: number };
-
-export function findDeals(identity: ServerIdentity, p: DealParams) {
-  const qs = new URLSearchParams({ q: p.query, limit: String(p.limit ?? 5) });
-  if (p.merchants?.length) qs.set("merchant", p.merchants.join(","));
-  if (p.priceMinor && p.priceMinor > 0) qs.set("price", String(Math.round(p.priceMinor)));
-  if (p.banks?.length) qs.set("banks", p.banks.join(","));
-  return apiFetch<DealResults>(`/api/v1/deals?${qs.toString()}`, identity);
-}
-
-export function createIntent(
-  identity: ServerIdentity,
-  items: IntentItem[],
-  constraints: IntentConstraints,
-  idempotencyKey: string
-) {
-  return apiFetch<Intent>("/api/v1/intents", identity, {
+/** POST /api/v1/execute: price, check against the pass, pay on this chat's cluster, call, verify. */
+export async function execute(identity: ServerIdentity, b: ExecuteBody): Promise<ExecutionAnswer> {
+  const res = await rawFetch("/api/v1/execute", identity, {
     method: "POST",
-    body: { items, constraints },
-    headers: { "Idempotency-Key": idempotencyKey },
+    body: {
+      ...b,
+      currency: "USDC",
+      constraints: { allowed_networks: [identity.network] },
+      spend_pass_id: identity.passId,
+    },
   });
+  return answer(res);
 }
 
-export function discover(identity: ServerIdentity, id: string) {
-  return apiFetch<{ quotes: Quote[] }>(`/api/v1/intents/${id}/discover`, identity, { method: "POST" });
-}
-
-export function getQuotes(identity: ServerIdentity, id: string) {
-  return apiFetch<{ quotes: Quote[] }>(`/api/v1/intents/${id}/quotes`, identity);
-}
-
-export function selectQuote(identity: ServerIdentity, id: string, quoteId: string) {
-  return apiFetch<{ ok: boolean }>(`/api/v1/intents/${id}/select-quote`, identity, {
+/** Runs an intent that already exists, typically one the person has just approved. */
+export async function executeIntent(identity: ServerIdentity, intentId: string, providers: string[]): Promise<ExecutionAnswer> {
+  const res = await rawFetch(`/api/v1/economic-intents/${encodeURIComponent(intentId)}/execute`, identity, {
     method: "POST",
-    body: { quote_id: quoteId },
+    body: { providers, spend_pass_id: identity.passId },
   });
+  return answer(res);
 }
 
-export function requestPurchase(identity: ServerIdentity, id: string) {
-  return apiFetch<PolicyDecision>(`/api/v1/intents/${id}/request-purchase`, identity, { method: "POST" });
-}
-
-export function execute(identity: ServerIdentity, id: string, idempotencyKey: string) {
-  return apiFetch<ExecuteResult>(`/api/v1/intents/${id}/execute`, identity, {
-    method: "POST",
-    headers: { "Idempotency-Key": idempotencyKey },
-  });
-}
-
-export function getOrder(identity: ServerIdentity, id: string) {
-  return apiFetch<Order>(`/api/v1/intents/${id}/order`, identity);
-}
-
-export function getAuditTrail(identity: ServerIdentity, id: string) {
-  return apiFetch<AuditEvent[]>(`/api/v1/intents/${id}/audit`, identity);
-}
-
-export function cancelIntent(identity: ServerIdentity, id: string) {
-  return apiFetch<Intent>(`/api/v1/intents/${id}/cancel`, identity, { method: "POST" });
-}
-
-export function listMerchants() {
-  return apiFetch<Merchant[]>("/api/v1/merchants", null);
-}
-
-export function getCommerceProfile(identity: ServerIdentity) {
-  return apiFetch<CommerceProfile>("/api/v1/commerce-profile", identity);
-}
-
-export function setCommercePreferences(identity: ServerIdentity, category: string, attributes: Record<string, unknown>) {
-  return apiFetch<CommerceProfile>(`/api/v1/commerce-profile/preferences/${encodeURIComponent(category)}`, identity, {
-    method: "PUT",
-    body: { attributes },
-  });
+export function getIntent(identity: ServerIdentity, intentId: string) {
+  return apiFetch<EconIntent>(`/api/v1/economic-intents/${encodeURIComponent(intentId)}`, identity);
 }

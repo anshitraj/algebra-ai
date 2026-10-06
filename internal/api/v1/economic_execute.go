@@ -3,12 +3,16 @@ package v1
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/project-algebra/algebra/internal/app"
+	"github.com/project-algebra/algebra/internal/domain/agent"
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/routing"
+	"github.com/project-algebra/algebra/internal/domain/shared"
 )
 
 // --- Execution: Algebra does it for the agent ---
@@ -63,17 +67,52 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
 		return
 	}
+	executor, err := a.executorFor(r, ag, req.PassID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	candidates, rejected := a.b.Candidates.Resolve(r.Context(), capability, req.Providers, req.Candidates)
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
-	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: ag.ID, Spec: req.spec(), Candidates: candidates})
+	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates})
 	var created *bool
 	var rep *app.PlanReport
 	if res != nil {
 		created, rep = &res.Created, res.Report
 	}
+	// Waiting for the person: say which intent, so they (or the console)
+	// can approve it and then run it.
+	var rej *app.ReservationRejected
+	if errors.As(err, &rej) && rej.Reason == app.RejectApproval && res != nil && res.Intent != nil {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": err.Error(), "reason": rej.Reason, "intent_state": rej.State, "intent_id": res.Intent.ID,
+			"budget_max_minor": res.Intent.BudgetMaxMinor, "capability": res.Intent.Capability,
+		})
+		return
+	}
 	a.writeExecution(w, created, rep, rejected, err)
+}
+
+// executorFor is the agent an execution runs as. An agent spends under its
+// own Spend Pass. The one exception is the console's own agent, acting for the
+// signed-in person in their browser (the console's chat): it may name one of
+// that person's active passes and then acts as that pass's agent, with exactly
+// that pass's limits. No other agent may borrow a pass.
+func (a *API) executorFor(r *http.Request, ag *agent.Identity, passID string) (string, error) {
+	passID = strings.TrimSpace(passID)
+	if passID == "" {
+		return ag.ID, nil
+	}
+	if ag.ClientID != app.ConsoleAgentClientID || a.b.SpendPasses == nil {
+		return "", fmt.Errorf("%w: an agent spends under its own Spend Pass and can't name another", shared.ErrUnauthorized)
+	}
+	p, err := a.b.SpendPasses.OwnedActive(r.Context(), ag.UserID, passID)
+	if err != nil {
+		return "", err
+	}
+	return p.AgentID, nil
 }
 
 // executeEconomicIntent runs an intent that already exists, for instance one
@@ -90,10 +129,18 @@ func (a *API) executeEconomicIntent(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Providers  []string             `json:"providers"`
 		Candidates []app.CandidateInput `json:"candidates"`
+		// PassID: the console's agent running an intent under one of the
+		// person's passes (see executorFor).
+		PassID string `json:"spend_pass_id"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := decodeJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	executor, err := a.executorFor(r, ag, req.PassID)
+	if err != nil {
+		writeError(w, err)
 		return
 	}
 	view, err := a.b.Economic.ViewFor(r.Context(), ag.UserID, r.PathValue("id"), false)
@@ -105,7 +152,7 @@ func (a *API) executeEconomicIntent(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
-	rep, err := a.b.Execution.ExecuteCandidates(ctx, app.CandidatesRequest{AgentID: ag.ID, IntentID: view.ID, Candidates: candidates})
+	rep, err := a.b.Execution.ExecuteCandidates(ctx, app.CandidatesRequest{AgentID: executor, IntentID: view.ID, Candidates: candidates})
 	a.writeExecution(w, nil, rep, rejected, err)
 }
 

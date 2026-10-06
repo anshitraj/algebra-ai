@@ -9,7 +9,7 @@ import { Snippet } from "@/components/console/snippet";
 import { IconExternal, IconPlug, IconShield } from "@/components/icons";
 
 const TOOLS = [
-  { name: "algebra.discover_providers", what: "Browse the paid APIs in Pay.sh and Circle's Agent Marketplace, and an endpoint's capability ID." },
+  { name: "algebra.discover_providers", what: "Browse the paid APIs in Pay.sh, Circle's Agent Marketplace and PayAI, and an endpoint's capability ID." },
   { name: "algebra.execute", what: "Ask for an outcome with a USDC ceiling. Algebra prices it, checks the Spend Pass, pays, verifies and returns the result with a signed receipt." },
   { name: "algebra.execution_status", what: "Check on a request: committed or not, what it cost, which provider, the receipt. Never moves money." },
   { name: "algebra.spend_pass", what: "Read the pass's own limits and the budget it has left." },
@@ -142,7 +142,7 @@ export default function ConnectPage() {
         <Panel>
           <h2 className="font-display text-lg font-semibold text-foreground">Other MCP servers in the ecosystem</h2>
           <p className="mt-0.5 text-sm text-muted">
-            Algebra already reads both catalogs for your agents. These servers let an agent browse them directly; paying through
+            Algebra already reads these catalogs for your agents. These servers let an agent browse them directly; paying through
             them instead of algebra.execute leaves out your Spend Pass, its approvals and its receipts.
           </p>
           <ul className="mt-4 grid gap-3 md:grid-cols-2">
