@@ -39,6 +39,9 @@ func requireBundle(t *testing.T) *wiring.Bundle {
 		t.Fatalf("building application: %v", err)
 	}
 	t.Cleanup(bundle.DB.Close)
+	// These tests shop at the mock store, which accounts in live or demo mode
+	// are never offered; with no account modes it is open to every test user.
+	bundle.Discovery.SetAccountModes(nil)
 	return bundle
 }
 
