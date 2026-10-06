@@ -53,6 +53,8 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       { source: "/api/v1/:path*", destination: `${API_URL}/api/v1/:path*` },
+      // The MCP server the API itself serves, for agents that speak MCP.
+      { source: "/mcp", destination: `${API_URL}/mcp` },
       // The key set that verifies spend receipts, on the public domain.
       { source: "/.well-known/jwks.json", destination: `${API_URL}/.well-known/jwks.json` },
     ];

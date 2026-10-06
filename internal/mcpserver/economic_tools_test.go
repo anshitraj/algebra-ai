@@ -134,3 +134,57 @@ func TestDescribeExecutionError(t *testing.T) {
 		t.Error("unknown errors pass through")
 	}
 }
+
+func TestClassesAndSimulateAreListedAndSteerAgentsToClasses(t *testing.T) {
+	cs := connect(t, &Server{})
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := map[string]*gomcp.Tool{}
+	for _, tool := range list.Tools {
+		tools[tool.Name] = tool
+	}
+	for _, name := range []string{"algebra.classes", "algebra.simulate", "algebra.execute"} {
+		if tools[name] == nil {
+			t.Fatalf("%s must be listed", name)
+		}
+	}
+	for _, want := range []string{"capability", "max_price_usdc"} {
+		if !slices.Contains(requiredOf(t, tools["algebra.simulate"]), want) {
+			t.Errorf("algebra.simulate must require %s", want)
+		}
+	}
+	if len(requiredOf(t, tools["algebra.classes"])) != 0 {
+		t.Error("algebra.classes lists every class without any input")
+	}
+	// An agent reads these before it picks a capability.
+	for name, phrase := range map[string]string{
+		"algebra.execute":  "algebra.classes",
+		"algebra.classes":  "rather than for one provider",
+		"algebra.simulate": "without paying anything",
+	} {
+		if !strings.Contains(tools[name].Description, phrase) {
+			t.Errorf("%s: the description must say %q", name, phrase)
+		}
+	}
+}
+
+func TestClassesAndSimulateReportWhenTheyCannotRun(t *testing.T) {
+	cs := connect(t, &Server{})
+	for name, tc := range map[string]struct {
+		args map[string]any
+		want string
+	}{
+		"algebra.classes":  {map[string]any{}, "turned off"},
+		"algebra.simulate": {map[string]any{"capability": "token.price", "max_price_usdc": "0.05"}, "not enabled"},
+	} {
+		res, err := cs.CallTool(context.Background(), &gomcp.CallToolParams{Name: name, Arguments: tc.args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.IsError || !strings.Contains(textOf(res), tc.want) {
+			t.Errorf("%s on a server without it must say %q: %+v", name, tc.want, res)
+		}
+	}
+}

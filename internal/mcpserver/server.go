@@ -77,6 +77,12 @@ type Server struct {
 	Candidates app.CandidateResolver
 	Directory  *catalog.Multi
 
+	// Classes and Health back algebra.classes: the kinds of work Algebra routes
+	// across every catalog, and how each provider of one has been behaving.
+	// Classes is nil when the catalogs are off; Health may be nil.
+	Classes *catalog.ClassIndex
+	Health  *app.HealthService
+
 	// Limiter is optional (mandate §35/§49) — nil means no MCP-level rate
 	// limiting, which is fine for local stdio development and not fine for
 	// a production streamable-HTTP deployment. See rateLimitMiddleware.

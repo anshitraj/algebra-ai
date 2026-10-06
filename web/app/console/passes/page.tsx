@@ -383,7 +383,7 @@ function IssuedCard({ pass, connect, onDone }: { pass: IssuedPass; connect: Pass
         <div className="mt-4 space-y-3">
           {tab !== "rest" && !mcp && (
             <p className="rounded-lg bg-accent-tint px-3 py-2 text-xs text-accent">
-              This server&apos;s MCP endpoint isn&apos;t published yet (set MCP_PUBLIC_URL and run cmd/mcp -http). Until then, use the API tab.
+              This server hasn&apos;t published an MCP address. Use the API tab.
             </p>
           )}
           {tab === "claude" && mcp && (

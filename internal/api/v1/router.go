@@ -197,6 +197,9 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 
 	mux.HandleFunc("POST /api/v1/webhooks/{provider}", api.receiveWebhook)
 
+	// The MCP tools, for agents that speak MCP: same services, same limits.
+	mux.Handle("/mcp", api.mcpHandler())
+
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("GET /readyz", api.readyz)
 

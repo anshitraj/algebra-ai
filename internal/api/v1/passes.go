@@ -102,7 +102,13 @@ func (a *API) revokeMyPass(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) passConnect() passConnect {
-	return passConnect{APIBase: a.b.AuthConfig.PublicWebURL + "/api/v1", MCPURL: a.b.MCPPublicURL}
+	// The API serves MCP itself at /mcp, behind the same public address as the
+	// REST API unless MCP_PUBLIC_URL says otherwise.
+	mcpURL := a.b.MCPPublicURL
+	if mcpURL == "" {
+		mcpURL = a.b.AuthConfig.PublicWebURL + "/mcp"
+	}
+	return passConnect{APIBase: a.b.AuthConfig.PublicWebURL + "/api/v1", MCPURL: mcpURL}
 }
 
 // --- the agent's side ---

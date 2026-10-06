@@ -66,9 +66,10 @@ type Config struct {
 	// GeminiAPIKey enables Gemini-grounded shopping web search
 	// (connectors/websearch.Gemini) — preferred over Custom Search when set.
 	// GeminiSearchModel defaults to the stable "latest Flash" alias.
-	// MCPPublicURL is where this deployment's MCP server is reachable
-	// (cmd/mcp -http behind TLS), shown to people connecting an agent with a
-	// Spend Pass. Empty hides the MCP option.
+	// MCPPublicURL is where this deployment's MCP server is reachable, shown
+	// to people connecting an agent with a Spend Pass. The API serves MCP at
+	// /mcp itself; empty means PUBLIC_WEB_URL + "/mcp", which the web app
+	// proxies to it.
 	MCPPublicURL string
 
 	GeminiAPIKey      string

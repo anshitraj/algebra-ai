@@ -1,9 +1,11 @@
 // Command mcp runs Algebra's MCP server (mandate §5/§6) against the
 // current 2026-07-28 spec, via github.com/modelcontextprotocol/go-sdk.
 // Defaults to stdio (the SDK's own quick-start pattern, suited to local
-// agent development); pass -http=:8081 to instead serve the stateless
-// streamable-HTTP transport for a networked deployment. Either way, tool
-// handlers share the exact same application services as cmd/api — see
+// agent development); pass -http=:8081 to instead serve the streamable-HTTP
+// transport. A deployment does not need that: the API serves the same tools at
+// /mcp, and only there does execution on the sandbox rail work, because the
+// sandbox provider lives in the API process. Either way, tool handlers share
+// the exact same application services as cmd/api — see
 // internal/platform/wiring and internal/mcpserver's package doc.
 package main
 
@@ -42,15 +44,7 @@ func main() {
 	}
 	defer bundle.DB.Close()
 
-	srv := &mcpserver.Server{
-		Agents: bundle.Agents, Intents: bundle.Intents, Discovery: bundle.Discovery, Quotes: bundle.Quotes,
-		Policy: bundle.Policy, Orders: bundle.Orders, Payments: bundle.Payments, Privacy: bundle.Privacy,
-		Connectors: bundle.Connectors, Idempotency: bundle.Idempotency, Limiter: bundle.Limiter,
-		Integrators: bundle.Integrators, TransactionPolicy: bundle.TransactionPolicy,
-		PaymentIntents: bundle.PaymentIntentSvc, CommerceProfiles: bundle.CommerceProfileSvc, SpendPasses: bundle.SpendPasses,
-		Economic: bundle.Economic, Execution: bundle.Execution, Candidates: bundle.Candidates, Directory: bundle.Directory,
-	}
-	server := mcpserver.NewMCPServer(srv)
+	server := mcpserver.NewMCPServer(bundle.MCP())
 
 	if *httpAddr == "" {
 		logger.Info("algebra MCP server listening on stdio")
