@@ -38,6 +38,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/platform/safehttp"
+	"github.com/project-algebra/algebra/providers/paychan"
 	"github.com/project-algebra/algebra/providers/x402"
 )
 
@@ -114,9 +115,14 @@ func (r *Runner) options(ch x402.Challenge, wantNetwork string) ([]option, []str
 			why = append(why, fmt.Sprintf("%s on %s: %s", orDash(req.Scheme), orDash(n), reason))
 		}
 		switch {
-		case !strings.EqualFold(req.Scheme, "exact"):
-			fail("only the exact scheme is supported")
+		case !strings.EqualFold(req.Scheme, "exact") && !(strings.EqualFold(req.Scheme, schemeUpto) && n != chain.Sandbox):
+			fail("only the exact scheme (and upto, through a Solana payment channel) is supported")
 			continue
+		case strings.EqualFold(req.Scheme, schemeUpto):
+			if _, err := paychan.ParseUptoTerms(req); err != nil {
+				fail("an upto option without usable channel terms: " + err.Error())
+				continue
+			}
 		case r.networks[n] == "":
 			fail("no payment rail for this network")
 			continue
@@ -162,11 +168,25 @@ func orDash(s string) string {
 func cheapest(opts []option) option {
 	best := opts[0]
 	for _, o := range opts[1:] {
-		if o.amount < best.amount {
+		// At the same amount an exact price beats a ceiling: it can't
+		// cost more, and it needs no channel.
+		if o.amount < best.amount || (o.amount == best.amount && strings.EqualFold(best.req.Scheme, schemeUpto) && !strings.EqualFold(o.req.Scheme, schemeUpto)) {
 			best = o
 		}
 	}
 	return best
+}
+
+// schemeUpto is x402's usage-based scheme: the amount is a ceiling escrowed in
+// a Solana payment channel, and the provider settles what the call cost.
+const schemeUpto = "upto"
+
+// semanticsOf says when money moves for a scheme.
+func semanticsOf(scheme string) econ.Semantics {
+	if strings.EqualFold(scheme, schemeUpto) {
+		return econ.SemanticsMeteredCapture
+	}
+	return econ.SemanticsPrepaidExact
 }
 
 // Quote prices a candidate for one input with an unpaid request.
@@ -200,7 +220,7 @@ func (r *Runner) Quote(ctx context.Context, c routing.Candidate, input json.RawM
 	}
 	q := routing.Quote{
 		Method: spec.method, Cost: routing.Cost{ProviderMinor: best.amount}, Asset: "USDC", Network: best.network,
-		PayTo: best.req.PayTo, Semantics: econ.SemanticsPrepaidExact, EstimatedLatencyMS: c.EstimatedLatencyMS,
+		PayTo: best.req.PayTo, Semantics: semanticsOf(best.req.Scheme), EstimatedLatencyMS: c.EstimatedLatencyMS,
 		Requirements: reqs, Test: chain.IsTestNetwork(best.network),
 	}
 	if best.network != chain.Sandbox {
@@ -332,7 +352,7 @@ func (r *Runner) sameTerms(ch x402.Challenge, q routing.Quote) (option, bool) {
 	opts, _ := r.options(ch, q.Network)
 	var match []option
 	for _, o := range opts {
-		if o.req.PayTo != q.PayTo || o.amount > q.Cost.ProviderMinor {
+		if o.req.PayTo != q.PayTo || o.amount > q.Cost.ProviderMinor || semanticsOf(o.req.Scheme) != q.Semantics && q.Semantics != "" {
 			continue
 		}
 		if q.AssetAddress != "" && !chain.SameAddress(o.network, o.req.Asset, q.AssetAddress) {

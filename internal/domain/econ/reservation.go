@@ -61,6 +61,9 @@ type Evidence struct {
 	PayTo       string `json:"pay_to,omitempty"`
 
 	ProviderOperationID string `json:"provider_operation_id,omitempty"`
+	// Channel is the payment channel a usage-based ("upto") payment escrowed
+	// its ceiling in; the settled amount and the refund are read from it.
+	Channel string `json:"channel,omitempty"`
 	RequestHash         string `json:"request_hash,omitempty"`
 	ResultHash          string `json:"result_hash,omitempty"`
 

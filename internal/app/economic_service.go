@@ -787,6 +787,9 @@ func (s *EconomicService) commit(u EconUnit, in *econ.Intent, r *econ.Reservatio
 	})
 	if st.AmountMinor > 0 {
 		r.HoldMinor = st.AmountMinor // unused authority is released
+		// What the rail proved moved is the amount, not the ceiling that was
+		// authorized: a usage-based payment settles for less and refunds the rest.
+		r.Evidence.AmountMinor = st.AmountMinor
 	}
 	r.Outcome = outcome
 	if err := r.Transition(econ.ReservationCommitted, now); err != nil {
@@ -1262,6 +1265,7 @@ func mergeEvidence(base, add econ.Evidence) econ.Evidence {
 	set(&base.Payer, add.Payer)
 	set(&base.PayTo, add.PayTo)
 	set(&base.ProviderOperationID, add.ProviderOperationID)
+	set(&base.Channel, add.Channel)
 	set(&base.RequestHash, add.RequestHash)
 	set(&base.ResultHash, add.ResultHash)
 	if base.AmountMinor == 0 {

@@ -42,6 +42,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/platform/solana"
+	"github.com/project-algebra/algebra/providers/paychan"
 	"github.com/project-algebra/algebra/providers/x402"
 )
 
@@ -257,6 +258,12 @@ func (r *Rail) DryRun(ctx context.Context, rv *econ.Reservation, req app.Payment
 // accounts, which the chain can change, come back as problems.
 func (r *Rail) build(ctx context.Context, rv *econ.Reservation, req app.PaymentRequest) (*app.PaymentAuthority, []string, error) {
 	sel, err := x402.SelectRaw(req.Requirements, "exact", r.networkNames()...)
+	if errors.Is(err, x402.ErrNoMatch) {
+		// A usage-based option: escrow a ceiling in a payment channel (upto.go).
+		if up, uerr := x402.SelectRaw(req.Requirements, paychan.Scheme, r.networkNames()...); uerr == nil {
+			return r.buildUpto(ctx, rv, up, req.Resource)
+		}
+	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("solanax402: %w", err)
 	}
@@ -376,6 +383,9 @@ func (r *Rail) build(ctx context.Context, rv *econ.Reservation, req app.PaymentR
 // Settlement answers from the chain, never from what a provider or an agent
 // says.
 func (r *Rail) Settlement(ctx context.Context, ev econ.Evidence) (app.Settlement, error) {
+	if ev.Scheme == paychan.Scheme {
+		return r.uptoSettlement(ctx, ev)
+	}
 	base := app.Settlement{Network: ev.Network, Asset: ev.Asset, Payer: ev.Payer, PayTo: ev.PayTo, Test: ev.Test}
 	status := func(s app.SettlementStatus, detail string) (app.Settlement, error) {
 		base.Status, base.Detail = s, detail
