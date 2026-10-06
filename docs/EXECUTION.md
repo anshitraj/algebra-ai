@@ -70,6 +70,35 @@ Responses: `200` delivered; `202` money may have moved and the outcome is being 
 
 Configuration: `ECONOMIC_SANDBOX`, `ECONOMIC_PROVIDERS` (see `.env.example`). Migration `0015_route_executions.sql`.
 
+## Discovery: the catalogs (`providers/catalog`, `providers/paysh`, `providers/circleagents`)
+
+Algebra reads two public catalogs of pay-per-call APIs and serves them as one directory:
+
+| Catalog | Read from | What it gives |
+|---|---|---|
+| Pay.sh | `https://pay.sh/api/catalog` and each provider's `https://pay.sh/api/<fqn>/index.md` | 75 providers (Google Cloud through the Solana Foundation's gateway, Birdeye, Nansen, Quicknode, …) and their endpoint tables with listed prices. |
+| Circle's Agent Marketplace | `GET https://api.circle.com/v2/x402/discovery/resources` | Every endpoint with the payment terms its provider publishes and usually an input JSON Schema. Algebra keeps what accepts Circle's USDC on Solana mainnet as plain x402 and needs no browser sign-in: 27 providers, about 700 endpoints. |
+
+* Provider IDs are `paysh:<fqn with / as .>` and `circle:<slug>`. They are what a Spend Pass's allowed providers, a
+  reservation and a receipt name. Capability IDs come from the provider, method and path
+  (`birdeye.data.get.x402-defi-price`, `circle.birdeye.get.x402-defi-price`), so an agent can ask for an endpoint
+  by capability alone and Algebra knows whose it is.
+* Everything a catalog says is third-party data: fetched through the SSRF-safe client with a body limit, validated
+  and bounded field by field, one bad entry never sinks the rest, text is shown and never followed. A listing is not
+  an endorsement and a listed price is not a quote: the executor prices each endpoint with an unpaid request and
+  checks the terms again at payment. In practice they differ (Birdeye's "free" listing on Pay.sh asks 0.003 USDC).
+* Each catalog is cached for 10 minutes and served stale, labelled as such, for up to 6 hours when it is down; a
+  catalog that can't be read leaves the others listed.
+* Endpoints whose path has `{parameters}` are listed but not callable yet.
+
+Surface: `GET /api/v1/providers?q=&category=&source=`, `GET /api/v1/providers/{id}`, the MCP tool
+`algebra.discover_providers`, and the console's Providers page. `POST /api/v1/execute` accepts catalog provider IDs in
+`providers`, or a catalog capability with no provider named. Settings: `PAYSH_*`, `CIRCLE_*` (see `.env.example`).
+
+Checked against the live sites with `cmd/x402-dryrun` (sends nothing): Google Vision through Pay.sh's gateway, Birdeye,
+Exa, Vybe and Nansen all answer with x402 v2 on Solana mainnet in Circle's USDC with a sponsor paying fees, and the rail
+builds a valid payment for each. Nansen's 2 USDC call is refused by the rail's 1 USDC ceiling, as it should be.
+
 ## The Solana rail (`providers/solanax402`)
 
 Pays x402 `exact` on Solana in USDC from a wallet Algebra controls. It builds the transaction the x402
@@ -137,8 +166,9 @@ Settings: `SOLANA_CLUSTER`, `SOLANA_RPC_URL`, `SOLANA_KEYPAIR_FILE` (preferred) 
   **No real payment has been made.** That step needs a funded wallet and is the operator's to take (runbook above).
 * **Simulated:** the sandbox rail and sandbox provider, which are for local runs and tests. Their receipts are
   marked `test`.
-* **Not built:** discovery sources (Pay.sh, Circle Agents' marketplace, x402 facilitators' Bazaar, the open web);
-  the router that ranks candidates (candidates are tried in the order given); Jupiter; CCTP.
+* **Real, and read live:** the Pay.sh and Circle Agent Marketplace catalogs (see Discovery above).
+* **Not built:** other discovery sources (x402 facilitators' Bazaar, the open web); the router that ranks
+  candidates (candidates are tried in the order given); path parameters for templated endpoints; Jupiter; CCTP.
 * **Not verified here:** `internal/platform/postgres/execution_repo.go` and migration 0015 compile and were
   reviewed, but their tests need a database (`make dev-up && make test-integration`).
 * **Known limit:** the result of a call is returned once and not stored, so a repeated request for a committed

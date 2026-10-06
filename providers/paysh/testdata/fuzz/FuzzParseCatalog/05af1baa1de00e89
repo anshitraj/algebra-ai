@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"prOviders\":[{\"fqn\":\"0\",\"serviCe_url\":\"https://0\",\"min_priCe_usd\":1}]}")

@@ -270,3 +270,66 @@ func TestEconRepo_LifecycleCommitsWithReceipt(t *testing.T) {
 		t.Errorf("stats: %v %+v", err, st)
 	}
 }
+
+// A pass has one budget. What its agent committed through economic intents,
+// or still holds, is what the pass's view and the shopping check count.
+func TestEconRepo_PassSpendCountsCommittedAndHeld(t *testing.T) {
+	f := newEconFixture(t, 1, 1_000_000)
+	ctx := context.Background()
+	a := f.agents[0]
+	pass, err := NewSpendPassRepo(f.db).GetByAgent(ctx, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spend := func(since time.Time) int64 {
+		t.Helper()
+		n, err := f.repo.PassSpend(ctx, pass.ID, since)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	hourAgo := time.Now().Add(-time.Hour)
+	if n := spend(hourAgo); n != 0 {
+		t.Fatalf("a fresh pass has used nothing, got %d", n)
+	}
+
+	first := f.intent(t, `{"mint":"JUP"}`, 50_000)
+	r1, err := f.svc.Reserve(ctx, a, first.ID, app.ReserveRequest{ProviderID: "x402:risk.example", Rail: "sandbox", QuoteMinor: 3_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := spend(hourAgo); n != 3_000 {
+		t.Errorf("a held reservation counts: got %d, want 3000", n)
+	}
+	if r1, err = f.svc.Begin(ctx, a, first.ID, r1.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.AuthorizePayment(ctx, a, first.ID, r1.ID, app.PaymentRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Complete(ctx, a, first.ID, r1.ID, app.CompletionReport{Outcome: econ.OutcomeFulfilled, Evidence: econ.Evidence{ResultHash: "sha256:r"}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := spend(hourAgo); n != 3_000 {
+		t.Errorf("a commitment counts: got %d, want 3000", n)
+	}
+	if n := spend(time.Now().Add(time.Hour)); n != 0 {
+		t.Errorf("a commitment from before the window does not count: got %d", n)
+	}
+
+	second := f.intent(t, `{"mint":"BONK"}`, 50_000)
+	r2, err := f.svc.Reserve(ctx, a, second.ID, app.ReserveRequest{ProviderID: "x402:risk.example", Rail: "sandbox", QuoteMinor: 2_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := spend(hourAgo); n != 5_000 {
+		t.Errorf("commitment plus a new hold: got %d, want 5000", n)
+	}
+	if err := f.svc.Release(ctx, a, second.ID, r2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := spend(hourAgo); n != 3_000 {
+		t.Errorf("a released hold stops counting: got %d, want 3000", n)
+	}
+}

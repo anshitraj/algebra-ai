@@ -1,0 +1,841 @@
+{
+ "x402Version": 2,
+ "items": [
+  {
+   "resource": "https://public-api.birdeye.so/x402/defi/historical_price_unix",
+   "type": "http",
+   "x402Version": 2,
+   "lastUpdated": "2026-08-26T18:35:52.175Z",
+   "accepts": [
+    {
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "payTo": "3Wuj6VjJXuCmQZjGRhW56xbEk6TzCyMEUVRZgLBYNE2Z",
+     "amount": "3000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "feePayer": "GVJJ7rdGiXr5xaYbRwRbjfaJL7fmwRygFi1H6aGqDveb"
+     }
+    }
+   ],
+   "metadata": {
+    "provider": {
+     "name": "Birdeye",
+     "website": "https://birdeye.so",
+     "openApiUrl": "https://public-api.birdeye.so/openapi.json",
+     "description": "DeFi market data, token analytics, and wallet intelligence across Solana and 15+ chains.",
+     "category": "FINANCIAL_ANALYSIS",
+     "tags": [
+      "x402",
+      "crypto",
+      "defi",
+      "market-data",
+      "solana",
+      "prices",
+      "ohlcv",
+      "finance"
+     ]
+    },
+    "path": "/x402/defi/historical_price_unix",
+    "method": "GET",
+    "description": "Get token price at a specific Unix timestamp",
+    "mimeType": "application/json",
+    "siwx": false,
+    "supportsVanillax402": true,
+    "supportsCircleGateway": false
+   }
+  },
+  {
+   "resource": "https://public-api.birdeye.so/x402/defi/history_price",
+   "type": "http",
+   "x402Version": 2,
+   "lastUpdated": "2026-08-26T18:35:52.536Z",
+   "accepts": [
+    {
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "payTo": "3Wuj6VjJXuCmQZjGRhW56xbEk6TzCyMEUVRZgLBYNE2Z",
+     "amount": "3000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "feePayer": "GVJJ7rdGiXr5xaYbRwRbjfaJL7fmwRygFi1H6aGqDveb"
+     }
+    }
+   ],
+   "metadata": {
+    "provider": {
+     "name": "Birdeye",
+     "website": "https://birdeye.so",
+     "openApiUrl": "https://public-api.birdeye.so/openapi.json",
+     "description": "DeFi market data, token analytics, and wallet intelligence across Solana and 15+ chains.",
+     "category": "FINANCIAL_ANALYSIS",
+     "tags": [
+      "x402",
+      "crypto",
+      "defi",
+      "market-data",
+      "solana",
+      "prices",
+      "ohlcv",
+      "finance"
+     ]
+    },
+    "path": "/x402/defi/history_price",
+    "method": "GET",
+    "description": "Get historical price series for a token or pair",
+    "mimeType": "application/json",
+    "siwx": false,
+    "supportsVanillax402": true,
+    "supportsCircleGateway": false
+   }
+  },
+  {
+   "resource": "https://public-api.birdeye.so/x402/defi/ohlcv",
+   "type": "http",
+   "x402Version": 2,
+   "lastUpdated": "2026-08-26T18:35:52.855Z",
+   "accepts": [
+    {
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "payTo": "3Wuj6VjJXuCmQZjGRhW56xbEk6TzCyMEUVRZgLBYNE2Z",
+     "amount": "3000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+     }
+    }
+   ],
+   "metadata": {
+    "provider": {
+     "name": "Birdeye",
+     "website": "https://birdeye.so",
+     "openApiUrl": "https://public-api.birdeye.so/openapi.json",
+     "description": "DeFi market data, token analytics, and wallet intelligence across Solana and 15+ chains.",
+     "category": "FINANCIAL_ANALYSIS",
+     "tags": [
+      "x402",
+      "crypto",
+      "defi",
+      "market-data",
+      "solana",
+      "prices",
+      "ohlcv",
+      "finance"
+     ]
+    },
+    "path": "/x402/defi/ohlcv",
+    "method": "GET",
+    "description": "Get OHLCV candlestick data for a token",
+    "mimeType": "application/json",
+    "siwx": false,
+    "supportsVanillax402": true,
+    "supportsCircleGateway": false
+   }
+  },
+  {
+   "resource": "https://api.exa.ai/contents",
+   "type": "http",
+   "x402Version": 2,
+   "lastUpdated": "2026-09-22T15:05:08.577Z",
+   "accepts": [
+    {
+     "scheme": "exact",
+     "network": "eip155:8453",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "payTo": "0x6d6E695b09861467c7d462f5AAF31cF3540B9192",
+     "amount": "1000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2",
+      "acceptId": "legacy",
+      "totalUsd": 0.001,
+      "breakdown": {
+       "text": 0.001
+      }
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "payTo": "12Ec2cJmfR1C9uwejzxcuMhUgEC7wDrLgm1wBvvR5w9E",
+     "amount": "1000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2",
+      "acceptId": "solana-usdc-mainnet",
+      "feePayer": "BFK9TLC3edb13K6v4YyH3DwPb5DSUpkWvb7XnqCL9b4F",
+      "totalUsd": 0.001,
+      "breakdown": {
+       "text": 0.001
+      }
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:8453",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "amount": "1000",
+     "maxTimeoutSeconds": 604900,
+     "extra": {
+      "name": "GatewayWalletBatched",
+      "assets": [
+       {
+        "symbol": "USDC",
+        "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        "decimals": 6,
+        "authorizationVersions": [
+         "1",
+         "2"
+        ]
+       }
+      ],
+      "version": "1",
+      "acceptId": "base-usdc-gateway",
+      "totalUsd": 0.001,
+      "breakdown": {
+       "text": 0.001
+      },
+      "verifyingContract": "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+      "minValiditySeconds": 604800
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:5042",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "amount": "1000",
+     "maxTimeoutSeconds": 604900,
+     "extra": {
+      "name": "GatewayWalletBatched",
+      "assets": [
+       {
+        "symbol": "USDC",
+        "address": "0x3600000000000000000000000000000000000000",
+        "decimals": 6,
+        "authorizationVersions": [
+         "1",
+         "2"
+        ]
+       }
+      ],
+      "version": "1",
+      "acceptId": "arc-usdc-gateway",
+      "totalUsd": 0.001,
+      "breakdown": {
+       "text": 0.001
+      },
+      "verifyingContract": "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+      "minValiditySeconds": 604800
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:5042",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "amount": "1000",
+     "maxTimeoutSeconds": 3600,
+     "extra": {
+      "name": "USDC",
+      "version": "2",
+      "acceptId": "arc-usdc-circle",
+      "totalUsd": 0.001,
+      "breakdown": {
+       "text": 0.001
+      },
+      "assetTransferMethod": "eip3009"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:8453",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "amount": "1000",
+     "maxTimeoutSeconds": 3600,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2",
+      "acceptId": "base-usdc-circle",
+      "totalUsd": 0.001,
+      "breakdown": {
+       "text": 0.001
+      },
+      "assetTransferMethod": "eip3009"
+     }
+    }
+   ],
+   "metadata": {
+    "provider": {
+     "name": "Exa",
+     "website": "https://exa.ai",
+     "docsUrl": "https://docs.exa.ai",
+     "openApiUrl": "https://raw.githubusercontent.com/exa-labs/openapi-spec/refs/heads/master/exa-openapi-spec.yaml",
+     "description": "AI web search and content extraction for agent retrieval",
+     "category": "WEB_SEARCH_RESEARCH",
+     "tags": [
+      "x402",
+      "exa",
+      "ai-search",
+      "web-search",
+      "contents",
+      "content-retrieval",
+      "search"
+     ]
+    },
+    "path": "/contents",
+    "method": "POST",
+    "description": "Retrieve clean content from URLs or Exa document IDs.",
+    "mimeType": "application/json",
+    "input": {
+     "type": "http",
+     "method": "POST",
+     "body": {
+      "type": "object"
+     }
+    },
+    "siwx": false,
+    "supportsVanillax402": true,
+    "supportsCircleGateway": true
+   }
+  },
+  {
+   "resource": "https://api.exa.ai/search",
+   "type": "http",
+   "x402Version": 2,
+   "lastUpdated": "2026-09-30T17:21:11.084Z",
+   "accepts": [
+    {
+     "scheme": "exact",
+     "network": "eip155:8453",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "payTo": "0x6d6E695b09861467c7d462f5AAF31cF3540B9192",
+     "amount": "7000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2",
+      "acceptId": "legacy",
+      "totalUsd": 0.006999999999999999,
+      "breakdown": {
+       "search": 0.006999999999999999
+      }
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "payTo": "12Ec2cJmfR1C9uwejzxcuMhUgEC7wDrLgm1wBvvR5w9E",
+     "amount": "7000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2",
+      "acceptId": "solana-usdc-mainnet",
+      "feePayer": "Hc3sdEAsCGQcpgfivywog9uwtk8gUBUZgsxdME1EJy88",
+      "totalUsd": 0.006999999999999999,
+      "breakdown": {
+       "search": 0.006999999999999999
+      }
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:8453",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "amount": "7000",
+     "maxTimeoutSeconds": 604900,
+     "extra": {
+      "name": "GatewayWalletBatched",
+      "assets": [
+       {
+        "symbol": "USDC",
+        "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        "decimals": 6,
+        "authorizationVersions": [
+         "1",
+         "2"
+        ]
+       }
+      ],
+      "version": "1",
+      "acceptId": "base-usdc-gateway",
+      "totalUsd": 0.006999999999999999,
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "verifyingContract": "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+      "minValiditySeconds": 604800
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:5042",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "amount": "7000",
+     "maxTimeoutSeconds": 604900,
+     "extra": {
+      "name": "GatewayWalletBatched",
+      "assets": [
+       {
+        "symbol": "USDC",
+        "address": "0x3600000000000000000000000000000000000000",
+        "decimals": 6,
+        "authorizationVersions": [
+         "1",
+         "2"
+        ]
+       }
+      ],
+      "version": "1",
+      "acceptId": "arc-usdc-gateway",
+      "totalUsd": 0.006999999999999999,
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "verifyingContract": "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+      "minValiditySeconds": 604800
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:5042",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "amount": "7000",
+     "maxTimeoutSeconds": 3600,
+     "extra": {
+      "name": "USDC",
+      "version": "2",
+      "acceptId": "arc-usdc-circle",
+      "totalUsd": 0.006999999999999999,
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "assetTransferMethod": "eip3009"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:8453",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "amount": "7000",
+     "maxTimeoutSeconds": 3600,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2",
+      "acceptId": "base-usdc-circle",
+      "totalUsd": 0.006999999999999999,
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "assetTransferMethod": "eip3009"
+     }
+    }
+   ],
+   "metadata": {
+    "provider": {
+     "name": "Exa",
+     "website": "https://exa.ai",
+     "docsUrl": "https://docs.exa.ai",
+     "openApiUrl": "https://raw.githubusercontent.com/exa-labs/openapi-spec/refs/heads/master/exa-openapi-spec.yaml",
+     "description": "AI web search and content extraction for agent retrieval",
+     "category": "WEB_SEARCH_RESEARCH",
+     "tags": [
+      "x402",
+      "exa",
+      "ai-search",
+      "web-search",
+      "search",
+      "content-retrieval"
+     ]
+    },
+    "path": "/search",
+    "method": "POST",
+    "description": "Search the web with Exa and return ranked results optimized for AI agents.",
+    "mimeType": "application/json",
+    "input": {
+     "body": {
+      "type": "object",
+      "required": [
+       "query"
+      ],
+      "properties": {
+       "type": {
+        "type": "string",
+        "description": "Search type: auto, keyword, neural, deep-lite, deep, deep-reasoning"
+       },
+       "query": {
+        "type": "string",
+        "description": "Search query"
+       },
+       "contents": {
+        "type": "object",
+        "description": "Content fields to include: text, highlights, summary"
+       },
+       "numResults": {
+        "type": "number",
+        "description": "Number of results to return (max 10 for x402)"
+       }
+      }
+     },
+     "type": "http",
+     "method": "POST",
+     "bodyType": "json"
+    },
+    "siwx": false,
+    "supportsVanillax402": true,
+    "supportsCircleGateway": true
+   }
+  },
+  {
+   "resource": "https://x402.quicknode.com/0g-galileo/",
+   "type": "http",
+   "x402Version": 2,
+   "lastUpdated": "2026-09-30T17:02:53.705Z",
+   "accepts": [
+    {
+     "scheme": "exact",
+     "network": "eip155:84532",
+     "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "1000000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USDC",
+      "version": "2"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:84532",
+     "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "1000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USDC",
+      "version": "2"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:84532",
+     "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "100",
+     "maxTimeoutSeconds": 604900,
+     "extra": {
+      "name": "GatewayWalletBatched",
+      "version": "1",
+      "verifyingContract": "0x0077777d7EBA4688BDeF3E311b846F25870A19B9"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:8453",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "10000000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:8453",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "1000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:8453",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "100",
+     "maxTimeoutSeconds": 604900,
+     "extra": {
+      "name": "GatewayWalletBatched",
+      "version": "1",
+      "verifyingContract": "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:80002",
+     "asset": "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "1000000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USDC",
+      "version": "2"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:80002",
+     "asset": "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "1000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USDC",
+      "version": "2"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:80002",
+     "asset": "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "100",
+     "maxTimeoutSeconds": 604900,
+     "extra": {
+      "name": "GatewayWalletBatched",
+      "version": "1",
+      "verifyingContract": "0x0077777d7EBA4688BDeF3E311b846F25870A19B9"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:137",
+     "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "10000000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:137",
+     "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "1000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:137",
+     "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "100",
+     "maxTimeoutSeconds": 604900,
+     "extra": {
+      "name": "GatewayWalletBatched",
+      "version": "1",
+      "verifyingContract": "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "eip155:5042",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "payTo": "0xF46394adDdA95A3d5bCC1124605E3d15D204623C",
+     "amount": "100",
+     "maxTimeoutSeconds": 604900,
+     "extra": {
+      "name": "GatewayWalletBatched",
+      "version": "1",
+      "verifyingContract": "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+     "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+     "payTo": "2LWbc9Mi6dRUrdEHBttoNS4udDtH1A4xwBdm1EKqcT57",
+     "amount": "1000000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "feePayer": "CPZSjRmyfTS95UjQD8ZdeTEWbQvW9QvEXnn6aGP7yyMN"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+     "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+     "payTo": "2LWbc9Mi6dRUrdEHBttoNS4udDtH1A4xwBdm1EKqcT57",
+     "amount": "1000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "feePayer": "CPZSjRmyfTS95UjQD8ZdeTEWbQvW9QvEXnn6aGP7yyMN"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "payTo": "2LWbc9Mi6dRUrdEHBttoNS4udDtH1A4xwBdm1EKqcT57",
+     "amount": "10000000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "feePayer": "CPZSjRmyfTS95UjQD8ZdeTEWbQvW9QvEXnn6aGP7yyMN"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "payTo": "2LWbc9Mi6dRUrdEHBttoNS4udDtH1A4xwBdm1EKqcT57",
+     "amount": "1000",
+     "maxTimeoutSeconds": 60,
+     "extra": {
+      "feePayer": "CPZSjRmyfTS95UjQD8ZdeTEWbQvW9QvEXnn6aGP7yyMN"
+     }
+    }
+   ],
+   "metadata": {
+    "provider": {
+     "name": "QuickNode",
+     "website": "https://www.quicknode.com",
+     "docsUrl": "https://www.quicknode.com/docs",
+     "openApiUrl": "https://x402.quicknode.com/openapi.json",
+     "description": "Multi-chain JSON-RPC nodes across 50+ blockchains",
+     "category": "FINANCIAL_ANALYSIS",
+     "tags": [
+      "x402",
+      "blockchain",
+      "rpc",
+      "json-rpc",
+      "nodes",
+      "data"
+     ]
+    },
+    "path": "/0g-galileo",
+    "method": "POST",
+    "description": "JSON-RPC proxy — 0g-galileo",
+    "mimeType": "application/json",
+    "input": {
+     "body": {
+      "required": [
+       "jsonrpc",
+       "method"
+      ],
+      "properties": {
+       "id": {
+        "type": [
+         "number",
+         "string"
+        ],
+        "description": "Request identifier"
+       },
+       "method": {
+        "type": "string",
+        "description": "JSON-RPC method name (e.g., eth_blockNumber, eth_call)"
+       },
+       "params": {
+        "type": "array",
+        "description": "Method parameters"
+       },
+       "jsonrpc": {
+        "type": "string",
+        "const": "2.0"
+       }
+      }
+     },
+     "type": "http",
+     "method": "POST",
+     "bodyType": "json"
+    },
+    "siwx": true,
+    "supportsVanillax402": true,
+    "supportsCircleGateway": true
+   }
+  },
+  {
+   "resource": "https://agentres.dev/api/discover/restaurants/{restaurant_id}",
+   "type": "http",
+   "x402Version": 2,
+   "lastUpdated": "2026-08-26T18:35:55.093Z",
+   "accepts": [
+    {
+     "scheme": "exact",
+     "network": "eip155:8453",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "payTo": "0x66717045858d9f598e2ebd046bf42a0b1063c0fa",
+     "amount": "10000",
+     "maxTimeoutSeconds": 3600,
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     }
+    },
+    {
+     "scheme": "exact",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "payTo": "FCFgb8Z63uwim2QpDJW4TGwLqZoENjckwGosLmg26zBS",
+     "amount": "10000",
+     "maxTimeoutSeconds": 3600,
+     "extra": {}
+    }
+   ],
+   "metadata": {
+    "provider": {
+     "name": "Agentic Reservations",
+     "website": "https://agentres.dev",
+     "openApiUrl": "https://agentres.dev/openapi.json",
+     "description": "Restaurant and venue reservations for autonomous agents, paid in USDC on Solana.",
+     "category": "INFRASTRUCTURE",
+     "tags": [
+      "x402",
+      "reservations",
+      "booking",
+      "travel",
+      "agent-infra",
+      "productivity"
+     ]
+    },
+    "path": "/api/discover/restaurants/{restaurant_id}",
+    "method": "GET",
+    "description": "Blackbird restaurant detail ($0.01 USDC)",
+    "mimeType": "application/json",
+    "input": {
+     "type": "http",
+     "method": "GET",
+     "queryParams": {
+      "type": "object",
+      "properties": {}
+     }
+    },
+    "siwx": false,
+    "supportsVanillax402": true,
+    "supportsCircleGateway": false
+   }
+  }
+ ],
+ "pagination": {
+  "limit": 200,
+  "offset": 0,
+  "total": 7
+ }
+}

@@ -22,6 +22,19 @@
       "port": 8080
     },
     {
+      "name": "api-native",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "scripts/dev-native.ps1",
+        "api"
+      ],
+      "port": 8080
+    },
+    {
       "name": "api-alt",
       "runtimeExecutable": "powershell",
       "runtimeArgs": [

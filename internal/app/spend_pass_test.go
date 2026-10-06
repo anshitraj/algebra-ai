@@ -279,6 +279,38 @@ func TestSpendPass_RefusesWhatThePassDoesntAllow(t *testing.T) {
 	}
 }
 
+// fakeEconSpend is what economic intents have used, by pass.
+type fakeEconSpend map[string]int64
+
+func (f fakeEconSpend) PassSpend(_ context.Context, passID string, _ time.Time) (int64, error) {
+	return f[passID], nil
+}
+
+// A pass has one budget: what its agent spent through economic intents shows
+// in the pass's view and counts against what the shopping flow may still buy.
+func TestSpendPass_EconomicSpendCountsAgainstTheOneBudget(t *testing.T) {
+	h := newPassHarness(t)
+	ctx := context.Background()
+	issued, err := h.passes.Create(ctx, "user-1", spendpass.Pass{
+		Label: "Both kinds", BudgetMinorUnits: 10000, AllowedCategories: []string{"groceries"}, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viaIntents := fakeEconSpend{issued.ID: 3000}
+	h.passes.CountEconomicSpend(viaIntents)
+
+	view, err := h.passes.ForAgent(ctx, issued.AgentID)
+	if err != nil || view.SpentMinorUnits != 3000 || view.RemainingMinor != 7000 {
+		t.Fatalf("the view must count intent spend: %+v %v", view, err)
+	}
+	// ₹85 fits a ₹100 budget on its own (see TestSpendPass_RefusesWhatThePassDoesntAllow)
+	// but not with ₹30 already used through economic intents.
+	if dec, _ := h.buy(t, issued.AgentID, "groceries"); dec.Decision != policy.Deny || !slices.Contains(dec.ReasonCodes, spendpass.ReasonOverBudget) {
+		t.Fatalf("a purchase over what intents left must be denied: %+v", dec)
+	}
+}
+
 func TestSpendPass_AskMeLineTightensGuardrails(t *testing.T) {
 	h := newPassHarness(t)
 	issued, err := h.passes.Create(context.Background(), "user-1", spendpass.Pass{

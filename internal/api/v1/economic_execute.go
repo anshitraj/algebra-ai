@@ -63,7 +63,7 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
 		return
 	}
-	candidates, rejected := app.ResolveCandidates(capability, req.Providers, req.Candidates, a.b.ExecutionProviders)
+	candidates, rejected := a.b.Candidates.Resolve(r.Context(), capability, req.Providers, req.Candidates)
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
@@ -101,7 +101,7 @@ func (a *API) executeEconomicIntent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	candidates, rejected := app.ResolveCandidates(view.Capability, req.Providers, req.Candidates, a.b.ExecutionProviders)
+	candidates, rejected := a.b.Candidates.Resolve(r.Context(), view.Capability, req.Providers, req.Candidates)
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()

@@ -48,7 +48,7 @@ func main() {
 		Connectors: bundle.Connectors, Idempotency: bundle.Idempotency, Limiter: bundle.Limiter,
 		Integrators: bundle.Integrators, TransactionPolicy: bundle.TransactionPolicy,
 		PaymentIntents: bundle.PaymentIntentSvc, CommerceProfiles: bundle.CommerceProfileSvc, SpendPasses: bundle.SpendPasses,
-		Economic: bundle.Economic, Execution: bundle.Execution, ExecutionProviders: bundle.ExecutionProviders,
+		Economic: bundle.Economic, Execution: bundle.Execution, Candidates: bundle.Candidates, Directory: bundle.Directory,
 	}
 	server := mcpserver.NewMCPServer(srv)
 

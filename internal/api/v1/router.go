@@ -172,6 +172,8 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/payment-sources/{id}/revoke", api.revokePaymentSource)
 
 	mux.HandleFunc("GET /api/v1/merchants", api.listMerchants)
+	mux.HandleFunc("GET /api/v1/providers", api.listProviders)
+	mux.HandleFunc("GET /api/v1/providers/{id...}", api.getProvider)
 
 	mux.HandleFunc("POST /api/v1/profiles/shipping", api.createShippingProfile)
 	mux.HandleFunc("POST /api/v1/profiles/billing", api.createBillingProfile)

@@ -29,6 +29,15 @@ type PassSpendLedger interface {
 	SpentByAgentSince(ctx context.Context, agentID, currency string, since time.Time) (int64, error)
 }
 
+// PassEconomicSpend answers what a pass has committed through economic
+// intents since a time, plus what those intents still hold while their
+// outcome is unknown. A pass has one budget, so the pass's own view and the
+// shopping flow's check count this next to its orders; the coordinator reads
+// the same number under the pass's row lock when it grants a reservation.
+type PassEconomicSpend interface {
+	PassSpend(ctx context.Context, passID string, since time.Time) (int64, error)
+}
+
 // PassGate is how policy and execution consult Spend Passes. A nil decision
 // means the agent has no pass (the console's own agent, say) and only the
 // person's guardrails apply.
@@ -48,14 +57,38 @@ var SpendPassPermissions = []agentpkg.Permission{
 // SpendPassService issues, lists and revokes Spend Passes, and checks
 // purchases against them.
 type SpendPassService struct {
-	store  SpendPassStore
-	agents *AgentService
-	ledger PassSpendLedger
-	now    func() time.Time
+	store    SpendPassStore
+	agents   *AgentService
+	ledger   PassSpendLedger
+	economic PassEconomicSpend
+	now      func() time.Time
 }
 
 func NewSpendPassService(store SpendPassStore, agents *AgentService, ledger PassSpendLedger) *SpendPassService {
 	return &SpendPassService{store: store, agents: agents, ledger: ledger, now: time.Now}
+}
+
+// CountEconomicSpend makes a pass's spend through economic intents count
+// against its budget in the pass's view and in the shopping check. Without
+// it only orders count. Called once during wiring.
+func (s *SpendPassService) CountEconomicSpend(e PassEconomicSpend) { s.economic = e }
+
+// spent is everything the pass has used in its current window: orders, and
+// economic intents committed or still held.
+func (s *SpendPassService) spent(ctx context.Context, p spendpass.Pass) (int64, error) {
+	start := p.WindowStart(s.now())
+	total, err := s.ledger.SpentByAgentSince(ctx, p.AgentID, p.Currency, start)
+	if err != nil {
+		return 0, fmt.Errorf("app: reading the pass's spend: %w", err)
+	}
+	if s.economic != nil {
+		viaIntents, err := s.economic.PassSpend(ctx, p.ID, start)
+		if err != nil {
+			return 0, fmt.Errorf("app: reading the pass's economic spend: %w", err)
+		}
+		total += viaIntents
+	}
+	return total, nil
 }
 
 // PassView is a pass with where its budget stands right now.
@@ -152,9 +185,9 @@ func (s *SpendPassService) CheckPurchase(ctx context.Context, agentID, merchant,
 		return nil, nil, err
 	}
 	now := s.now()
-	spent, err := s.ledger.SpentByAgentSince(ctx, p.AgentID, p.Currency, p.WindowStart(now))
+	spent, err := s.spent(ctx, *p)
 	if err != nil {
-		return nil, nil, fmt.Errorf("app: reading the pass's spend: %w", err)
+		return nil, nil, err
 	}
 	d := p.Evaluate(now, spendpass.Purchase{
 		Merchant: merchant, Category: category, AmountMinor: amount.MinorUnits, Currency: amount.Currency, SpentInWindow: spent,
@@ -164,10 +197,9 @@ func (s *SpendPassService) CheckPurchase(ctx context.Context, agentID, merchant,
 
 func (s *SpendPassService) view(ctx context.Context, p spendpass.Pass) (*PassView, error) {
 	now := s.now()
-	start := p.WindowStart(now)
-	spent, err := s.ledger.SpentByAgentSince(ctx, p.AgentID, p.Currency, start)
+	spent, err := s.spent(ctx, p)
 	if err != nil {
-		return nil, fmt.Errorf("app: reading the pass's spend: %w", err)
+		return nil, err
 	}
-	return &PassView{Pass: p, Active: p.Active(now), SpentMinorUnits: spent, RemainingMinor: p.Remaining(spent), WindowStartsAt: start}, nil
+	return &PassView{Pass: p, Active: p.Active(now), SpentMinorUnits: spent, RemainingMinor: p.Remaining(spent), WindowStartsAt: p.WindowStart(now)}, nil
 }

@@ -42,7 +42,10 @@ import (
 	"github.com/project-algebra/algebra/internal/platform/solana"
 	"github.com/project-algebra/algebra/policy"
 	"github.com/project-algebra/algebra/providers/arcium"
+	"github.com/project-algebra/algebra/providers/catalog"
+	"github.com/project-algebra/algebra/providers/circleagents"
 	"github.com/project-algebra/algebra/providers/paymentdemo"
+	"github.com/project-algebra/algebra/providers/paysh"
 	"github.com/project-algebra/algebra/providers/razorpay"
 	"github.com/project-algebra/algebra/providers/sandboxpay"
 	"github.com/project-algebra/algebra/providers/solanax402"
@@ -98,10 +101,14 @@ type Bundle struct {
 	// Execution runs routed work: it drives the coordinator, makes the paid
 	// x402 call and judges the result (internal/domain/routing).
 	Execution *app.ExecutionService
-	// ExecutionProviders are the providers an agent can name: the ones the
-	// operator pinned (ECONOMIC_PROVIDERS) and, in sandbox mode, the
-	// simulated one. Keyed by provider name.
-	ExecutionProviders map[string][]routing.Candidate
+	// Candidates turns what an agent asks for into candidates: the providers
+	// the operator pinned (ECONOMIC_PROVIDERS) and, in sandbox mode, the
+	// simulated one, plus the Pay.sh catalog and the endpoints an agent
+	// supplies itself.
+	Candidates app.CandidateResolver
+	// Directory is the catalogs of paid APIs agents can browse and name
+	// (Pay.sh and Circle's Agent Marketplace), nil when both are off.
+	Directory *catalog.Multi
 
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
@@ -342,6 +349,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	// Economic coordination: executors act under their own Spend Pass; the
 	// database guarantees one live attempt and one commitment per intent.
 	econRepo := postgres.NewEconRepo(db)
+	spendPassSvc.CountEconomicSpend(econRepo)
 	econSvc := app.NewEconomicService(econRepo, agents, passRepo, passRepo)
 	intentReceiptSvc := app.NewIntentReceiptService(signer, cfg.Auth.PublicWebURL, agents, econRepo)
 	econSvc.SetReceipts(intentReceiptSvc)
@@ -356,6 +364,11 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("wiring: %w", err)
+	}
+	directory := buildDirectory(cfg)
+	candidates := app.CandidateResolver{Configured: execProviders}
+	if directory != nil {
+		candidates.Catalog = catalogSource{directory}
 	}
 	onboardingSvc := app.NewOnboardingService(accountSvc, commerceProfileSvc, privacyResolver)
 	demoSvc := app.NewDemoService(accountSvc, onboardingSvc)
@@ -415,7 +428,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, Execution: execSvc, ExecutionProviders: execProviders, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, Execution: execSvc, Candidates: candidates, Directory: directory, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,
@@ -484,6 +497,42 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 		HTTP: safehttp.New(httpOpts), Networks: networks, ReuseQuoteFor: 15 * time.Second,
 	}))
 	return exec, providers, nil
+}
+
+// buildDirectory builds the catalogs agents can browse and name: Pay.sh and
+// Circle's Agent Marketplace, each on unless turned off, or nil when both are.
+// Nothing is fetched until somebody asks. The HTTP client reaches public
+// addresses only, never follows a redirect, and refuses an oversized body.
+func buildDirectory(cfg *config.Config) *catalog.Multi {
+	var sources []catalog.Source
+	if cfg.PaySh.Enabled {
+		sources = append(sources, paysh.New(paysh.Config{
+			CatalogURL: cfg.PaySh.CatalogURL, DocsURL: cfg.PaySh.DocsURL,
+			HTTP: safehttp.New(safehttp.Options{Timeout: 15 * time.Second, MaxBody: 2 << 20}),
+		}))
+	}
+	if cfg.Circle.Enabled {
+		sources = append(sources, circleagents.New(circleagents.Config{
+			DiscoveryURL: cfg.Circle.DiscoveryURL,
+			HTTP:         safehttp.New(safehttp.Options{Timeout: 20 * time.Second, MaxBody: 8 << 20}),
+		}))
+	}
+	if len(sources) == 0 {
+		return nil
+	}
+	return catalog.NewMulti(sources...)
+}
+
+// catalogSource adapts the catalogs to app.CatalogSource: a capability no
+// catalog knows is "nothing found", not an error.
+type catalogSource struct{ *catalog.Multi }
+
+func (s catalogSource) ForCapability(ctx context.Context, capability string) ([]routing.Candidate, error) {
+	cands, err := s.Multi.ForCapability(ctx, capability)
+	if errors.Is(err, catalog.ErrNotFound) {
+		return nil, nil
+	}
+	return cands, err
 }
 
 // defaultSolanaRPC are the public endpoints, rate-limited and fine for trying

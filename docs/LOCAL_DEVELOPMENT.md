@@ -17,6 +17,10 @@ cp web/.env.local.example web/.env.local   # add at least one LLM key for the ag
 
 Migrations (`migrations/*.sql`) run automatically on first connect — see `internal/platform/postgres.Migrate`, called from `internal/platform/wiring.Build`. There is no separate "run migrations" step to remember.
 
+## Without Docker (Windows)
+
+`scripts\dev-native.ps1 up` starts a throwaway PostgreSQL cluster (127.0.0.1:5433) and an isolated Redis-compatible server (:6380) from the PostgreSQL and Memurai/Redis installs already on the machine, with their data under `.data/`. `api` runs the API against them, `test` runs the Postgres integration tests on a separate database, `status` and `down` do what they say. It never touches an existing Postgres or Redis, and never the `DATABASE_URL` in `.env`: the script sets its own in the process, and the process environment wins over `.env`.
+
 ## Run it
 
 ```bash

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -99,9 +100,35 @@ type Config struct {
 	// SOLANA_CLUSTER is set.
 	Solana SolanaConfig
 
+	// PaySh is the Pay.sh catalog of paid APIs (providers/paysh), which
+	// agents can browse and name as providers.
+	PaySh PayShConfig
+	// Circle is Circle's Agent Marketplace catalog (providers/circleagents).
+	Circle CircleConfig
+
 	Auth AuthConfig
 
 	Billing BillingConfig
+}
+
+// PayShConfig configures reading the Pay.sh catalog.
+type PayShConfig struct {
+	// Enabled is on unless PAYSH_ENABLED=off. It only reads a public
+	// document, when somebody asks, and caches it.
+	Enabled bool
+	// CatalogURL and DocsURL default to Pay.sh's own (PAYSH_CATALOG_URL,
+	// PAYSH_DOCS_URL); they must be https.
+	CatalogURL string
+	DocsURL    string
+}
+
+// CircleConfig configures reading Circle's Agent Marketplace.
+type CircleConfig struct {
+	// Enabled is on unless CIRCLE_AGENTS_ENABLED=off.
+	Enabled bool
+	// DiscoveryURL defaults to Circle's discovery API (CIRCLE_DISCOVERY_URL);
+	// it must be https.
+	DiscoveryURL string
 }
 
 // SolanaConfig configures the Solana USDC rail.
@@ -336,6 +363,12 @@ func FromEnv() (*Config, error) {
 	if err := loadSolana(&cfg.Solana); err != nil {
 		return nil, err
 	}
+	if err := loadPaySh(&cfg.PaySh); err != nil {
+		return nil, err
+	}
+	if err := loadCircle(&cfg.Circle); err != nil {
+		return nil, err
+	}
 	switch strings.ToLower(os.Getenv("ECONOMIC_SANDBOX")) {
 	case "on":
 		cfg.EconomicSandbox = true
@@ -567,6 +600,40 @@ func loadSolana(c *SolanaConfig) error {
 			return fmt.Errorf("config: SOLANA_MAX_PAYMENT_USDC must be a positive amount like 0.50: %v", err)
 		}
 		c.MaxPaymentMinor = n
+	}
+	return nil
+}
+
+// loadPaySh reads the Pay.sh catalog settings. The URLs, if set, must be
+// https with no credentials: they are fetched by the server, so an operator
+// typo shouldn't turn into a request to somewhere else.
+func loadPaySh(c *PayShConfig) error {
+	c.Enabled = !strings.EqualFold(strings.TrimSpace(os.Getenv("PAYSH_ENABLED")), "off")
+	for _, v := range []struct {
+		name string
+		dst  *string
+	}{{"PAYSH_CATALOG_URL", &c.CatalogURL}, {"PAYSH_DOCS_URL", &c.DocsURL}} {
+		*v.dst = strings.TrimSpace(os.Getenv(v.name))
+		if *v.dst == "" {
+			continue
+		}
+		u, err := url.Parse(*v.dst)
+		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+			return fmt.Errorf("config: %s must be an https URL without credentials", v.name)
+		}
+	}
+	return nil
+}
+
+// loadCircle reads Circle's catalog settings, with the same URL rule as Pay.sh's.
+func loadCircle(c *CircleConfig) error {
+	c.Enabled = !strings.EqualFold(strings.TrimSpace(os.Getenv("CIRCLE_AGENTS_ENABLED")), "off")
+	c.DiscoveryURL = strings.TrimSpace(os.Getenv("CIRCLE_DISCOVERY_URL"))
+	if c.DiscoveryURL != "" {
+		u, err := url.Parse(c.DiscoveryURL)
+		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+			return fmt.Errorf("config: CIRCLE_DISCOVERY_URL must be an https URL without credentials")
+		}
 	}
 	return nil
 }

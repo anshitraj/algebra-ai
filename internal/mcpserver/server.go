@@ -33,7 +33,7 @@ import (
 	integratorpkg "github.com/project-algebra/algebra/internal/domain/integrator"
 	"github.com/project-algebra/algebra/internal/domain/privacy"
 	"github.com/project-algebra/algebra/internal/domain/quote"
-	"github.com/project-algebra/algebra/internal/domain/routing"
+	"github.com/project-algebra/algebra/providers/catalog"
 )
 
 // Server holds every dependency the tool handlers need. It has no state of
@@ -68,11 +68,14 @@ type Server struct {
 
 	// Economic and Execution back algebra.execute and
 	// algebra.execution_status: the agent says what it wants and Algebra
-	// pays for it and does it. ExecutionProviders are the providers an agent
-	// can name. All nil when execution isn't enabled.
-	Economic           *app.EconomicService
-	Execution          *app.ExecutionService
-	ExecutionProviders map[string][]routing.Candidate
+	// pays for it and does it. Candidates resolves the providers an agent
+	// names (configured ones and the catalogs). Directory backs
+	// algebra.discover_providers and is nil when the catalog is off. The
+	// rest are nil when execution isn't enabled.
+	Economic   *app.EconomicService
+	Execution  *app.ExecutionService
+	Candidates app.CandidateResolver
+	Directory  *catalog.Multi
 
 	// Limiter is optional (mandate §35/§49) — nil means no MCP-level rate
 	// limiting, which is fine for local stdio development and not fine for
@@ -134,6 +137,7 @@ func NewMCPServer(srv *Server) *gomcp.Server {
 	srv.registerCommerceTools(s)
 	srv.registerSpendPassTools(s)
 	srv.registerEconomicTools(s)
+	srv.registerDiscoveryTools(s)
 	srv.registerPaymentsTools(s)
 	srv.registerProfilesTools(s)
 	srv.registerPolicyTools(s)

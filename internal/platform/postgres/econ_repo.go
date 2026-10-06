@@ -325,18 +325,34 @@ func (u *econUnit) SaveReservation(rv *econ.Reservation) error {
 	return nil
 }
 
+// passExposureSQL is what a pass has used through economic intents: holds
+// that may still turn into payments, plus payments committed since a time.
+const passExposureSQL = `
+	SELECT COALESCE(SUM(hold_minor), 0) FROM economic_reservations
+	WHERE executor_pass_id = $1
+	  AND (state IN ('RESERVED', 'EXECUTING', 'UNKNOWN', 'RECONCILING') OR (state = 'COMMITTED' AND finished_at >= $2))`
+
 func (u *econUnit) PassExposure(passID string, since time.Time) (int64, error) {
 	var total int64
-	err := u.tx.QueryRow(u.ctx, `
-		SELECT COALESCE(SUM(hold_minor), 0) FROM economic_reservations
-		WHERE executor_pass_id = $1
-		  AND (state IN ('RESERVED', 'EXECUTING', 'UNKNOWN', 'RECONCILING') OR (state = 'COMMITTED' AND finished_at >= $2))`,
-		passID, since).Scan(&total)
-	if err != nil {
+	if err := u.tx.QueryRow(u.ctx, passExposureSQL, passID, since).Scan(&total); err != nil {
 		return 0, fmt.Errorf("postgres: summing pass exposure: %w", err)
 	}
 	return total, nil
 }
+
+// PassSpend implements app.PassEconomicSpend: the same number the
+// coordinator checks under the pass's row lock, read on its own for the
+// pass's view and the shopping check, which read orders the same way. Grants
+// of reservations stay serialized by the coordinator, not by this read.
+func (r *EconRepo) PassSpend(ctx context.Context, passID string, since time.Time) (int64, error) {
+	var total int64
+	if err := r.db.Pool.QueryRow(ctx, passExposureSQL, passID, since).Scan(&total); err != nil {
+		return 0, fmt.Errorf("postgres: summing pass exposure: %w", err)
+	}
+	return total, nil
+}
+
+var _ app.PassEconomicSpend = (*EconRepo)(nil)
 
 func (u *econUnit) AppendEvent(e app.EconEvent) error {
 	if err := app.ValidateEvent(e); err != nil {

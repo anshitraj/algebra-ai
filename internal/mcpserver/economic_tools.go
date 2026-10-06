@@ -23,7 +23,7 @@ type executeToolInput struct {
 	MaxPrice   string               `json:"max_price_usdc" jsonschema:"the most you are willing to pay, in USDC, as a decimal string such as \"0.05\""`
 	Strategy   string               `json:"strategy,omitempty" jsonschema:"how to choose a provider: auto (default), cheapest or fastest"`
 	Window     string               `json:"window,omitempty" jsonschema:"what makes this request the same one as an earlier one. Default \"once\". To buy the same thing again later, pass a new window, such as today's date"`
-	Providers  []string             `json:"providers,omitempty" jsonschema:"names of providers configured on this Algebra server to use. Leave empty to let Algebra use every configured provider for this capability"`
+	Providers  []string             `json:"providers,omitempty" jsonschema:"providers to use: ones configured on this Algebra server, or catalog providers by id such as paysh:birdeye.data or circle:birdeye (find them with algebra.discover_providers). Leave empty to let Algebra use every configured provider for this capability, or the catalog provider a catalog capability belongs to"`
 	Candidates []app.CandidateInput `json:"candidates,omitempty" jsonschema:"x402 endpoints you found yourself. They are treated as unverified, and the person's Spend Pass decides whether they may be paid"`
 }
 
@@ -64,7 +64,7 @@ func (srv *Server) registerEconomicTools(s *gomcp.Server) {
 		if in.Input == nil {
 			raw = nil
 		}
-		candidates, rejected := app.ResolveCandidates(capability, in.Providers, in.Candidates, srv.ExecutionProviders)
+		candidates, rejected := srv.Candidates.Resolve(ctx, capability, in.Providers, in.Candidates)
 
 		ctx, cancel := context.WithTimeout(ctx, 80*time.Second)
 		defer cancel()
