@@ -246,6 +246,11 @@ func (a AuthConfig) CookieSecure() bool {
 	return strings.HasPrefix(a.PublicWebURL, "https://")
 }
 
+// NoMerchants as ENABLED_MERCHANTS registers no merchant connector: an
+// API-only deployment that has no use for the shopping product, and so none
+// of its test store either.
+const NoMerchants = "none"
+
 // DefaultEnabledMerchants is every connector registered unless
 // ENABLED_MERCHANTS says otherwise. Swiggy Instamart is deliberately absent:
 // Swiggy reviews production access to its MCP servers, so an operator opts in

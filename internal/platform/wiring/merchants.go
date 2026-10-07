@@ -69,6 +69,9 @@ func buildConnectors(cfg config.MerchantsConfig, enc remotemcp.Encryptor) (*app.
 
 	registry := app.NewConnectorRegistry()
 	for _, name := range cfg.Enabled {
+		if name == config.NoMerchants {
+			continue // an API-only deployment: no shopping connector at all
+		}
 		build, ok := factories[name]
 		if !ok {
 			known := make([]string, 0, len(factories))
