@@ -35,7 +35,8 @@ $RedisDir = Join-Path $Data 'redis'
 $KeyFile  = Join-Path $Data 'local-master.key'
 $PgPort   = 5433
 $RedisPort = 6380
-$ApiAddr  = '127.0.0.1:8080'
+# ALGEBRA_API_ADDR runs a second API next to one already on :8080.
+$ApiAddr  = if ($env:ALGEBRA_API_ADDR) { $env:ALGEBRA_API_ADDR } else { '127.0.0.1:8080' }
 
 function Find-PgBin {
     if ($env:PG_BIN -and (Test-Path (Join-Path $env:PG_BIN 'initdb.exe'))) { return $env:PG_BIN }

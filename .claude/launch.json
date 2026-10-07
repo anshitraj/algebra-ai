@@ -72,21 +72,17 @@
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$env:ECONOMIC_PROVIDERS = (go run ./cmd/demo-provider -print-config); $env:PUBLIC_WEB_URL = 'http://localhost:3300'; $env:CORS_ALLOWED_ORIGINS = 'http://localhost:3300,http://localhost:3000'; & ./scripts/dev-native.ps1 api"
+        "$env:ECONOMIC_PROVIDERS = (go run ./cmd/demo-provider -print-config); $env:ALGEBRA_API_ADDR = '127.0.0.1:8085'; $env:PUBLIC_WEB_URL = 'http://localhost:3300'; $env:CORS_ALLOWED_ORIGINS = 'http://localhost:3300,http://localhost:3000'; & ./scripts/dev-native.ps1 api"
       ],
-      "port": 8080
+      "port": 8085
     },
     {
       "name": "web-demo",
-      "runtimeExecutable": "pnpm",
+      "runtimeExecutable": "powershell",
       "runtimeArgs": [
-        "--dir",
-        "web",
-        "exec",
-        "next",
-        "dev",
-        "--port",
-        "3300"
+        "-NoProfile",
+        "-Command",
+        "$env:ALGEBRA_API_URL = 'http://localhost:8085'; $env:NEXT_DIST_DIR = '.next-demo'; pnpm --dir web exec next dev --port 3300"
       ],
       "port": 3300
     },

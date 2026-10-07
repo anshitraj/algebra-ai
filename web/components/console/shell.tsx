@@ -208,7 +208,7 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
           <div className="flex flex-col gap-0.5">{CONTROLS.map(renderItem)}</div>
         </div>
         <p className="mx-1 mt-auto rounded-xl border border-border px-3.5 py-3 text-xs leading-relaxed text-muted">
-          Payments settle in <span className="text-foreground">USDC on Solana</span> over x402. Providers come from Pay.sh, Circle&apos;s Agent Marketplace and PayAI, on mainnet and devnet.
+          Payments settle in <span className="text-foreground">USDC on Solana</span> over x402. Providers come from Pay.sh, Circle&apos;s Agent Marketplace, PayAI and Coinbase&apos;s x402 Bazaar, on mainnet and devnet.
         </p>
       </nav>
       <UserMenu user={user} />
