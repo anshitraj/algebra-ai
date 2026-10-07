@@ -93,9 +93,9 @@ func (r *SpendPassRepo) SetFrozen(ctx context.Context, id string, at *time.Time)
 // SetFrozenAll turns the kill switch on or off for every live pass of a
 // person, and says how many it changed.
 func (r *SpendPassRepo) SetFrozenAll(ctx context.Context, userID string, at *time.Time) (int, error) {
-	q := `UPDATE spend_passes SET frozen_at = $2 WHERE user_id = $1 AND revoked_at IS NULL AND frozen_at IS NULL`
+	q := `UPDATE spend_passes SET frozen_at = $2 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now() AND frozen_at IS NULL`
 	if at == nil {
-		q = `UPDATE spend_passes SET frozen_at = NULL WHERE user_id = $1 AND revoked_at IS NULL AND frozen_at IS NOT NULL`
+		q = `UPDATE spend_passes SET frozen_at = NULL WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now() AND frozen_at IS NOT NULL`
 		tag, err := r.db.Pool.Exec(ctx, q, userID)
 		if err != nil {
 			return 0, fmt.Errorf("postgres: unfreezing spend passes: %w", err)

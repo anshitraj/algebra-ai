@@ -95,6 +95,18 @@ Sign in, create a USDC Spend Pass (Spend passes), and switch the console to
    rest back to the wallet). The intent records what was actually paid, not the
    ceiling.
 
+## Proof: real devnet payments through Algebra (2026-10-07)
+
+An agent with a Spend Pass, calling `POST /api/v1/execute` against the demo
+providers, paid in Circle's devnet USDC from Algebra's wallet:
+
+| What the agent asked | What Algebra did | Transaction |
+|---|---|---|
+| `token.price` (a class, no provider named) | priced 5 providers; refused trap (price outlier), flaky (503) and greedy (asks $0.004, lists $0.001); paid **demo:beta 0.001**, alpha kept as fallback | [4zt18fnB…](https://explorer.solana.com/tx/4zt18fnBYUk3hxq44qrb93xoVTBidKR53nMy2kHQWHzYQ4JwdVYs4LNnDSfJs2JAyjD8EEk8uxjZHszDcCXMoAQV?cluster=devnet) |
+| `llm.chat`, metered (x402 `upto`) | escrowed a 0.05 ceiling in a payment channel; the provider settled **0.0042**; **0.0458 came back** in the same transaction; the intent records 0.0042 spent | open [3zmpMXTY…](https://explorer.solana.com/tx/3zmpMXTYbsdjhTZow1Qp72iYRCbxLjnK4WQzVRee6uG2TGRxBS8Ryte46t8v2eqykXERSt6rojavbWM6BFPaBvSH?cluster=devnet), settle [5V9ATU74…](https://explorer.solana.com/tx/5V9ATU749V6sGd96mpmDRP82YmiLRpk9MtvpyXkkderwKSDJGWCTgw9FkPz9bmKAFy64kwcz8JvWkdx3fMcrD21S?cluster=devnet) |
+| `token.price` with the kill switch on | refused with 403 "frozen by its owner's kill switch"; nothing paid | none |
+| `token.price` from demo:alpha, never paid before, pass rule "ask me" | intent moved to AWAITING_APPROVAL; after the person approved, paid **demo:alpha 0.002** | [3Jhety7a…](https://explorer.solana.com/tx/3Jhety7asFqxXtVUgJb95xivtAEcjntQvnNXgxUX5TA5GNxhSvC7k1WsKdsmx3Ezmjp3Mu7oSZ7kzY733GAHFcRc?cluster=devnet) |
+
 ## Payment channels, proven on devnet
 
 `cmd/paychan-smoke` runs the x402 `upto` flow through the real

@@ -67,7 +67,7 @@ func (f *fakePassStore) SetFrozenAll(_ context.Context, userID string, at *time.
 	defer f.mu.Unlock()
 	n := 0
 	for _, p := range f.passes {
-		if p.UserID != userID || p.RevokedAt != nil || (p.FrozenAt != nil) == (at != nil) {
+		if p.UserID != userID || p.RevokedAt != nil || !time.Now().Before(p.ExpiresAt) || (p.FrozenAt != nil) == (at != nil) {
 			continue
 		}
 		p.FrozenAt = at
