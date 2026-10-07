@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
@@ -8,6 +9,17 @@ import * as api from "@/lib/api-client";
 import type { AuthProviders, User } from "@/lib/types";
 import { GitHubMark, GoogleMark, IconReceipt, IconShield, IconStore, Spinner } from "@/components/icons";
 import { AuthInput, FormError, PasswordInput, SubmitButton } from "./fields";
+
+// Privy's SDK is large and needs the browser: loaded only when this server
+// offers Privy sign-in.
+const PrivySignIn = dynamic(() => import("./privy-sign-in"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-11 w-full items-center justify-center gap-2.5 rounded-xl bg-primary/70 text-[0.95rem] font-medium text-primary-tint">
+      <Spinner size={16} />
+    </div>
+  ),
+});
 
 type Mode = "login" | "signup";
 /** Which way in: a one-click demo account, or a real (production) account. */
@@ -126,6 +138,19 @@ export function AuthForm({ mode }: { mode: Mode }) {
       ) : (
         <>
           <div className={`${showChooser ? "mt-6" : "mt-8"} grid gap-2.5`}>
+            {providers?.privy && providers.privy_app_id && (
+              <>
+                <PrivySignIn
+                  appId={providers.privy_app_id}
+                  label={isSignup ? "Sign up with a wallet or email" : "Continue with a wallet or email"}
+                  onSignedIn={(user) => router.replace(destinationFor(user, next))}
+                  onError={(message) => setError(message || null)}
+                />
+                <p className="text-xs leading-relaxed text-muted">
+                  Phantom, Solflare or any Solana wallet, or an email code. No wallet yet? Privy makes you one; Algebra never sees its key.
+                </p>
+              </>
+            )}
             <OAuthButton provider="github" enabled={!!providers?.github} loading={!providers} next={next}>
               <GitHubMark size={18} /> Continue with GitHub
             </OAuthButton>
@@ -137,6 +162,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
                 Google and GitHub sign-in appear here once their OAuth client IDs are set on the API server.
               </p>
             )}
+            {!passwordOn && error && <FormError>{error}</FormError>}
           </div>
 
           {passwordOn && (

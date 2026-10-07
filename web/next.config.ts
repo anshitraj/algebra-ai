@@ -15,14 +15,18 @@ const csp = [
   "default-src 'self'",
   // Razorpay Checkout (billing page only) loads its script and opens its
   // payment frames from these origins.
-  "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com",
+  // Privy (sign-in): its auth frame, Cloudflare's bot check and the
+  // WalletConnect relay, as listed in Privy's CSP guide.
+  "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.razorpay.com",
+  "connect-src 'self' https://*.razorpay.com https://auth.privy.io wss://relay.walletconnect.com wss://relay.walletconnect.org wss://www.walletlink.org https://*.rpc.privy.systems https://explorer-api.walletconnect.com",
   // The order page's delivery map is a Google Maps embed, loaded only when
   // the user opens it.
-  "frame-src https://api.razorpay.com https://checkout.razorpay.com https://maps.google.com https://www.google.com",
+  "frame-src https://api.razorpay.com https://checkout.razorpay.com https://maps.google.com https://www.google.com https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com",
+  "child-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org",
+  "worker-src 'self'",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

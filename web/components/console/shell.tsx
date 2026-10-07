@@ -295,8 +295,8 @@ function UserMenu({ user }: { user: User }) {
       >
         <Avatar user={user} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-foreground">{user.name || user.email.split("@")[0]}</span>
-          <span className="block truncate text-xs text-muted">{user.mode === "demo" ? "Demo account" : user.email}</span>
+          <span className="block truncate text-sm font-medium text-foreground">{user.name || user.email.split("@")[0] || shortWallet(user)}</span>
+          <span className="block truncate text-xs text-muted">{user.mode === "demo" ? "Demo account" : user.email || "Signed in with a wallet"}</span>
         </span>
         <IconChevronDown size={16} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
@@ -320,3 +320,9 @@ function DemoBanner() {
 }
 
 export { Avatar };
+
+/** A wallet-only account's address, shortened, where an email would go. */
+function shortWallet(user: User): string {
+  const a = user.wallets?.[0]?.address;
+  return a ? `${a.slice(0, 4)}…${a.slice(-4)}` : "Wallet account";
+}

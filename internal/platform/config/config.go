@@ -192,6 +192,14 @@ type AuthConfig struct {
 	GitHubClientID     string
 	GitHubClientSecret string
 
+	// PrivyAppID turns on sign-in with Privy (email, Google or a Solana
+	// wallet; anyone without a wallet is given an embedded Solana one).
+	// PrivyVerificationKey is the app's PEM verification key from the
+	// Privy dashboard, optional: without it the key is fetched from
+	// Privy's JWKS for the app.
+	PrivyAppID           string
+	PrivyVerificationKey string
+
 	// ResendAPIKey/EmailFrom enable real password-reset email. Without
 	// them, reset links are written to the API's log (development only).
 	ResendAPIKey string
@@ -439,19 +447,21 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	cfg.Auth = AuthConfig{
-		PublicWebURL:       strings.TrimRight(getEnv("PUBLIC_WEB_URL", "http://localhost:3000"), "/"),
-		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
-		GitHubClientID:     os.Getenv("GITHUB_CLIENT_ID"),
-		GitHubClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
-		ResendAPIKey:       os.Getenv("RESEND_API_KEY"),
-		EmailFrom:          getEnv("EMAIL_FROM", "Algebra <no-reply@algebra.local>"),
-		SessionTTL:         sessionTTL,
-		DevHeaderAuth:      os.Getenv("ALGEBRA_DEV_AUTH") == "true",
-		DemoAccounts:       !strings.EqualFold(os.Getenv("DEMO_ACCOUNTS"), "off"),
-		PasswordLogin:      !strings.EqualFold(os.Getenv("PASSWORD_LOGIN"), "off"),
-		OperatorToken:      strings.TrimSpace(os.Getenv("ALGEBRA_OPERATOR_TOKEN")),
-		Production:         cfg.Env == "production",
+		PublicWebURL:         strings.TrimRight(getEnv("PUBLIC_WEB_URL", "http://localhost:3000"), "/"),
+		GoogleClientID:       os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret:   os.Getenv("GOOGLE_CLIENT_SECRET"),
+		GitHubClientID:       os.Getenv("GITHUB_CLIENT_ID"),
+		GitHubClientSecret:   os.Getenv("GITHUB_CLIENT_SECRET"),
+		PrivyAppID:           strings.TrimSpace(os.Getenv("PRIVY_APP_ID")),
+		PrivyVerificationKey: os.Getenv("PRIVY_VERIFICATION_KEY"),
+		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
+		EmailFrom:            getEnv("EMAIL_FROM", "Algebra <no-reply@algebra.local>"),
+		SessionTTL:           sessionTTL,
+		DevHeaderAuth:        os.Getenv("ALGEBRA_DEV_AUTH") == "true",
+		DemoAccounts:         !strings.EqualFold(os.Getenv("DEMO_ACCOUNTS"), "off"),
+		PasswordLogin:        !strings.EqualFold(os.Getenv("PASSWORD_LOGIN"), "off"),
+		OperatorToken:        strings.TrimSpace(os.Getenv("ALGEBRA_OPERATOR_TOKEN")),
+		Production:           cfg.Env == "production",
 
 		AgentTurnsPerDay:        int(agentTurns),
 		DemoAgentTurnsPerDay:    int(demoAgentTurns),

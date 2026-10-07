@@ -287,12 +287,30 @@ export type User = {
   onboarded: boolean;
   has_password: boolean;
   linked_providers: string[];
+  /** Solana wallets signed in with, or given at sign-in by Privy. Public addresses only. */
+  wallets?: UserWallet[];
   created_at: string;
   /** "demo": shops real listings with a simulated checkout (fake money). */
   mode: "live" | "demo";
 };
 
-export type AuthProviders = { password: boolean; google: boolean; github: boolean; demo?: boolean };
+export type UserWallet = {
+  chain: "solana";
+  address: string;
+  /** "embedded": Privy holds the key for the person. "external": their own wallet, e.g. Phantom. */
+  kind: "embedded" | "external";
+  source: string;
+};
+
+export type AuthProviders = {
+  password: boolean;
+  google: boolean;
+  github: boolean;
+  demo?: boolean;
+  /** Sign-in with Privy: email, Google or a Solana wallet. */
+  privy?: boolean;
+  privy_app_id?: string;
+};
 
 export type SessionInfo = {
   id: string;

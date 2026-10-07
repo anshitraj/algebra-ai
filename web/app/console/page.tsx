@@ -44,7 +44,7 @@ export default function OverviewPage() {
       <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-display text-[2rem] leading-tight font-semibold tracking-tight text-foreground">
-            {greeting()}, {firstName(user)}
+            {greeting()}{firstName(user) ? `, ${firstName(user)}` : ""}
           </h1>
           <p className="mt-1.5 text-[0.95rem] text-muted">
             {waiting > 0

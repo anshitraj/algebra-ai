@@ -53,6 +53,7 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/auth/login", api.signIn)
 	mux.HandleFunc("POST /api/v1/auth/logout", api.signOut)
 	mux.HandleFunc("POST /api/v1/auth/demo", api.startDemo)
+	mux.HandleFunc("POST /api/v1/auth/privy", api.privySignIn)
 	mux.HandleFunc("POST /api/v1/auth/password/forgot", api.forgotPassword)
 	mux.HandleFunc("POST /api/v1/auth/password/reset", api.resetPassword)
 	mux.HandleFunc("POST /api/v1/auth/agent-token", api.agentToken)

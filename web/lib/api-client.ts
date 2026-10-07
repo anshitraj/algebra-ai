@@ -104,6 +104,11 @@ export function signIn(email: string, password: string) {
   return apiFetch<{ user: User }>("/api/v1/auth/login", { method: "POST", body: { email, password } });
 }
 
+/** Trades the identity token Privy issued at sign-in for an Algebra session. */
+export function signInWithPrivy(identityToken: string) {
+  return apiFetch<{ user: User }>("/api/v1/auth/privy", { method: "POST", body: { identity_token: identityToken } });
+}
+
 /** One click, no signup: a fresh demo account that pays on a simulated rail. */
 export function startDemo() {
   return apiFetch<{ user: User }>("/api/v1/auth/demo", { method: "POST" });

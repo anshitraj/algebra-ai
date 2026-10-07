@@ -223,6 +223,30 @@ func (s *Session) Active(now time.Time) bool {
 	return s.RevokedAt == nil && now.Before(s.ExpiresAt)
 }
 
+// Wallet is a wallet a person signed in with, or was given when they signed
+// in (Privy makes an embedded Solana wallet for anyone who has none). Only
+// the public address: Algebra never holds the key.
+type Wallet struct {
+	Chain   string `json:"chain"`
+	Address string `json:"address"`
+	// Kind is WalletEmbedded (Privy holds the key for the person) or
+	// WalletExternal (the person's own, e.g. Phantom).
+	Kind   string `json:"kind"`
+	Source string `json:"source"`
+}
+
+const (
+	ChainSolana    = "solana"
+	WalletEmbedded = "embedded"
+	WalletExternal = "external"
+)
+
+// WalletEmailDomain is the undeliverable domain of the address an account
+// gets when its person signed in with a wallet and no email: the account
+// needs a unique email, and this one can't be mistaken for, or linked to, a
+// real one.
+const WalletEmailDomain = "wallet.algebra.invalid"
+
 // OAuthProfile is what a provider told us about the person after a
 // successful authorization-code exchange.
 type OAuthProfile struct {

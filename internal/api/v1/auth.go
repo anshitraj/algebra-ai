@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/account"
+	"github.com/project-algebra/algebra/internal/platform/identity"
 )
 
 // SessionCookie is the HttpOnly cookie carrying a human session. The web
@@ -161,7 +163,10 @@ type userResponse struct {
 	Onboarded       bool     `json:"onboarded"`
 	HasPassword     bool     `json:"has_password"`
 	LinkedProviders []string `json:"linked_providers"`
-	CreatedAt       string   `json:"created_at"`
+	// Wallets are the Solana wallets the person signed in with or was
+	// given at sign-in (Privy); public addresses only.
+	Wallets   []account.Wallet `json:"wallets"`
+	CreatedAt string           `json:"created_at"`
 	// Mode is "live" or "demo" — see account.Mode.
 	Mode string `json:"mode"`
 }
@@ -171,10 +176,18 @@ func (a *API) toUserResponse(ctx context.Context, u *account.User) userResponse 
 	if linked == nil {
 		linked = []string{}
 	}
+	wallets, _ := a.b.Accounts.Wallets(ctx, u.ID)
+	if wallets == nil {
+		wallets = []account.Wallet{}
+	}
+	email := u.Email
+	if app.IsWalletOnlyEmail(email) {
+		email = "" // a placeholder, not an address anyone can write to
+	}
 	return userResponse{
-		ID: u.ID, Email: u.Email, Name: u.Name, AvatarURL: u.AvatarURL,
+		ID: u.ID, Email: email, Name: u.Name, AvatarURL: u.AvatarURL,
 		EmailVerified: u.EmailVerifiedAt != nil, Onboarded: u.OnboardedAt != nil,
-		HasPassword: u.HasPassword(), LinkedProviders: linked,
+		HasPassword: u.HasPassword(), LinkedProviders: linked, Wallets: wallets,
 		CreatedAt: u.CreatedAt.UTC().Format(time.RFC3339),
 		Mode:      string(modeOrLive(u.Mode)),
 	}
@@ -198,10 +211,59 @@ type sessionResponse struct {
 func (a *API) authProviders(w http.ResponseWriter, _ *http.Request) {
 	_, google := a.b.OAuthProviders["google"]
 	_, github := a.b.OAuthProviders["github"]
-	writeJSON(w, http.StatusOK, map[string]bool{
+	out := map[string]any{
 		"password": a.b.AuthConfig.PasswordLogin, "google": google, "github": github,
-		"demo": a.b.AuthConfig.DemoAccounts && a.b.Demo != nil,
-	})
+		"demo": a.b.AuthConfig.DemoAccounts && a.b.Demo != nil, "privy": a.b.Privy != nil,
+	}
+	if a.b.Privy != nil {
+		// Public: Privy's sign-in runs in the browser and needs the app ID.
+		out["privy_app_id"] = a.b.Privy.AppID()
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type privySignInRequest struct {
+	IdentityToken string `json:"identity_token"`
+}
+
+// privySignIn trades a Privy identity token for an Algebra session. The web
+// app runs Privy's sign-in (email code, Google, or a Solana wallet; Privy
+// gives anyone without a wallet an embedded Solana one), then posts the
+// identity token Privy issued, which names the person and their wallets
+// and is signed by Privy for this app.
+func (a *API) privySignIn(w http.ResponseWriter, r *http.Request) {
+	if a.b.Privy == nil {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: "Privy sign-in isn't configured on this server"})
+		return
+	}
+	var req privySignInRequest
+	if err := decodeJSON(r, &req); err != nil || strings.TrimSpace(req.IdentityToken) == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "identity_token is required"})
+		return
+	}
+	id, err := a.b.Privy.VerifyIdentityToken(r.Context(), req.IdentityToken)
+	if err != nil {
+		if errors.Is(err, identity.ErrPrivyToken) {
+			log.Printf("auth: privy sign-in refused: %v", err)
+			writeJSON(w, http.StatusUnauthorized, errorBody{Error: "We couldn't verify your Privy sign-in. Please try again."})
+			return
+		}
+		log.Printf("auth: privy sign-in: %v", err)
+		writeJSON(w, http.StatusBadGateway, errorBody{Error: "Privy isn't answering right now. Please try again in a moment."})
+		return
+	}
+	res, err := a.b.Accounts.SignInWithPrivy(r.Context(), id.Profile, id.Wallets, clientMeta(r))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
+		return
+	}
+	a.setSessionCookie(w, res.Token)
+	resp := a.toUserResponse(r.Context(), res.User)
+	status := http.StatusOK
+	if res.Created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, sessionResponse{User: &resp})
 }
 
 // passwordLoginOff answers every email + password endpoint once

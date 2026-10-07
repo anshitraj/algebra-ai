@@ -133,7 +133,9 @@ type Bundle struct {
 	// OAuthProviders holds only the providers with credentials configured,
 	// keyed by name ("google", "github").
 	OAuthProviders map[string]identity.Provider
-	AuthConfig     config.AuthConfig
+	// Privy verifies Privy sign-ins; nil unless PRIVY_APP_ID is set.
+	Privy      *identity.Privy
+	AuthConfig config.AuthConfig
 	// OAuthStateKey signs the short-lived OAuth state/PKCE cookie. Derived
 	// from the master key, never used for anything else.
 	OAuthStateKey []byte
@@ -327,7 +329,9 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	if cfg.Auth.ResendAPIKey != "" {
 		mailer = identity.NewResendMailer(cfg.Auth.ResendAPIKey, cfg.Auth.EmailFrom)
 	}
-	accountSvc := app.NewAccountService(postgres.NewAccountRepo(db), agentSvc, agents, encryptor, mailer, postgres.NewGuardrailRepo(db), cfg.Auth.SessionTTL)
+	accountRepo := postgres.NewAccountRepo(db)
+	accountSvc := app.NewAccountService(accountRepo, agentSvc, agents, encryptor, mailer, postgres.NewGuardrailRepo(db), cfg.Auth.SessionTTL)
+	accountSvc.SetWalletStore(accountRepo)
 	discoverySvc.SetAccountModes(accountSvc)
 	// Every policy evaluation — at request-purchase and again at payment
 	// time — uses the user's own guardrails when they've set any.
@@ -447,6 +451,13 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	if cfg.Auth.GitHubClientID != "" && cfg.Auth.GitHubClientSecret != "" {
 		oauthProviders["github"] = identity.NewGitHub(cfg.Auth.GitHubClientID, cfg.Auth.GitHubClientSecret)
 	}
+	var privy *identity.Privy
+	if cfg.Auth.PrivyAppID != "" {
+		if privy, err = identity.NewPrivy(cfg.Auth.PrivyAppID, cfg.Auth.PrivyVerificationKey); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("wiring: %w", err)
+		}
+	}
 	stateMAC := hmac.New(sha256.New, masterKey)
 	stateMAC.Write([]byte("algebra:oauth-state:v1"))
 	oauthStateKey := stateMAC.Sum(nil)
@@ -503,7 +514,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Directory: directory, SolanaRails: solanaRails, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Directory: directory, SolanaRails: solanaRails, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders, Privy: privy,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,

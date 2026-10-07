@@ -100,6 +100,7 @@ type AccountService struct {
 	sealer     TokenSealer
 	mailer     Mailer
 	guardrails GuardrailStore
+	wallets    UserWalletStore
 	now        func() time.Time
 	sessionTTL time.Duration
 	resetTTL   time.Duration

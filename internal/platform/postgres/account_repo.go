@@ -149,6 +149,43 @@ func (r *AccountRepo) ListOAuthProviders(ctx context.Context, userID string) ([]
 	return out, rows.Err()
 }
 
+// SaveUserWallets records wallets as userID's. A wallet already recorded for
+// another account stays with it.
+func (r *AccountRepo) SaveUserWallets(ctx context.Context, userID string, wallets []account.Wallet, at time.Time) error {
+	for _, w := range wallets {
+		_, err := r.db.Pool.Exec(ctx, `
+			INSERT INTO user_wallets (chain, address, user_id, kind, source, linked_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (chain, address) DO UPDATE SET kind = EXCLUDED.kind, source = EXCLUDED.source
+			WHERE user_wallets.user_id = EXCLUDED.user_id`,
+			w.Chain, w.Address, userID, w.Kind, w.Source, at)
+		if err != nil {
+			return fmt.Errorf("postgres: saving wallet: %w", err)
+		}
+	}
+	return nil
+}
+
+// ListUserWallets lists userID's wallets, embedded first, oldest first.
+func (r *AccountRepo) ListUserWallets(ctx context.Context, userID string) ([]account.Wallet, error) {
+	rows, err := r.db.Pool.Query(ctx, `
+		SELECT chain, address, kind, source FROM user_wallets WHERE user_id = $1
+		ORDER BY kind = 'embedded' DESC, linked_at, address`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: listing wallets: %w", err)
+	}
+	defer rows.Close()
+	out := []account.Wallet{}
+	for rows.Next() {
+		var w account.Wallet
+		if err := rows.Scan(&w.Chain, &w.Address, &w.Kind, &w.Source); err != nil {
+			return nil, fmt.Errorf("postgres: scanning wallet: %w", err)
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
 func (r *AccountRepo) CreateSession(ctx context.Context, s *account.Session) error {
 	_, err := r.db.Pool.Exec(ctx, `
 		INSERT INTO user_sessions (id, user_id, token_hash, agent_id, agent_token_ciphertext, agent_token_nonce,
@@ -258,6 +295,7 @@ func (r *AccountRepo) EraseUser(ctx context.Context, userID string, at time.Time
 	}
 	steps := []struct{ what, sql string }{
 		{"oauth identities", `DELETE FROM oauth_identities WHERE user_id = $1`},
+		{"sign-in wallets", `DELETE FROM user_wallets WHERE user_id = $1`},
 		{"sessions", `DELETE FROM user_sessions WHERE user_id = $1`},
 		{"reset tokens", `DELETE FROM password_reset_tokens WHERE user_id = $1`},
 		{"saved addresses", `DELETE FROM private_profiles WHERE user_id = $1`},
