@@ -103,6 +103,7 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/economic-intents/{id}/execute", api.executeEconomicIntent)
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/executions", api.listEconomicExecutions)
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/result", api.getEconomicResult)
+	mux.HandleFunc("POST /api/v1/discover/web", api.discoverWeb)
 	mux.HandleFunc("GET /api/v1/me/economic-intents/{id}/result", api.getMyEconomicResult)
 	mux.HandleFunc("GET /api/v1/me/economic-intents", api.listMyEconomicIntents)
 	mux.HandleFunc("POST /api/v1/me/economic-intents", api.createMyEconomicIntent)
@@ -333,6 +334,11 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	case errors.Is(err, shared.ErrNotImplemented):
 		status = http.StatusNotImplemented
+	}
+	var limited *app.RateLimited
+	if errors.As(err, &limited) {
+		w.Header().Set("Retry-After", formatSeconds(limited.Retry))
+		status = http.StatusTooManyRequests
 	}
 	writeJSON(w, status, errorBody{Error: err.Error()})
 }

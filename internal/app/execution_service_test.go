@@ -101,11 +101,13 @@ type fakeRunner struct {
 	quoteCancelled int
 	inflight       int
 	maxInflight    int
+	// quoteInputs is the input each provider was last asked to price.
+	quoteInputs map[string]json.RawMessage
 }
 
 func newFakeRunner() *fakeRunner {
 	return &fakeRunner{
-		costs: map[string]int64{}, latencies: map[string]int{}, quotePanics: map[string]bool{}, quoteErrs: map[string]error{}, quoteDelays: map[string]time.Duration{},
+		costs: map[string]int64{}, latencies: map[string]int{}, quotePanics: map[string]bool{}, quoteErrs: map[string]error{}, quoteDelays: map[string]time.Duration{}, quoteInputs: map[string]json.RawMessage{},
 		behaviors: map[string]func(context.Context, StepCall) StepObservation{}, runs: map[string]int{}, quotes: map[string]int{},
 	}
 }
@@ -125,9 +127,10 @@ func (f *fakeRunner) ran(provider string) int {
 	return f.runs[provider]
 }
 
-func (f *fakeRunner) Quote(ctx context.Context, c routing.Candidate, _ json.RawMessage) (routing.Quote, error) {
+func (f *fakeRunner) Quote(ctx context.Context, c routing.Candidate, input json.RawMessage) (routing.Quote, error) {
 	f.mu.Lock()
 	f.quotes[c.Provider]++
+	f.quoteInputs[c.Provider] = input
 	panics, delay, latency := f.quotePanics[c.Provider], f.quoteDelay, f.latencies[c.Provider]
 	if d, ok := f.quoteDelays[c.Provider]; ok {
 		delay = d

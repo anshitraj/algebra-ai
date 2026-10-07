@@ -135,6 +135,13 @@ func (g *Gemini) groundedText(ctx context.Context, prompt string) (string, error
 	return g.generate(ctx, prompt, true)
 }
 
+// GroundedText is groundedText for callers outside this package, such as the
+// web discovery of paid x402 endpoints (providers/webdiscovery). What comes back
+// is a model's text: untrusted, and every URL in it still has to be checked.
+func (g *Gemini) GroundedText(ctx context.Context, prompt string) (string, error) {
+	return g.groundedText(ctx, prompt)
+}
+
 // generate runs one prompt, with or without Google Search grounding.
 func (g *Gemini) generate(ctx context.Context, prompt string, grounded bool) (string, error) {
 	payload := map[string]any{

@@ -52,6 +52,7 @@ import (
 	"github.com/project-algebra/algebra/providers/sandboxpay"
 	"github.com/project-algebra/algebra/providers/solanax402"
 	"github.com/project-algebra/algebra/providers/vault"
+	"github.com/project-algebra/algebra/providers/webdiscovery"
 	"github.com/project-algebra/algebra/providers/x402client"
 )
 
@@ -463,6 +464,13 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 			// same product within a few minutes.
 			discoverySvc.SetSearchCache(rc, cfg.WebSearchCacheTTL)
 		}
+	}
+
+	// With a Gemini key, agents can search the open web for endpoints no catalog
+	// lists (algebra.discover_web); the limiter, when there is one, holds each
+	// agent to a few searches an hour.
+	if gemini != nil {
+		execSvc.SetWebFinder(webdiscovery.New(gemini), limiter)
 	}
 
 	return &Bundle{

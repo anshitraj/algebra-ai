@@ -159,6 +159,9 @@ type ExecutionService struct {
 	results *ResultVault
 	// health is the free probe's record of providers; nil runs without it.
 	health *HealthService
+	// web searches the open web for endpoints (see web_discovery.go); nil is off.
+	web        WebFinder
+	webLimiter RateLimiter
 }
 
 // NewExecutionService builds the service with the generic evaluator

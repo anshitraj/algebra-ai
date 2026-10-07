@@ -188,3 +188,36 @@ func TestClassesAndSimulateReportWhenTheyCannotRun(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoverWebIsListedAndTellsAgentsWhatItDoesNotDo(t *testing.T) {
+	cs := connect(t, &Server{})
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tool *gomcp.Tool
+	for _, x := range list.Tools {
+		if x.Name == "algebra.discover_web" {
+			tool = x
+		}
+	}
+	if tool == nil {
+		t.Fatal("algebra.discover_web must be listed")
+	}
+	if len(requiredOf(t, tool)) != 0 {
+		t.Error("capability or query: neither is required on its own")
+	}
+	for _, phrase := range []string{"Nothing is paid or chosen", "never yours", "unverified web find", "untrusted", "Gemini key"} {
+		if !strings.Contains(tool.Description, phrase) {
+			t.Errorf("the description must say %q", phrase)
+		}
+	}
+
+	res, err := cs.CallTool(context.Background(), &gomcp.CallToolParams{Name: "algebra.discover_web", Arguments: map[string]any{"query": "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError || !strings.Contains(textOf(res), "not enabled") {
+		t.Errorf("a server without execution must say so: %+v", res)
+	}
+}

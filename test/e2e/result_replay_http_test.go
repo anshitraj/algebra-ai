@@ -48,6 +48,9 @@ func serve(t *testing.T) (*wiring.Bundle, string) {
 	t.Setenv("SOLANA_MAINNET_KEYPAIR_FILE", "")
 	t.Setenv("SOLANA_MAINNET_KEYPAIR", "")
 	t.Setenv("RESULT_RETENTION", "")
+	// No model to search the web with, whatever the developer's environment has.
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("GOOGLE_GEMINI_API", "")
 	noCatalogs(t)
 	cfg, err := config.FromEnv()
 	if err != nil {
