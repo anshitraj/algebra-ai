@@ -95,6 +95,27 @@ Sign in, create a USDC Spend Pass (Spend passes), and switch the console to
    rest back to the wallet). The intent records what was actually paid, not the
    ceiling.
 
+## Payment channels, proven on devnet
+
+`cmd/paychan-smoke` runs the x402 `upto` flow through the real
+payment-channels program with a throwaway token, so it needs devnet SOL but no
+USDC:
+
+```bash
+go run ./cmd/paychan-smoke -payer .data/solana-devnet.json -provider .data/demo-provider.json
+```
+
+A run on 2026-10-07 (devnet):
+
+| Step | Transaction |
+|---|---|
+| Test token, accounts | [31zFWSbT…](https://explorer.solana.com/tx/31zFWSbTvE6Mkap34hFbJgLkcpgSajpG4JLVdV4mPAaEpeyUBeNrr9aCbK1udvvNSViRaSG8hHwQEuARMJgA9Nac?cluster=devnet) |
+| Channel open: 0.05 escrowed (payer signed, provider co-signed as fee payer) | [4sTVg2j5…](https://explorer.solana.com/tx/4sTVg2j5tX8KiH2qCd2KRJzzsGZbzwVEmpsLfNw52kwj5GqdTeEJqrbvp2vmuZUXwQD8xW4r81SSffWZA4FNm4Qq?cluster=devnet) |
+| Voucher for 0.012345, settle_and_seal + distribute | [1y138m66…](https://explorer.solana.com/tx/1y138m66QKPTWsX5k5HSrbpS4XJKELzEe9b7w7349fXapPSxJ1QQ83yFp8k376krcFvmAgVxAuALXMnCwezc4x6?cluster=devnet) |
+
+In the last transaction the escrow paid out 0.05: 0.012345 to the provider and
+0.037655 back to the payer.
+
 ## The same thing over the API
 
 With a pass's agent token (`Authorization: Bearer …`):
