@@ -80,7 +80,10 @@ jobs:
         env:
           DATABASE_URL: postgres://algebra:algebra@localhost:5432/algebra?sslmode=disable
         run: |
-          cat <<'EOF' > /tmp/migrate_check.go
+          # The helper has to sit inside the module: Go refuses an internal/ import
+          # from a file outside it ("use of internal package ... not allowed").
+          mkdir -p cmd/migratecheck
+          cat <<'EOF' > cmd/migratecheck/main.go
           package main
 
           import (
@@ -102,7 +105,7 @@ jobs:
           	}
           }
           EOF
-          go run /tmp/migrate_check.go
+          go run ./cmd/migratecheck
 
   web:
     name: Web lint / typecheck / production build
