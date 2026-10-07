@@ -26,6 +26,10 @@ func testEncryptor(t *testing.T) *privacy.AESGCMEncryptor {
 	return enc
 }
 
+// testExpiry is fixed: built from the clock, two calls to testSession could
+// straddle a second and disagree.
+var testExpiry = time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+
 func testSession(merchant string) *Session {
 	return &Session{
 		Merchant: merchant,
@@ -38,7 +42,7 @@ func testSession(merchant string) *Session {
 			AccessToken:  "access-SECRET-value",
 			RefreshToken: "refresh-SECRET-value",
 			TokenType:    "Bearer",
-			Expiry:       time.Now().Add(time.Hour).UTC().Truncate(time.Second),
+			Expiry:       testExpiry,
 		},
 		Settings: map[string]string{"address_id": "addr_1"},
 		LinkedAt: time.Now().UTC().Truncate(time.Second),
