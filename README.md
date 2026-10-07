@@ -100,6 +100,8 @@ ECONOMIC_PROVIDERS="$(go run ./cmd/demo-provider -print-config)" SOLANA_DEVNET_K
 curl -s localhost:8080/api/v1/policy/simulate ... -d '{"capability":"token.price","live_quotes":true}'   # ALLOW: would pay demo:beta; flaky, greedy and trap are refused, with reasons
 ```
 
+A three-minute script for the router, the firewall and payment channels against those providers, with the funding steps and the curl and MCP equivalents: [docs/DEMO.md](docs/DEMO.md).
+
 Wallet and rail details, mainnet, the first-payment runbook and `x402-dryrun` (prices a real provider and has a node *simulate* the payment, sending nothing): [docs/EXECUTION.md](docs/EXECUTION.md).
 
 ## Status, honestly
@@ -133,7 +135,7 @@ connectors/, internal/domain/{intent,merchant,...}   the original shopping produ
 
 ## Documents
 
-[Execution, routing and the Solana rails](docs/EXECUTION.md) · [Economic coordination](docs/ECONOMIC_COORDINATION.md) · [Spend Passes and the firewall](docs/SPEND_PASSES.md) · [MCP](docs/MCP.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Local development](docs/LOCAL_DEVELOPMENT.md) · [Production](docs/PRODUCTION.md) · [REST API](openapi/execution.yaml)
+[Devnet demo](docs/DEMO.md) · [Execution, routing and the Solana rails](docs/EXECUTION.md) · [Economic coordination](docs/ECONOMIC_COORDINATION.md) · [Spend Passes and the firewall](docs/SPEND_PASSES.md) · [MCP](docs/MCP.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Local development](docs/LOCAL_DEVELOPMENT.md) · [Production](docs/PRODUCTION.md) · [REST API](openapi/execution.yaml)
 
 ## Tests
 
