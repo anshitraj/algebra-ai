@@ -93,6 +93,10 @@ type Provider struct {
 	// anybody pays it.
 	Calls30d  int64 `json:"calls_30d,omitempty"`
 	Payers30d int64 `json:"payers_30d,omitempty"`
+	// Billing is how its calls are paid when that isn't x402 on Solana:
+	// "monid-balance" for Monid's tools. Such providers are listed for
+	// discovery and comparison, never routed to.
+	Billing string `json:"billing,omitempty"`
 }
 
 // Payment is one way an endpoint can be paid, as the catalog lists it.

@@ -151,6 +151,12 @@ export const CATALOGS: { id: string; name: string; url: string; blurb: string }[
     url: "https://docs.cdp.coinbase.com/x402/bazaar",
     blurb: "Coinbase's directory of x402 services across every chain, with how much each was paid lately. Algebra reads its most used Solana endpoints.",
   },
+  {
+    id: "monid",
+    name: "Monid",
+    url: "https://monid.ai/tools",
+    blurb: "Monid's tools (Exa, Apify, People Data Labs, DataForSEO, MiniMax and more), read from its open-source connectors. They bill a prepaid Monid balance, not x402, so Algebra lists them for comparison and can't pay them yet.",
+  },
 ];
 
 export function catalogName(source: string): string {

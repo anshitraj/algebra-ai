@@ -82,6 +82,8 @@ export type ProviderSummary = {
   /** Solana clusters some endpoint can be paid on: "solana" (mainnet), "solana-devnet". */
   networks: string[];
   source: string;
+  /** How it is paid when that isn't x402 on Solana: "monid-balance". Listed, never routed to. */
+  billing?: string;
   /** What the directory says it was paid in the last 30 days: calls, and the most distinct payers any endpoint had. Not every catalog says. */
   calls_30d?: number;
   payers_30d?: number;

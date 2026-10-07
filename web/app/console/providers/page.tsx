@@ -199,6 +199,14 @@ function ProviderRow({ provider: p, open, onToggle }: { provider: ProviderSummar
             <span className="font-display text-[0.95rem] font-semibold text-foreground">{p.name}</span>
             <SourceBadge source={p.source} />
             <NetworkBadges networks={p.networks ?? []} />
+            {p.billing === "monid-balance" && (
+              <span
+                className="rounded-full bg-border px-2 py-0.5 text-[0.6875rem] font-medium whitespace-nowrap text-muted"
+                title="Billed to a prepaid Monid balance, not x402: listed for comparison, Algebra can't pay it yet"
+              >
+                Monid balance · not payable yet
+              </span>
+            )}
             <span className="text-xs text-muted">{categoryLabel(p.category)}</span>
           </span>
           {p.description && <span className="mt-1 line-clamp-2 block text-sm leading-relaxed text-muted">{p.description}</span>}

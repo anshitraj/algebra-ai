@@ -47,6 +47,7 @@ import (
 	"github.com/project-algebra/algebra/providers/bazaar"
 	"github.com/project-algebra/algebra/providers/catalog"
 	"github.com/project-algebra/algebra/providers/jupiter"
+	"github.com/project-algebra/algebra/providers/monid"
 	"github.com/project-algebra/algebra/providers/paymentdemo"
 	"github.com/project-algebra/algebra/providers/paysh"
 	"github.com/project-algebra/algebra/providers/razorpay"
@@ -634,6 +635,12 @@ func buildDirectory(cfg *config.Config) *catalog.Multi {
 				HTTP:    safehttp.New(safehttp.Options{Timeout: 30 * time.Second, MaxBody: 16 << 20}),
 			}))
 		}
+	}
+	// Monid's tools (monid.ai), listed from its open-source connector repo for
+	// discovery and comparison. They bill a prepaid Monid balance, not x402,
+	// so they are never routed to. MONID_CATALOG=off leaves them out.
+	if !strings.EqualFold(os.Getenv("MONID_CATALOG"), "off") {
+		sources = append(sources, monid.New())
 	}
 	if len(sources) == 0 {
 		return nil
