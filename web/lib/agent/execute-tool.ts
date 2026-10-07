@@ -88,6 +88,43 @@ function outcomeOf(a: client.ExecutionAnswer, providerId: string) {
   };
 }
 
+/** Why providers were left out, grouped, short: "price_above_listing: demo:greedy". */
+function summarizeRejections(b: Record<string, unknown>): string[] | undefined {
+  const out = (b.outcome as Record<string, unknown> | undefined) ?? b;
+  const rej = (out.rejected ?? b.rejected) as { provider?: string; code: string; detail?: string }[] | undefined;
+  if (!rej?.length) return undefined;
+  const by = new Map<string, string[]>();
+  for (const r of rej) {
+    if (r.code === "network_not_allowed" || r.code === "outranked") continue;
+    by.set(r.code, [...(by.get(r.code) ?? []), r.provider ?? "?"]);
+  }
+  return [...by.entries()].map(([code, ps]) => `${code}: ${[...new Set(ps)].slice(0, 4).join(", ")}`);
+}
+
+/** A dry run's answer, for the model. */
+function simulationOf(a: client.ExecutionAnswer) {
+  const s = a.body as {
+    verdict?: string;
+    reasons?: string[] | null;
+    would_pay?: { provider: string; price_minor: number; price_source: string };
+    plan?: { offers?: { rank: number; provider: string; cost_minor: number; score: number }[] };
+    candidates?: { provider: string; verdict: string; reasons?: string[] }[];
+    error?: string;
+  };
+  if (a.status >= 400) return { verdict: "error", reason: s.error };
+  return {
+    verdict: s.verdict,
+    reasons: s.reasons ?? undefined,
+    would_pay: s.would_pay ? { provider: s.would_pay.provider, price: usdc(s.would_pay.price_minor), price_is: s.would_pay.price_source } : undefined,
+    plan: (s.plan?.offers ?? []).map((o) => `${o.rank}. ${o.provider} ${usdc(o.cost_minor)} (score ${o.score.toFixed(2)})`),
+    refused: (s.candidates ?? [])
+      .filter((c) => c.verdict === "DENY" && !(c.reasons ?? []).some((r) => r.startsWith("network_not_allowed")))
+      .slice(0, 8)
+      .map((c) => `${c.provider}: ${(c.reasons ?? []).join("; ")}`),
+    note: "A dry run: nothing was reserved or paid.",
+  };
+}
+
 export async function executeTool(name: string, input: Record<string, unknown>, identity: ServerIdentity): Promise<ToolResult> {
   try {
     switch (name) {
@@ -157,6 +194,39 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
           },
         };
       }
+      case "route_work":
+      case "check_policy": {
+        needPass(identity);
+        const work = str(input, "work");
+        const max = input.max_price_usdc === undefined ? 0.05 : Number(input.max_price_usdc);
+        if (!Number.isFinite(max) || max <= 0) throw new Error("max_price_usdc must be a positive number of USDC");
+        if (max > MAX_CALL_USDC) throw new Error(`The chat pays at most ${MAX_CALL_USDC} USDC per call. Ask the user before anything larger, and use their Spend Pass from their own agent.`);
+        const body = input.input && typeof input.input === "object" && !Array.isArray(input.input) ? input.input : {};
+        const strategy = typeof input.strategy === "string" ? input.strategy : "auto";
+        const req = { capability: work, providers: [], input: body, budget_max_minor: Math.round(max * USDC), provider_policy: { strategy } };
+        if (name === "check_policy") {
+          const a = await client.simulate(identity, req);
+          return { ok: true, data: simulationOf(a) };
+        }
+        const a = await client.execute(identity, req);
+        const out = outcomeOf(a, "routed");
+        const routing = (a.body.routing ?? (a.body.outcome as Record<string, unknown> | undefined)?.routing) as
+          | { mode?: string; offers?: { rank: number; provider: string; cost_minor: number; score: number; notes?: string[] }[] }
+          | undefined;
+        return {
+          ok: true,
+          data: {
+            ...out,
+            routing: routing
+              ? {
+                  mode: routing.mode,
+                  ranked: (routing.offers ?? []).slice(0, 5).map((o) => ({ rank: o.rank, provider: o.provider, price: usdc(o.cost_minor), score: Math.round(o.score * 100) / 100, why: (o.notes ?? []).slice(0, 3) })),
+                }
+              : undefined,
+            refused_providers: summarizeRejections(a.body),
+          },
+        };
+      }
       case "pay_and_call": {
         needPass(identity);
         const providerId = str(input, "provider_id");
@@ -175,7 +245,9 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       case "run_approved_intent": {
         needPass(identity);
         const providerId = str(input, "provider_id");
-        const a = await client.executeIntent(identity, str(input, "intent_id"), [providerId]);
+        // "routed": the intent came from route_work, so Algebra routes it again
+        // across every provider of its class.
+        const a = await client.executeIntent(identity, str(input, "intent_id"), providerId === "routed" ? [] : [providerId]);
         return { ok: true, data: outcomeOf(a, providerId) };
       }
       case "execution_status": {

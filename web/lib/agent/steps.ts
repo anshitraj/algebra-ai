@@ -37,6 +37,8 @@ export function reasonText(code: string) {
 }
 
 const TITLES: Record<string, string> = {
+  route_work: "Routing across providers",
+  check_policy: "Checking the spend firewall",
   search_providers: "Searching the catalogs",
   get_provider_endpoints: "Reading the endpoints",
   pay_and_call: "Paying for the call",
@@ -50,6 +52,9 @@ function shortId(id: string) {
 }
 
 export function stepTitle(tool: string, input: Record<string, unknown>): string {
+  if ((tool === "route_work" || tool === "check_policy") && typeof input.work === "string") {
+    return tool === "route_work" ? `Routing ${input.work} across providers` : `Would ${input.work} pass?`;
+  }
   if (tool === "search_providers" && typeof input.query === "string" && input.query) return `${TITLES[tool]} for “${input.query}”`;
   if ((tool === "get_provider_endpoints" || tool === "pay_and_call") && typeof input.provider_id === "string") {
     return tool === "pay_and_call" ? `Paying ${shortId(input.provider_id)}` : `Reading ${shortId(input.provider_id)}'s endpoints`;
@@ -203,7 +208,15 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
     }
     case "pay_and_call":
     case "run_approved_intent":
+    case "route_work":
       return paidOutcome(data);
+    case "check_policy": {
+      const wp = data.would_pay as { provider?: string; price?: string } | undefined;
+      return {
+        status: "done",
+        summary: [String(data.verdict ?? "").toLowerCase().replace(/_/g, " "), wp?.provider ? `would pay ${wp.provider} ${wp.price ?? ""}`.trim() : ""].filter(Boolean).join(" · "),
+      };
+    }
     case "execution_status": {
       const tx = typeof data.transaction === "string" ? data.transaction : undefined;
       return {

@@ -10,7 +10,7 @@ export function detectPendingApproval(
   _toolInput: Record<string, unknown>,
   result: { ok: boolean; data?: unknown }
 ): PendingApproval | undefined {
-  if ((toolName !== "pay_and_call" && toolName !== "run_approved_intent") || !result.ok) return undefined;
+  if ((toolName !== "pay_and_call" && toolName !== "run_approved_intent" && toolName !== "route_work") || !result.ok) return undefined;
   const d = result.data as { outcome?: string; intent_id?: unknown; provider_id?: unknown } | undefined;
   if (d?.outcome !== "approval_required" || typeof d.intent_id !== "string" || !d.intent_id) return undefined;
   return { intentId: d.intent_id, provider: typeof d.provider_id === "string" ? d.provider_id : undefined };

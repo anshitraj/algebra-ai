@@ -3,6 +3,8 @@
 // tool-input format all three provider APIs agree on, so this list is the
 // single source of truth each adapter converts into its own wire format.
 
+import { WORK_CLASS_IDS, workClassList } from "./classes";
+
 export type JsonSchema = {
   type: "object";
   properties: Record<string, unknown>;
@@ -22,7 +24,49 @@ const providerIdParam = {
   },
 };
 
+const workParams = {
+  work: {
+    type: "string",
+    enum: WORK_CLASS_IDS,
+    description: "The class of work. " + workClassList(),
+  },
+  input: {
+    type: "object",
+    description: "The class's own input, with its field names exactly as listed (Algebra translates it for each provider).",
+    properties: {},
+  },
+  max_price_usdc: {
+    type: "number",
+    description: "The most this one call may cost, in USDC. Use the user's stated limit, else 0.05.",
+  },
+  strategy: {
+    type: "string",
+    enum: ["auto", "cheapest", "fastest"],
+    description: "How to choose among providers: auto (best overall: price, reliability, speed, honesty), cheapest or fastest. Default auto.",
+  },
+};
+
 export const AGENT_TOOLS: AgentTool[] = [
+  {
+    name: "route_work",
+    description:
+      "The preferred way to get something done: have Algebra do a class of work by routing across every provider that does it, " +
+      "instead of picking one provider yourself. Algebra asks each provider for its real price (unpaid), skips any that are down, " +
+      "charge more than they list or price like a trap, ranks the rest by the strategy under the user's Spend Pass, pays the best in " +
+      "USDC on Solana, and falls back to the next only when the attempt is proven to have moved no money. Returns the same outcomes as " +
+      "pay_and_call, plus the routing: who was chosen, at what price, and why. Use pay_and_call only when the user names a provider " +
+      "or the work isn't one of these classes.",
+    parameters: { type: "object", properties: workParams, required: ["work", "input", "max_price_usdc"] },
+  },
+  {
+    name: "check_policy",
+    description:
+      "A dry run of route_work: would Algebra allow this under the user's Spend Pass, who would it pay and how much, and why every " +
+      "other provider would be refused (down, over its listing, trap price, wrong network, not allowed by the pass, new provider). " +
+      "Nothing is reserved or paid; providers only get the unpaid price request. Use it when the user asks what something would cost, " +
+      "whether it would be allowed, or which provider Algebra would pick.",
+    parameters: { type: "object", properties: workParams, required: ["work", "input"] },
+  },
   {
     name: "search_providers",
     description:

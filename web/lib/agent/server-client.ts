@@ -146,10 +146,27 @@ async function answer(res: Response): Promise<ExecutionAnswer> {
 
 export type ExecuteBody = {
   capability: string;
+  /** Empty for a class of work: Algebra routes across every provider of it. */
   providers: string[];
   input: unknown;
   budget_max_minor: number;
+  provider_policy?: { strategy?: string };
 };
+
+/** POST /api/v1/policy/simulate: what /execute would do, without reserving or paying anything. */
+export async function simulate(identity: ServerIdentity, b: ExecuteBody): Promise<ExecutionAnswer> {
+  const res = await rawFetch("/api/v1/policy/simulate", identity, {
+    method: "POST",
+    body: {
+      ...b,
+      currency: "USDC",
+      constraints: { allowed_networks: [identity.network] },
+      spend_pass_id: identity.passId,
+      live_quotes: true,
+    },
+  });
+  return answer(res);
+}
 
 /** POST /api/v1/execute: price, check against the pass, pay on this chat's cluster, call, verify. */
 export async function execute(identity: ServerIdentity, b: ExecuteBody): Promise<ExecutionAnswer> {

@@ -8,12 +8,12 @@ import type { ServerIdentity } from "./server-client";
 // creates fresh for every request — so the count is per turn. A model that
 // loops on paying would otherwise spend the pass down one call at a time.
 const MAX_PAID_CALLS_PER_TURN = 3;
-const PAID_TOOLS = new Set(["pay_and_call", "run_approved_intent"]);
+const PAID_TOOLS = new Set(["pay_and_call", "run_approved_intent", "route_work"]);
 const paidThisTurn = new WeakMap<ServerIdentity, number>();
 
 // Read-only lookups that are safe to run side by side. A round made only of
 // these runs concurrently. Anything that pays runs in the order the model gave.
-const PARALLEL_SAFE = new Set(["search_providers", "get_provider_endpoints", "execution_status"]);
+const PARALLEL_SAFE = new Set(["search_providers", "get_provider_endpoints", "execution_status", "check_policy"]);
 
 /** Runs one round's tool calls, in parallel when every call is a read-only lookup. Results keep call order. */
 export async function runRound<C, R>(calls: C[], nameOf: (c: C) => string, run: (c: C) => Promise<R>): Promise<R[]> {
