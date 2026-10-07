@@ -49,7 +49,9 @@ func TestRouterOverHTTP_AClassIsPaidToTheBestHonestProvider(t *testing.T) {
 	b, base := serve(t)
 	token := issuePass(t, b)
 
-	status, _, out := call(t, "POST", base+"/api/v1/execute", token, priceRequest("e2e-route-"+uuid.NewString()))
+	req := priceRequest("e2e-route-" + uuid.NewString())
+	req["constraints"] = map[string]any{"allowed_networks": []string{"sandbox"}}
+	status, _, out := call(t, "POST", base+"/api/v1/execute", token, req)
 	if status != 200 || out["delivered"] != true {
 		t.Fatalf("routed call: %d %v", status, out)
 	}

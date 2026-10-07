@@ -155,6 +155,13 @@ For each endpoint it keeps the cheapest plain-x402 USDC option on each Solana cl
 
 Settings: `PAYSH_*`, `CIRCLE_*`, `PAYAI_*`, `CDP_*` (`…_ENABLED=off`, `…_DISCOVERY_URL`; see `.env.example`).
 
+**Monid (`providers/monid`), listed only.** Monid sells 624 tool endpoints from 24 providers (Apify scrapers, search, enrichment) behind one API key and
+bills them from a prepaid Monid balance. Its connectors are open source (github.com/monid-ai/monid), so `cmd/monid-import` reads them, by pattern and without
+running them, into a snapshot built into the binary: names, categories, method and path, and a USD price where the provider bills in dollars (241 endpoints;
+the rest bill in vendor credits and are left unpriced rather than guessed). They appear in the directory as `monid:<provider>` with `billing: monid-balance`,
+next to the x402 providers, so a person can compare, and are never routed or paid: nothing in Algebra can settle a Monid balance. `providers/monid/client.go`
+speaks Monid's API (`/discover`, `/inspect`, `/run`, `/runs/{id}`) for when a key and a rail exist; it is not wired into the API. `MONID_CATALOG=off` hides them.
+
 Checked against the live sites with `cmd/x402-dryrun` (sends nothing): Google Vision through Pay.sh's gateway, Birdeye, Exa, Vybe and Nansen all answer with x402 v2
 on Solana mainnet in Circle's USDC with a sponsor paying fees, and the rail builds a valid payment for each. Nansen's 2 USDC call is refused by the rail's 1 USDC
 ceiling, as it should be.
@@ -260,14 +267,16 @@ provider's endpoints, and pays for one call through `POST /api/v1/execute`.
 ## What is real, what is not (as of this commit)
 
 * **Real, and exercised against real HTTP:** the executor and router, the x402 runner (v1 body and v2 header challenges), the coordinator, SSRF-safe HTTP,
-  receipts, quality evaluation, fallback, result replay, the `/mcp` endpoint, the four catalogs.
+  receipts, quality evaluation, fallback, result replay, the `/mcp` endpoint, the four payable catalogs and Monid's listing.
 * **Real, and checked against live Solana clusters (read-only):** the address derivation (5 of 5 associated token accounts the mainnet network created match
   ours), the transaction encoding (a devnet node ran our compute-budget instructions and our `TransferChecked`, failing only on the empty token accounts), the
   payment-channels encoders against a real devnet channel (same PDA, accounts and bytes), and, with `x402-dryrun`, live x402 v2 providers on mainnet priced, parsed and
   accepted. Jupiter's real quote answer is a test fixture (`providers/jupiter/testdata`), and its own minimum-output rounding matches ours.
-* **Verified on fake clusters only:** a full payment or swap landing and being settled. The fake x402 provider's verifier is written from the spec independently
-  of the code that builds payments; the swap's fake Jupiter and node share one chain and can misbehave (`providers/jupiter/jupitertest`).
-  **No real payment or swap has been made.** That step needs a funded wallet and is the operator's to take (runbook above).
+* **Real payments on devnet, through Algebra:** x402 `exact` calls to the demo providers and a metered `upto` call through the payment-channels program
+  (open, then settle and refund from a voucher), each chosen by the router and passed by the firewall, receipts committed at the amount the chain proves.
+  Transactions in [DEMO.md](DEMO.md#proof-real-devnet-payments-through-algebra-2026-10-07).
+* **Not yet real:** a mainnet payment (the demo's mainnet rail is configured and dry-runs against live providers; the wallet is the operator's to fund, runbook
+  above) and a swap landing, verified on a fake cluster only (`providers/jupiter/jupitertest`).
 * **Simulated:** the sandbox rail and sandbox provider, which are for local runs and tests. Their receipts are marked `test`.
 * **Not built:** cross-chain transfers (CCTP) and any EVM rail, so Base-only x402 providers are listed but not payable; selling a token or buying SOL; a recipient
   allow-list for passes. These are held back on purpose: a burn to a wrong address is irrecoverable, and there is nothing yet on the EVM side to spend what is bridged.

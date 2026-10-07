@@ -146,3 +146,28 @@ curl -s -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' lo
 
 The same tools are on the MCP server at `/mcp`: `algebra.classes`,
 `algebra.simulate`, `algebra.execute`.
+
+## Without a chain: the sandbox providers
+
+With `ECONOMIC_SANDBOX=on` the API serves the same cast itself, paid through
+the sandbox rail (no chain, no money, receipts marked `test`):
+`sandbox:alpha`, `sandbox:beta`, `sandbox:flaky`, `sandbox:greedy` and
+`sandbox:trap`, at `/api/v1/sandbox/x402/prices/{name}`, with the prices and
+the misbehaviour in the table above. Ask for `token.price` with
+`"constraints":{"allowed_networks":["sandbox"]}` and the router pays
+sandbox:beta and refuses the other three with their reasons. This is what the
+end-to-end tests drive over HTTP (`test/e2e/router_firewall_http_test.go`):
+routing and the guards, the dry run, the kill switch, the new-provider gate and
+the per-minute cap.
+
+## Mainnet
+
+The `api-demo` launch configuration sets `SOLANA_ALLOW_MAINNET=yes`, so a
+wallet at `.data/solana-mainnet.json` becomes the mainnet rail
+(`go run ./cmd/solana-wallet -new -out .data/solana-mainnet.json` makes one).
+Every payment is capped at 1 USDC unless `SOLANA_MAX_PAYMENT_USDC` says less.
+Unfunded, it still answers dry runs against the live catalogs: switch the
+console to **Mainnet** and use *Would it pass?*, or `POST /api/v1/policy/simulate`
+with `"allowed_networks":["solana"]` and `"live_quotes":true`. A real mainnet
+call needs real USDC in that wallet (a few cents is enough; x402 providers pay
+the fees) and is the operator's to make.

@@ -107,9 +107,10 @@ Wallet and rail details, mainnet, the first-payment runbook and `x402-dryrun` (p
 ## Status, honestly
 
 - **Built and tested:** everything above. The Go suite (unit, Postgres integration and end-to-end over real HTTP and MCP) passes; the web app typechecks and lints clean.
-- **Verified against live services, read-only:** the four catalogs, Jupiter's quote API, Solana address derivation and transaction encoding on mainnet and devnet, and real x402 providers priced and their payments built and simulated with `cmd/x402-dryrun`.
-- **Verified on fakes only:** a payment or a swap *landing* and being settled from the chain. The fake cluster's verifier is written from the x402 spec independently of the code that builds payments, and the swap's fake Jupiter and node share one chain and can misbehave. **No real payment or swap has been made yet**; that needs a funded wallet and is the operator's to take (the runbook is in [docs/EXECUTION.md](docs/EXECUTION.md)).
-- **Not built:** cross-chain transfers (CCTP) and any EVM rail, so Base-only x402 providers are listed but not payable; selling a token or buying SOL; OAuth sign-in for MCP (a Spend Pass bearer token is used); a recipient allow-list for passes.
+- **Verified against live services, read-only:** the four payable catalogs, Jupiter's quote API, Solana address derivation and transaction encoding on mainnet and devnet, and real x402 providers priced and their payments built and simulated with `cmd/x402-dryrun`. Mainnet is configured in the demo and dry-runs against live providers (a Circle-listed price provider, a Coinbase-listed token-risk provider with two down and two trap-priced ones refused, PayAI's web search).
+- **Real payments, on devnet:** x402 `exact` calls and a metered `upto` call through a Solana payment channel (escrow, voucher, settle and refund in one transaction), each chosen and paid by the router with its guards and the firewall on. The transactions are linked in [docs/DEMO.md](docs/DEMO.md#proof-real-devnet-payments-through-algebra-2026-10-07).
+- **Not yet real:** a mainnet payment, which needs a funded wallet and is the operator's to make (runbook in [docs/EXECUTION.md](docs/EXECUTION.md)), and a swap landing, verified on a fake cluster only.
+- **Not built:** cross-chain transfers (CCTP) and any EVM rail, so Base-only x402 providers are listed but not payable; Monid's tools, listed for comparison but billed from a Monid balance rather than x402, and card rails such as Stripe; selling a token or buying SOL; OAuth sign-in for MCP (a Spend Pass bearer token is used); a recipient allow-list for passes.
 - **The old product** (a grocery shopping agent, and tenant payment intents) still builds and its tests pass; its connectors, including web search, are kept as is, but it is not what Algebra is now. See [docs/legacy](docs/legacy/README.md).
 
 ## Repository layout
@@ -127,7 +128,8 @@ internal/app            services: economic coordinator, execution (router, quoti
 internal/platform       postgres, redis, solana (RPC, transactions, simulation), safehttp, config, wiring
 internal/api/v1         REST transport (thin); internal/mcpserver: MCP transport (thin)
 providers/              x402client (runner), solanax402 (rail), paychan (payment channels), jupiter (swaps),
-                        catalog + paysh + bazaar (the four catalogs), webdiscovery, sandboxpay
+                        catalog + paysh + bazaar (the four catalogs), monid (listed only), webdiscovery,
+                        sandboxpay (the sandbox rail and providers)
 migrations/             versioned SQL; Postgres is authoritative
 web/                    Next.js console and the agent chat
 connectors/, internal/domain/{intent,merchant,...}   the original shopping product, kept
