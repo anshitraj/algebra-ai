@@ -20,7 +20,9 @@ import (
 func (s *ExecutionService) SetResults(v *ResultVault) { s.results = v }
 
 // PurgeResults removes the answers whose time is up.
-func (s *ExecutionService) PurgeResults(ctx context.Context) (int, error) { return s.results.Purge(ctx) }
+func (s *ExecutionService) PurgeResults(ctx context.Context) (int, error) {
+	return s.results.Purge(ctx)
+}
 
 // discardKey carries a request's decision not to have its answer kept down to
 // the attempt that receives it. It is a per-request option, not a dependency.

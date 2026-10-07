@@ -62,7 +62,7 @@ func TestGuardRefusesHoneypotPrices(t *testing.T) {
 	if lone.outlier(25_000_000) != "" {
 		t.Fatal("without peers $25 isn't an outlier by itself")
 	}
-	if lone.outlier(2_000 * 1_000_000) == "" {
+	if lone.outlier(2_000*1_000_000) == "" {
 		t.Fatal("$2,000 for one call is a trap whatever the peers charge")
 	}
 }

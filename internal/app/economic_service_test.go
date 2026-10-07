@@ -61,7 +61,9 @@ func (f *fakeRail) land(r *econ.Reservation, amount int64) {
 
 type fakeRecovery struct{ answer Recovery }
 
-func (f fakeRecovery) Recover(context.Context, econ.Reservation) (Recovery, error) { return f.answer, nil }
+func (f fakeRecovery) Recover(context.Context, econ.Reservation) (Recovery, error) {
+	return f.answer, nil
+}
 
 type econRig struct {
 	svc    *EconomicService

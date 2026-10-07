@@ -106,7 +106,9 @@ func TestHealthRepo_SaveAndRead(t *testing.T) {
 	ctx := context.Background()
 	repo := NewHealthRepo(db)
 	id := "cand_test_" + time.Now().Format("150405.000000")
-	t.Cleanup(func() { _, _ = db.Pool.Exec(context.Background(), `DELETE FROM provider_health WHERE candidate_id = $1`, id) })
+	t.Cleanup(func() {
+		_, _ = db.Pool.Exec(context.Background(), `DELETE FROM provider_health WHERE candidate_id = $1`, id)
+	})
 	h := app.EndpointHealth{CandidateID: id, Provider: "payai:test", Capability: "token.price", Endpoint: "https://x.example/p", Network: "solana",
 		Status: app.HealthUp, HTTPStatus: 402, LatencyMS: 210, ListedPriceMinor: 1_000, LivePriceMinor: 2_000, Overcharges: true,
 		Checks: 3, Ups: 2, Failures: 0, CheckedAt: time.Now().UTC().Truncate(time.Microsecond)}

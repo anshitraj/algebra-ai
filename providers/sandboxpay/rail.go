@@ -51,7 +51,7 @@ type payment struct {
 }
 
 var (
-	_ app.Rail             = (*Rail)(nil)
+	_ app.Rail              = (*Rail)(nil)
 	_ app.PaymentAuthorizer = (*Rail)(nil)
 )
 

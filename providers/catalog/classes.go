@@ -39,7 +39,7 @@ type ClassMember struct {
 	Networks   []string `json:"networks"`
 	// Routable: Algebra knows how to give it the class's input. A member that
 	// isn't is listed for comparison only.
-	Routable bool `json:"routable"`
+	Routable bool   `json:"routable"`
 	Reason   string `json:"not_routable_reason,omitempty"`
 }
 

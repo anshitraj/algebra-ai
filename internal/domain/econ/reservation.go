@@ -63,9 +63,9 @@ type Evidence struct {
 	ProviderOperationID string `json:"provider_operation_id,omitempty"`
 	// Channel is the payment channel a usage-based ("upto") payment escrowed
 	// its ceiling in; the settled amount and the refund are read from it.
-	Channel string `json:"channel,omitempty"`
-	RequestHash         string `json:"request_hash,omitempty"`
-	ResultHash          string `json:"result_hash,omitempty"`
+	Channel     string `json:"channel,omitempty"`
+	RequestHash string `json:"request_hash,omitempty"`
+	ResultHash  string `json:"result_hash,omitempty"`
 
 	// AuthorityIssued: Algebra released payment authority for this attempt
 	// (signed a payment). After that, "nothing happened" needs proof.
