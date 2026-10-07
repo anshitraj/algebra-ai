@@ -46,6 +46,7 @@ import (
 	"github.com/project-algebra/algebra/providers/arcium"
 	"github.com/project-algebra/algebra/providers/bazaar"
 	"github.com/project-algebra/algebra/providers/catalog"
+	"github.com/project-algebra/algebra/providers/jupiter"
 	"github.com/project-algebra/algebra/providers/paymentdemo"
 	"github.com/project-algebra/algebra/providers/paysh"
 	"github.com/project-algebra/algebra/providers/razorpay"
@@ -507,7 +508,11 @@ func envWebhookSecret(provider string) string {
 // sandbox mode), the capability catalog, and the providers an agent can name.
 func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.EconomicService, store app.ExecutionStore) (*app.ExecutionService, map[string][]routing.Candidate, []*solanax402.Rail, error) {
 	var solanaRails []*solanax402.Rail
-	catalog, err := app.NewStaticCatalog(app.DefaultCapabilities()...)
+	caps := app.DefaultCapabilities()
+	if cfg.Jupiter.Enabled {
+		caps = append(caps, jupiter.CapabilityInfo())
+	}
+	catalog, err := app.NewStaticCatalog(caps...)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("capability catalog: %w", err)
 	}
@@ -553,7 +558,57 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 	exec.RegisterRunner(x402client.New(x402client.Config{
 		HTTP: safehttp.New(httpOpts), Networks: networks, ReuseQuoteFor: 15 * time.Second,
 	}))
+	if cfg.Jupiter.Enabled {
+		if err := wireJupiter(cfg, solanaRails, econSvc, exec, providers); err != nil {
+			return nil, nil, nil, err
+		}
+	}
 	return exec, providers, solanaRails, nil
+}
+
+// wireJupiter turns on buying tokens with USDC through Jupiter. It spends from
+// the wallet of the verified Solana mainnet payment rail, so it is off, and
+// says so, when there isn't one: Jupiter has no devnet, and a swap is never
+// attempted on a cluster that couldn't be verified.
+func wireJupiter(cfg *config.Config, rails []*solanax402.Rail, econSvc *app.EconomicService, exec *app.ExecutionService, providers map[string][]routing.Candidate) error {
+	var mainnet *config.SolanaConfig
+	for i := range cfg.SolanaRails {
+		if c := strings.ToLower(cfg.SolanaRails[i].Cluster); c == "mainnet" || c == "mainnet-beta" {
+			mainnet = &cfg.SolanaRails[i]
+		}
+	}
+	verified := false
+	for _, r := range rails {
+		verified = verified || r.Network() == chain.Solana
+	}
+	if mainnet == nil || !verified {
+		log.Printf("wiring: JUPITER_SWAP_ENABLED is on but there is no verified Solana mainnet wallet (SOLANA_MAINNET_KEYPAIR_FILE with SOLANA_ALLOW_MAINNET=yes): swaps are OFF")
+		return nil
+	}
+	kp, rpcURL, err := loadSolanaWallet(*mainnet)
+	if err != nil {
+		return err
+	}
+	rail, err := jupiter.NewRail(jupiter.RailConfig{RPC: solana.NewRPC(rpcURL, nil), Signer: kp, MaxSwapMinor: cfg.Jupiter.MaxSwapMinor})
+	if err != nil {
+		return err
+	}
+	econSvc.RegisterRail(rail)
+	exec.RegisterRunner(jupiter.NewRunner(jupiter.RunnerConfig{
+		Client: jupiter.NewClient(cfg.Jupiter.BaseURL, cfg.Jupiter.APIKey, safehttp.New(safehttp.Options{Timeout: 30 * time.Second})),
+		Wallet: kp.PublicKey(), MaxSwapMinor: cfg.Jupiter.MaxSwapMinor, MaxSlippageBps: cfg.Jupiter.MaxSlippageBps,
+	}))
+	c, err := jupiter.Candidate()
+	if err != nil {
+		return err
+	}
+	providers[c.Provider] = append(providers[c.Provider], c)
+	most := cfg.Jupiter.MaxSwapMinor
+	if most <= 0 {
+		most = jupiter.DefaultMaxSwapMinor
+	}
+	log.Printf("wiring: Jupiter swaps enabled: wallet %s, at most %s USDC per swap", kp.PublicKey(), chain.FormatUnits(most, chain.USDCDecimals))
+	return nil
 }
 
 // buildDirectory builds the catalogs agents can browse and name: Pay.sh,
@@ -605,28 +660,37 @@ var defaultSolanaRPC = map[string]string{
 	"mainnet": "https://api.mainnet-beta.solana.com",
 }
 
+// loadSolanaWallet reads a cluster's wallet and the node to use for it. The
+// error never echoes the key.
+func loadSolanaWallet(sc config.SolanaConfig) (*solana.Keypair, string, error) {
+	text := sc.Keypair
+	if sc.KeypairFile != "" {
+		b, err := os.ReadFile(sc.KeypairFile)
+		if err != nil {
+			return nil, "", fmt.Errorf("SOLANA_KEYPAIR_FILE: %w", err)
+		}
+		text = string(b)
+	}
+	kp, err := solana.ParseKeypair(text)
+	if err != nil {
+		return nil, "", fmt.Errorf("the Solana wallet couldn't be loaded: %w", err)
+	}
+	url := sc.RPCURL
+	if url == "" {
+		url = defaultSolanaRPC[sc.Cluster]
+	}
+	return kp, url, nil
+}
+
 // buildSolanaRail builds the Solana USDC rail and checks it against the
 // cluster. A mistake that could send money to the wrong place (a wallet that
 // won't load, a node on another cluster) stops startup. A node that is merely
 // unreachable does not: the rail is left out and said so, so the API still
 // serves and no payment is made on a cluster that couldn't be verified.
 func buildSolanaRail(ctx context.Context, sc config.SolanaConfig) (*solanax402.Rail, error) {
-	text := sc.Keypair
-	if sc.KeypairFile != "" {
-		b, err := os.ReadFile(sc.KeypairFile)
-		if err != nil {
-			return nil, fmt.Errorf("SOLANA_KEYPAIR_FILE: %w", err)
-		}
-		text = string(b)
-	}
-	// The error never echoes the key.
-	kp, err := solana.ParseKeypair(text)
+	kp, url, err := loadSolanaWallet(sc)
 	if err != nil {
-		return nil, fmt.Errorf("the Solana wallet couldn't be loaded: %w", err)
-	}
-	url := sc.RPCURL
-	if url == "" {
-		url = defaultSolanaRPC[sc.Cluster]
+		return nil, err
 	}
 	rail, err := solanax402.New(solanax402.Config{
 		Cluster: sc.Cluster, RPC: solana.NewRPC(url, nil), Signer: kp, MaxPaymentMinor: sc.MaxPaymentMinor,

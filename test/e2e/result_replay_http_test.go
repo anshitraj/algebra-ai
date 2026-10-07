@@ -70,18 +70,26 @@ func serve(t *testing.T) (*wiring.Bundle, string) {
 // issuePass makes a person with a USDC pass and returns the pass's token.
 func issuePass(t *testing.T, b *wiring.Bundle) string {
 	t.Helper()
+	token, _, _ := issuePassWith(t, b, 1_000_000)
+	return token
+}
+
+// issuePassWith makes a person with a USDC pass of that budget and returns the
+// pass's token, the person's ID and the pass's ID.
+func issuePassWith(t *testing.T, b *wiring.Bundle, budgetMinor int64) (token, userID, passID string) {
+	t.Helper()
 	user, err := b.Users.Create(context.Background(), "replay-"+uuid.NewString()+"@example.test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	issued, err := b.SpendPasses.Create(context.Background(), user.ID, spendpass.Pass{
-		Label: "e2e", AgentKind: spendpass.AgentCustom, Currency: "USDC", BudgetMinorUnits: 1_000_000, BudgetPeriod: spendpass.PeriodTotal,
+		Label: "e2e", AgentKind: spendpass.AgentCustom, Currency: "USDC", BudgetMinorUnits: budgetMinor, BudgetPeriod: spendpass.PeriodTotal,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return issued.Token
+	return issued.Token, user.ID, issued.ID
 }
 
 func call(t *testing.T, method, url, token string, body any) (int, http.Header, map[string]any) {

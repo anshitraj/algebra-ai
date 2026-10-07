@@ -113,6 +113,11 @@ type Config struct {
 	PayAI  CircleConfig
 	CDP    CircleConfig
 
+	// Jupiter configures buying tokens with USDC through Jupiter's Swap API
+	// (providers/jupiter); off unless JUPITER_SWAP_ENABLED=on, and it needs the
+	// mainnet wallet.
+	Jupiter JupiterConfig
+
 	// Results is how long the answer to a paid call is kept, so asking again
 	// returns it (RESULT_RETENTION, RESULT_MAX_BYTES; see results.go).
 	Results ResultsConfig
@@ -394,6 +399,9 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	if err := loadResults(&cfg.Results); err != nil {
+		return nil, err
+	}
+	if err := loadJupiter(&cfg.Jupiter); err != nil {
 		return nil, err
 	}
 	switch strings.ToLower(os.Getenv("ECONOMIC_SANDBOX")) {

@@ -18,7 +18,7 @@ import (
 
 type executeToolInput struct {
 	AgentToken  string               `json:"agent_token,omitempty" jsonschema:"bearer token identifying the calling agent; omit when the connection sends Authorization: Bearer"`
-	Capability  string               `json:"capability" jsonschema:"what you want done. Prefer a class from algebra.classes, such as token.price or solana.token-risk: Algebra then prices every provider of that work and pays the best one. A single provider's capability from algebra.discover_providers pins the call to that provider"`
+	Capability  string               `json:"capability" jsonschema:"what you want done. Prefer a class from algebra.classes, such as token.price or solana.token-risk: Algebra then prices every provider of that work and pays the best one. A single provider's capability from algebra.discover_providers pins the call to that provider. Where the server offers it, solana.swap buys a token with USDC: input {\"output_mint\":\"<token mint>\",\"amount_usdc\":\"2.50\"}"`
 	Input       map[string]any       `json:"input,omitempty" jsonschema:"the request's parameters, exactly as the provider expects them, e.g. {\"mint\":\"So1111...\"}"`
 	MaxPrice    string               `json:"max_price_usdc" jsonschema:"the most you are willing to pay, in USDC, as a decimal string such as \"0.05\""`
 	Strategy    string               `json:"strategy,omitempty" jsonschema:"how to choose a provider: auto (default), cheapest or fastest"`
