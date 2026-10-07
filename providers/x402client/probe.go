@@ -39,7 +39,9 @@ func (r *Runner) Probe(ctx context.Context, c routing.Candidate, input json.RawM
 	want := chain.NormalizeNetwork(c.Network)
 	for _, req := range ch.Accepts {
 		n := chain.NormalizeNetwork(req.Network)
-		if !strings.HasPrefix(n, chain.Solana) || (want != "" && n != want) || !acceptableAsset(n, req.Asset) {
+		// The sandbox is a network of its own with no chain: a sandbox provider is
+		// priced like any other, or it would be called down on every probe.
+		if !(strings.HasPrefix(n, chain.Solana) || n == chain.Sandbox) || (want != "" && n != want) || !acceptableAsset(n, req.Asset) {
 			continue
 		}
 		scheme := strings.ToLower(req.Scheme)
