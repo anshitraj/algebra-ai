@@ -116,6 +116,10 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 		mux.HandleFunc("POST /api/v1/sandbox/x402/token-risk", b.SandboxProvider.Serve)
 		mux.HandleFunc("GET /api/v1/sandbox/x402/token-risk/operations/{key}", b.SandboxProvider.ServeOperation)
 	}
+	if b.SandboxPersonas != nil {
+		// SANDBOX providers of token.price: alpha, beta, flaky, greedy, trap.
+		mux.HandleFunc("POST /api/v1/sandbox/x402/prices/{name}", b.SandboxPersonas.Serve)
+	}
 
 	mux.HandleFunc("GET /api/v1/billing", api.getBilling)
 	mux.HandleFunc("GET /api/v1/billing/plans", api.getBillingPlans)
@@ -283,8 +287,14 @@ func (a *API) rateLimitMiddleware(next http.Handler) http.Handler {
 // rateLimitKey identifies the caller: the agent token's hash when present
 // (never the raw token — this becomes part of a Redis key), then the
 // session cookie's hash, otherwise the remote IP for unauthenticated
-// endpoints (sign-in, sign-up, GET /merchants).
+// endpoints (sign-in, sign-up, GET /merchants). The sandbox providers are
+// called by this server itself while it quotes and pays, several times per
+// routed call, so they count in a bucket of their own rather than starving
+// every anonymous request from the same address.
 func rateLimitKey(r *http.Request) string {
+	if strings.HasPrefix(r.URL.Path, "/api/v1/sandbox/x402/") {
+		return "sandbox-provider:" + clientIP(r)
+	}
 	if authz := r.Header.Get("Authorization"); strings.HasPrefix(authz, "Bearer ") {
 		return "agent:" + agent.HashToken(strings.TrimPrefix(authz, "Bearer "))
 	}

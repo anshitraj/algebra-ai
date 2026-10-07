@@ -24,7 +24,7 @@ import (
 // provider is asked for a price and no request leaves this machine.
 func noCatalogs(t *testing.T) {
 	t.Helper()
-	for _, name := range []string{"PAYSH_ENABLED", "CIRCLE_AGENTS_ENABLED", "PAYAI_ENABLED", "CDP_BAZAAR_ENABLED"} {
+	for _, name := range []string{"PAYSH_ENABLED", "CIRCLE_AGENTS_ENABLED", "PAYAI_ENABLED", "CDP_BAZAAR_ENABLED", "MONID_CATALOG"} {
 		t.Setenv(name, "off")
 	}
 }
@@ -32,6 +32,12 @@ func noCatalogs(t *testing.T) {
 // serve runs the real API on a free loopback port, with the sandbox provider
 // the API itself hosts reachable on that same port, as in `go run ./cmd/api`.
 func serve(t *testing.T) (*wiring.Bundle, string) {
+	t.Helper()
+	return serveWith(t, nil)
+}
+
+// serveWith is serve with env set last, over its defaults.
+func serveWith(t *testing.T, env map[string]string) (*wiring.Bundle, string) {
 	t.Helper()
 	if os.Getenv("DATABASE_URL") == "" || os.Getenv("ALGEBRA_MASTER_KEY") == "" {
 		t.Skip("DATABASE_URL / ALGEBRA_MASTER_KEY not set; skipping E2E test (see docs/LOCAL_DEVELOPMENT.md)")
@@ -52,6 +58,9 @@ func serve(t *testing.T) (*wiring.Bundle, string) {
 	t.Setenv("GEMINI_API_KEY", "")
 	t.Setenv("GOOGLE_GEMINI_API", "")
 	noCatalogs(t)
+	for k, v := range env {
+		t.Setenv(k, v)
+	}
 	cfg, err := config.FromEnv()
 	if err != nil {
 		t.Fatalf("loading config: %v", err)
@@ -61,7 +70,10 @@ func serve(t *testing.T) (*wiring.Bundle, string) {
 		t.Fatalf("building application: %v", err)
 	}
 	t.Cleanup(b.DB.Close)
-	srv := &http.Server{Handler: v1.NewRouter(b, b.Limiter, nil), ReadHeaderTimeout: 5 * time.Second}
+	// No rate limiter: one test makes dozens of calls to the sandbox providers,
+	// and a Redis bucket outlives the run that filled it. The limiter has its
+	// own tests (internal/api/v1).
+	srv := &http.Server{Handler: v1.NewRouter(b, nil, nil), ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
 	return b, "http://" + ln.Addr().String()

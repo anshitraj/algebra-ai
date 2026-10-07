@@ -146,3 +146,11 @@ func TestRateLimitKey_FallsBackToIP(t *testing.T) {
 		t.Errorf("expected ip:1.2.3.4, got %q", key)
 	}
 }
+
+func TestRateLimitKey_SandboxProvidersHaveTheirOwnBucket(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sandbox/x402/prices/beta", nil)
+	req.RemoteAddr = "1.2.3.4:9999"
+	if key := rateLimitKey(req); key != "sandbox-provider:1.2.3.4" {
+		t.Errorf("the server's own calls to its sandbox providers must not share the anonymous bucket: %q", key)
+	}
+}

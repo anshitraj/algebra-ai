@@ -103,6 +103,9 @@ type Bundle struct {
 	// SandboxProvider is the SANDBOX x402 provider, nil unless
 	// ECONOMIC_SANDBOX is on (see config.Config.EconomicSandbox).
 	SandboxProvider *sandboxpay.Provider
+	// SandboxPersonas are the sandbox providers of token.price (alpha, beta,
+	// flaky, greedy, trap), nil unless ECONOMIC_SANDBOX is on.
+	SandboxPersonas *sandboxpay.PersonaServer
 	// Execution runs routed work: it drives the coordinator, makes the paid
 	// x402 call and judges the result (internal/domain/routing).
 	Execution *app.ExecutionService
@@ -369,13 +372,31 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	intentReceiptSvc := app.NewIntentReceiptService(signer, cfg.Auth.PublicWebURL, agents, econRepo)
 	econSvc.SetReceipts(intentReceiptSvc)
 	var sandboxProvider *sandboxpay.Provider
+	var sandboxPersonas *sandboxpay.PersonaServer
 	if cfg.EconomicSandbox {
 		rail := sandboxpay.NewRail(time.Minute)
 		econSvc.RegisterRail(rail)
 		sandboxProvider = sandboxpay.NewProvider(rail, cfg.Auth.PublicWebURL+"/api/v1/sandbox/x402/token-risk", 0)
 		econSvc.RegisterRecovery(sandboxpay.ProviderID, sandboxProvider)
+		// Sandbox providers of token.price that misbehave like real ones
+		// (slow, down, overcharging, trap-priced): the router and its guards,
+		// shown with no chain and no money.
+		sandboxPersonas = sandboxpay.NewPersonaServer(rail, cfg.Auth.PublicWebURL+"/api/v1/sandbox/x402/prices", nil)
+		for _, p := range sandboxpay.DefaultPersonas {
+			econSvc.RegisterRecovery(p.ID(), sandboxPersonas.Recovery(p.Name))
+		}
 	}
 	execSvc, execProviders, solanaRails, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db))
+	if err == nil && sandboxPersonas != nil {
+		if port := listenPort(cfg.HTTPAddr); port > 0 {
+			var cands []routing.Candidate
+			if cands, err = sandboxPersonas.Candidates("http://127.0.0.1:" + strconv.Itoa(port) + "/api/v1/sandbox/x402/prices"); err == nil {
+				for _, c := range cands {
+					execProviders[c.Provider] = append(execProviders[c.Provider], c)
+				}
+			}
+		}
+	}
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("wiring: %w", err)
@@ -482,7 +503,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Directory: directory, SolanaRails: solanaRails, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Directory: directory, SolanaRails: solanaRails, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,
