@@ -1,6 +1,6 @@
 # Payment Provider Interface
 
-`internal/domain/paymentprovider.Provider` is the interface every payment rail plugs into Algebra through. Before this existed, nothing in Algebra could actually move money on an agent's behalf — `internal/domain/merchant.Connector.ExecuteCheckout` (the commerce-flow's own execution path) never receives a credential, only a cart handle, Algebra's own approval ID, and a shipping/billing address. This is the piece that closes that gap for the B2B agentic-payments product. See `docs/PROVIDER_STATUS.md` for which rails are actually wired today (short answer: one, `providers/paymentdemo`, deterministic and in-memory).
+`internal/domain/paymentprovider.Provider` is the interface every payment rail plugs into Algebra through. Before this existed, nothing in Algebra could actually move money on an agent's behalf — `internal/domain/merchant.Connector.ExecuteCheckout` (the commerce-flow's own execution path) never receives a credential, only a cart handle, Algebra's own approval ID, and a shipping/billing address. This is the piece that closes that gap for the B2B agentic-payments product. See `docs/legacy/PROVIDER_STATUS.md` for which rails are actually wired today (short answer: one, `providers/paymentdemo`, deterministic and in-memory).
 
 ## The interface
 
@@ -42,7 +42,7 @@ type Capabilities struct {
 2. Implement all eight methods. A method the rail genuinely can't do returns `shared.ErrNotImplemented` — never a synthesized success (`Refund` is the common one to leave unimplemented for a rail that doesn't support it).
 3. `Capabilities()` must be truthful — if `Refund` returns `ErrNotImplemented`, `CanRefund` must be `false`.
 4. Register it in `internal/platform/wiring.Build` (currently `demoProvider` is the sole registration) and add it to `internal/app.PaymentCapabilityResolver`'s provider list.
-5. Add a row to `docs/PROVIDER_STATUS.md` with its real status (SANDBOX until credentialed against production).
+5. Add a row to `docs/legacy/PROVIDER_STATUS.md` with its real status (SANDBOX until credentialed against production).
 6. If it needs configuration (API keys, a cluster endpoint), fail closed at startup with a clear error if that configuration is missing — the same pattern `internal/app/webhook_service.go` already uses for `WEBHOOK_SECRET_<PROVIDER>` (an unconfigured secret rejects every call rather than silently accepting one unverified).
 
 ## `providers/paymentdemo` — the reference implementation

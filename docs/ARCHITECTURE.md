@@ -1,164 +1,123 @@
 # Architecture
 
-Project Algebra is agentic-**payments** infrastructure: businesses (card apps, wallets, fintechs, stablecoin apps) integrate it so their own end users can grant AI agents controlled spending authority over payment sources the business already holds — see `docs/B2B_INTEGRATION.md`. It never gives an AI model unrestricted access to money — agents get scoped capabilities and aliases, never secrets.
-
-Two primitives live side by side in the same control plane, sharing policy/approval/audit infrastructure but each with its own state machine:
-
-- **`PurchaseIntent`** (`internal/domain/intent`) — commerce/discovery-shaped: items, merchant search, quotes. Algebra's own first-party reference console (`web/`) uses this.
-- **`AgenticPaymentIntent`** (`internal/domain/paymentintent`) — a tenant's agent requesting to spend a bounded amount at a known merchant, no discovery step. The B2B product itself. See `docs/AGENTIC_PAYMENT_INTENT.md`.
+Algebra is the router and spend firewall for AI agents that pay for APIs on Solana. An agent asks for an outcome and a ceiling; Algebra finds the providers, prices them, picks
+one, pays it from a wallet the agent never sees, checks the answer and signs a receipt, inside limits a person set. This page is how the pieces fit; the layer-by-layer detail
+is in [EXECUTION.md](EXECUTION.md) (routing, rails, catalogs) and [ECONOMIC_COORDINATION.md](ECONOMIC_COORDINATION.md) (why money moves at most once).
 
 ## 1. System context
 
 ```mermaid
 flowchart TD
-    U[User] --> AG[AI Agent]
-    AG -->|MCP tool calls| MCP[Algebra MCP Server]
-    AG -.->|or REST / SDK| API[Algebra REST API v1]
-    MCP --> APP
+    P[Person] -->|console: passes, approvals, kill switch| WEB[Console · web/]
+    AG[AI agent] -->|MCP /mcp · REST /api/v1 · Spend Pass bearer token| API
+    WEB --> API[API · cmd/api]
+    subgraph APP[internal/app: the one place rules live]
+        EXEC[Execution: quote · rank · plan · replay · simulate · web discovery]
+        ECON[Economic coordinator: reserve · begin · authorize · complete · reconcile]
+        PASS[Spend Pass service: budget · controls · kill switch]
+        HEALTH[Health probes: free unpaid 402s]
+    end
     API --> APP
-    subgraph APP[Application Services — single domain layer]
-        INT[Intent Service]
-        DISC[Discovery Service]
-        QUOTE[Quote Service]
-        POL[Policy Service]
-        APPR[Approval Service]
-        PAY[Payment Service]
-        ORD[Order Service]
-    end
-    APP --> PG[(PostgreSQL — authoritative state)]
-    APP --> RD[(Redis — cache / locks / idempotency)]
-    POL --> PP[PolicyProvider: Local deterministic rule engine]
-    PAY --> VP[CardVaultProvider: Sandbox / Spreedly]
-    APP --> PR[PrivacyResolver: encrypted profiles]
-    DISC --> MC[MerchantConnector: Mock / Swiggy Instamart MCP / Zepto MCP / Amazon Creators API / Flipkart Affiliate API / Blinkit handoff]
-    APP --> AUD[(Audit Log — append only)]
+    EXEC --> ECON
+    ECON --> PASS
+    APP --> PG[(PostgreSQL: authoritative)]
+    APP --> RD[(Redis: rate limits, locks)]
+    EXEC -->|free unpaid 402 · paid call| PROV[Providers over x402]
+    EXEC -->|order · execute| JUP[Jupiter]
+    ECON -->|authorize · settlement| RAILS[Rails: x402 mainnet · x402 devnet · swap · sandbox]
+    RAILS --> SOL[(Solana)]
+    EXEC -->|read| CAT[Catalogs: Pay.sh · Circle · PayAI · Coinbase]
+    EXEC -.->|opt-in| GEM[Gemini web search]
 ```
 
-MCP, REST, and the future TypeScript SDK are **thin transports**. They parse a request, call an application service in `internal/app`, and serialize the result. No commerce logic is duplicated across transports — this is a hard rule (mandate §53), not a style preference, because divergent logic between "what the agent can do" and "what the API can do" is itself a security bug.
+MCP, REST and the console are **thin transports**: they parse a request, resolve who is calling, call one application service and serialize the answer. No rule is duplicated across
+transports (`internal/api/v1`, `internal/mcpserver`, and `web/` which talks only to the REST API). The MCP server is mounted on the API process at `/mcp`, built from the same
+`wiring.Bundle` as the REST handlers.
 
-## 2. Purchase flow
+## 2. One request
 
 ```mermaid
 sequenceDiagram
-    participant Agent
-    participant MCP as Algebra MCP/API
-    participant Policy as PolicyProvider
-    participant Privacy as PrivacyResolver
-    participant Merchant as MerchantConnector
-    participant User
-
-    Agent->>MCP: create_purchase_intent(items, constraints)
-    MCP->>MCP: persist intent (DRAFT), audit event
-    Agent->>MCP: get_quotes(intent_id)
-    MCP->>Merchant: search + cart + checkout quote
-    Merchant-->>MCP: normalized CheckoutQuote(s)
-    MCP->>Policy: EvaluatePurchaseIntent / EvaluateAmount / EvaluatePaymentSource
-    Policy-->>MCP: ALLOW | DENY | REQUIRE_APPROVAL (+ reason codes)
-    alt DENY
-        MCP-->>Agent: POLICY_REJECTED (terminal)
-    else REQUIRE_APPROVAL or ALLOW
-        MCP->>Privacy: resolve shipping/payment alias (server-side only, never to Agent)
-        MCP-->>User: approval request (merchant, items, final price, payment alias)
-        User-->>MCP: approve
-        MCP->>MCP: refresh quote, verify against approved hash+tolerance
-        MCP->>Merchant: execute checkout
-        Merchant-->>MCP: order or AUTHENTICATION_REQUIRED
-        MCP-->>User: complete challenge (3DS/OTP/UPI) if required
-        MCP-->>Agent: SUCCEEDED + receipt
+    participant A as Agent
+    participant X as ExecutionService
+    participant P as SpendPass / policy
+    participant C as Coordinator
+    participant R as Rail
+    participant V as Provider
+    A->>X: execute(capability, input, ceiling, strategy)
+    X->>C: create or find the intent (deterministic effect key)
+    alt already committed
+        X-->>A: the kept answer, replayed:true (nothing paid)
     end
+    X->>P: screen candidates against the pass (nobody is asked anything yet)
+    X->>V: free unpaid 402 to each candidate, all at once (1.5 s grace after the first price)
+    X->>X: guards, limits, Rank(cheapest | fastest | auto) → plan
+    X->>C: reserve (one live attempt per intent) → begin (pass re-checked)
+    X->>R: authorize payment (kill switch re-checked; the wallet signs; the agent never sees a key)
+    X->>V: the call, with payment
+    V-->>X: the answer
+    X->>X: verify (schema, quality), keep sealed, hash
+    X->>C: complete(report)
+    C->>R: settlement(evidence): from chain state, never from anyone's word
+    C-->>X: COMMITTED + signed receipt (or UNKNOWN → reconcile; never a second payment)
+    X-->>A: the answer, routing explanation, receipt
 ```
 
-The agent never sees the resolved shipping address, card details, or OTP at any point in this sequence — it sees intent IDs, quote IDs, approval IDs, and final states.
+If the first provider fails before any money moves the coordinator reopens the intent and the next step in the plan runs. If the outcome is ambiguous, no other attempt may run until the rail proves
+what happened.
 
-## 3. State machine
+## 3. Where state lives
 
-`internal/domain/intent` implements the mandate's states as a server-validated transition table (`state_machine.go`). Every transition is checked against an explicit allow-list; an illegal transition returns an error and nothing is persisted. Every successful transition emits an `AuditEvent`.
+PostgreSQL is authoritative; the invariants that matter are enforced by the database, not by application memory.
 
-```mermaid
-stateDiagram-v2
-    [*] --> DRAFT
-    DRAFT --> DISCOVERING
-    DISCOVERING --> QUOTED
-    DISCOVERING --> FAILED
-    QUOTED --> POLICY_CHECK
-    POLICY_CHECK --> POLICY_REJECTED
-    POLICY_CHECK --> APPROVAL_REQUIRED
-    POLICY_CHECK --> APPROVED
-    APPROVAL_REQUIRED --> APPROVED
-    APPROVAL_REQUIRED --> EXPIRED
-    APPROVAL_REQUIRED --> CANCELLED
-    APPROVED --> EXECUTING
-    EXECUTING --> AUTHENTICATION_REQUIRED
-    EXECUTING --> SUCCEEDED
-    EXECUTING --> FAILED
-    EXECUTING --> MERCHANT_INTERVENTION_REQUIRED
-    EXECUTING --> USER_INTERVENTION_REQUIRED
-    AUTHENTICATION_REQUIRED --> SUCCEEDED
-    AUTHENTICATION_REQUIRED --> FAILED
-    QUOTED --> REAPPROVAL_REQUIRED
-    APPROVED --> REAPPROVAL_REQUIRED
-    REAPPROVAL_REQUIRED --> APPROVED
-    REAPPROVAL_REQUIRED --> CANCELLED
-    SUCCEEDED --> PARTIALLY_COMPLETED
-    POLICY_REJECTED --> [*]
-    SUCCEEDED --> [*]
-    FAILED --> [*]
-    CANCELLED --> [*]
-    EXPIRED --> [*]
-    PARTIALLY_COMPLETED --> [*]
-```
+| Table | What |
+|---|---|
+| `economic_intents`, `economic_reservations`, `economic_events`, `economic_receipts` | The outcome, each attempt at it (at most one live, at most one committed), an append-only event log, the signed receipt. |
+| `spend_passes` | Budget, caps, approval line, allowed providers, controls (velocity, new-provider rule), frozen/revoked. |
+| `route_executions` | What each attempt did (cost, latency, quality): what the router learns from. |
+| `provider_health` | What the free probe last found. |
+| `intent_results` | The answer kept for replay: sealed (AES-256-GCM), expiring, bound to its intent, person and reservation. |
+| `users`, `user_sessions`, `agents`, … | Accounts, human sessions (HttpOnly cookie, hashed at rest) and agent identities (a bearer token, hashed). |
 
-## 4. AgenticPaymentIntent flow (B2B)
+Redis only rate limits and takes short locks, and the API runs without it locally. Nothing in Redis is a correctness guarantee.
 
-```mermaid
-sequenceDiagram
-    participant Tenant as Tenant backend
-    participant Agent
-    participant API as Algebra REST/MCP
-    participant Policy as PolicyProvider (tenant's persisted PolicySet)
-    participant PP as paymentprovider.Provider
-    participant User as End user (Tenant's own app UI)
+## 4. Trust boundaries
 
-    Tenant->>API: POST /tenants/{id}/policy-sets (once, or whenever policy changes)
-    Agent->>API: POST /payment-intents (merchant, amount, payment_source_alias)
-    API->>Policy: EvaluatePurchaseIntent
-    Policy-->>API: ALLOW | DENY | REQUIRE_APPROVAL
-    alt DENY
-        API-->>Agent: DENIED (terminal) + webhook payment_intent.policy_denied
-    else REQUIRE_APPROVAL
-        API-->>Agent: APPROVAL_REQUIRED + webhook payment_intent.approval_required
-        User->>API: POST /payment-intents/{id}/approve
-    end
-    Agent->>API: POST /payment-intents/{id}/execute
-    API->>PP: RegisterPaymentSource -> CreateDelegatedAuthorization -> RequestAuthentication -> CreateScopedCredential -> ExecutePayment
-    PP-->>API: PaymentResult (authoritative — never fabricated)
-    API-->>Agent: SUCCEEDED + provider_transaction_id
-    API-->>Tenant: webhook payment_intent.succeeded (signed, HMAC-SHA256)
-```
+1. **Person ↔ agent.** An agent spends under its own Spend Pass and can never approve its own spending; human-only endpoints (approvals, passes, kill switch, `/me`) accept only a session cookie.
+2. **Agent ↔ Algebra.** A scoped, revocable bearer token resolved to an identity on every call; every intent-scoped call checks the intent belongs to the caller.
+3. **Algebra ↔ providers.** Providers are untrusted: reached only at public addresses (checked on the dialled IP), never redirected with a payment, their text is data, their price is a claim to verify, their answer is labelled untrusted.
+4. **Algebra ↔ rails.** The wallet's key never leaves the rail. Each rail has hard ceilings of its own, signs only what it has checked, and proves settlement from chain state.
+5. **Algebra ↔ catalogs and the open web.** A listing is not an endorsement; a model's output is trusted for nothing but an address, which is then probed.
 
-There is no `approve` tool on either transport — an agent can request a payment, only a human (through the tenant's own app) can approve one. Full detail: `docs/B2B_INTEGRATION.md`, `docs/AGENTIC_PAYMENT_INTENT.md`, `docs/PAYMENT_PROVIDER_INTERFACE.md`.
+The threat model, with the mitigation for each and what is not yet covered, is [THREAT_MODEL.md](THREAT_MODEL.md).
 
-## 5. Why Go / Python / TypeScript
-
-- **Go** (this build): everything on the money/authorization path — API gateway, MCP server, intent/policy/approval/payment/order services, audit. Latency-sensitive, needs strong typing and no GIL for concurrent merchant fan-out.
-- **Python** (interfaces designed, not built in Phase 1): product discovery, catalog normalization, coupon/offer parsing, ranking. Explicitly **not** the authorization authority — a Python worker can propose a normalized product/offer, it cannot approve a payment.
-- **TypeScript** (interfaces designed, not built in Phase 1): Next.js console, browser extension, SDK. Calls the same REST/MCP surface as any other client — no special back-door.
-
-## 6. Module boundaries (Go modular monolith)
+## 5. Module boundaries (Go modular monolith)
 
 ```
-internal/domain     entities + interfaces, zero I/O, fully unit-testable
-internal/app        application services — the ONE place business rules live
-internal/platform   postgres, redis, config, logging/redaction
-internal/api/v1     REST transport (thin)
-internal/mcpserver  MCP transport (thin)
-connectors/*        MerchantConnector implementations; connectors/remotemcp is the shared OAuth + MCP client for remote-MCP merchants
-providers/*         CardVaultProvider / ConfidentialComputeProvider / paymentprovider.Provider implementations
-policy/             public (non-internal/) package — policy.Rules/Provider/LocalProvider, go-gettable by third parties
+internal/domain     entities and rules, zero I/O: econ (intents, reservations, evidence), routing (candidates, quotes,
+                    ranking, classes, plans, results), spendpass, chain (networks and assets), receipt, account
+internal/app        application services: the one place business rules live
+internal/platform   postgres, redis, solana (RPC, transactions, simulation), safehttp, config, logging, wiring
+internal/api/v1     REST transport (thin)         internal/mcpserver   MCP transport (thin)
+providers/          x402client (runner), solanax402 (rail), paychan (payment channels), jupiter (swaps), catalog, paysh,
+                    bazaar (Circle, PayAI, Coinbase), webdiscovery, sandboxpay
+policy/             a public package: the deterministic rule engine, go-gettable by third parties
+cmd/                api, mcp, demo-provider, solana-wallet, x402-dryrun, verify-intent
+web/                the console and the agent chat (Next.js); talks only to the REST API
 ```
 
-`internal/app` depends on `internal/domain` interfaces, never on concrete connectors/providers directly — those are injected at `cmd/api` / `cmd/mcp` startup. This is what makes "split into services later" realistic: the seam is already an interface boundary, not a package-private function call.
+`internal/app` depends on interfaces from `internal/domain` and on small interfaces it defines itself (`StepRunner`, `Rail`, `CatalogSource`, `WebFinder`, `ClassSource`), never on a concrete
+provider: those are injected by `internal/platform/wiring`. That is what makes a new rail, catalog or execution type an addition rather than a change: Jupiter was added as a runner and a
+rail without touching the coordinator.
 
-## 7. Deployment shape (target — see [GCP_DEPLOYMENT.md](GCP_DEPLOYMENT.md))
+## 6. Deployment shape
 
-Go API/MCP → Cloud Run. Postgres → Cloud SQL. Redis → Memorystore. Async events → Pub/Sub. Secrets → Secret Manager. Envelope-encryption keys → Cloud KMS. Nothing in this repo deploys itself yet; this is the target mapping, not a claim of an existing deployment.
+One Go API process (REST, MCP, the sandbox provider) in front of PostgreSQL and optionally Redis; the web app behind an HTTPS load balancer proxies `/api/v1` and `/mcp` to it, so the browser only
+ever talks to its own origin. Migrations run when the API starts. Probes: `/healthz`, `/readyz`. See [PRODUCTION.md](PRODUCTION.md) and [GCP_DEPLOYMENT.md](GCP_DEPLOYMENT.md) (a target mapping,
+not a claim of an existing deployment).
+
+## 7. The original product
+
+The grocery shopping agent (`PurchaseIntent`, merchant connectors, the card-vault interface) and the tenant payment intents (`AgenticPaymentIntent`, policy sets, webhooks) are still in the tree,
+share the same policy, approval and audit infrastructure, and still build and pass their tests. They are described in [legacy/](legacy/README.md). Their state machines and flows are in
+[legacy/BUILD_PLAN.md](legacy/BUILD_PLAN.md) and [legacy/B2B_INTEGRATION.md](legacy/B2B_INTEGRATION.md).

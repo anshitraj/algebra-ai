@@ -17,7 +17,7 @@
 // Scope of this build: one linked account per merchant (the operator's own).
 // Per-user merchant sessions need a merchant_sessions table keyed by user and
 // connector methods that carry the user through; see
-// docs/MERCHANT_CONNECTORS.md.
+// docs/legacy/MERCHANT_CONNECTORS.md.
 package remotemcp
 
 import (

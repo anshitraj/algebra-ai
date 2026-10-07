@@ -4,7 +4,7 @@ Algebra is agentic-payments infrastructure: a card app, wallet, fintech, or stab
 
 **Non-negotiable:** Algebra never becomes an issuer or a payment network, never custodies funds, never sees a raw PAN/CVV/private key. It supplies authority, not credentials.
 
-This is the *platform* integration — a business owning end users, agents, policy, and payment intents. If you only need a one-off policy decision for a transaction you already own end to end (no Algebra-side state at all), the lighter-weight [`docs/INTEGRATING.md`](INTEGRATING.md) surface (`Integrator` + `POST /api/v1/policy/evaluate-transaction`) may be all you need instead. Both are real, both stay supported — see the "Which surface do I want?" note at the end.
+This is the *platform* integration — a business owning end users, agents, policy, and payment intents. If you only need a one-off policy decision for a transaction you already own end to end (no Algebra-side state at all), the lighter-weight [`docs/legacy/INTEGRATING.md`](INTEGRATING.md) surface (`Integrator` + `POST /api/v1/policy/evaluate-transaction`) may be all you need instead. Both are real, both stay supported — see the "Which surface do I want?" note at the end.
 
 ## The shape
 
@@ -21,7 +21,7 @@ Your app (KAST-like card app, wallet, fintech, ...)
 └──────────────┬────────────────┘
                │ paymentprovider.Provider
                ▼
-        Payment rail (DemoProvider today — see docs/PROVIDER_STATUS.md)
+        Payment rail (DemoProvider today — see docs/legacy/PROVIDER_STATUS.md)
                │
                ▼
             Merchant
@@ -96,7 +96,7 @@ curl -X POST http://localhost:8080/api/v1/payment-intents \
 - **`APPROVAL_REQUIRED`** — a human must approve. There is deliberately **no** agent-callable approve tool, REST or MCP — an agent can request a payment, it can never grant its own approval. Your app's own UI shows the pending approval and calls `POST /api/v1/payment-intents/{id}/approve` (or `/reject`) with the end user's own authenticated session — never an agent token, which every approval endpoint rejects. (Algebra's first-party app uses its HttpOnly session cookie; see `docs/LOCAL_DEVELOPMENT.md` → Accounts and sessions.)
 - **`DENIED`** — terminal. `decision.reason_codes` says why.
 
-Full state machine and field reference: [`docs/AGENTIC_PAYMENT_INTENT.md`](AGENTIC_PAYMENT_INTENT.md).
+Full state machine and field reference: [`docs/legacy/AGENTIC_PAYMENT_INTENT.md`](AGENTIC_PAYMENT_INTENT.md).
 
 ## 6. Execute
 
@@ -106,7 +106,7 @@ curl -X POST http://localhost:8080/api/v1/payment-intents/$PI_ID/execute \
 # {"status":"SUCCEEDED", "provider_transaction_id":"demo_txn_..."}
 ```
 
-Only legal from `AUTHORIZED`. Internally this walks the full `paymentprovider.Provider` chain (register source → delegate → authenticate → scoped credential → execute) — see [`docs/PAYMENT_PROVIDER_INTERFACE.md`](PAYMENT_PROVIDER_INTERFACE.md). `Idempotency-Key` is required discipline, not optional — a retried call with the same key replays the exact first outcome rather than charging twice.
+Only legal from `AUTHORIZED`. Internally this walks the full `paymentprovider.Provider` chain (register source → delegate → authenticate → scoped credential → execute) — see [`docs/legacy/PAYMENT_PROVIDER_INTERFACE.md`](PAYMENT_PROVIDER_INTERFACE.md). `Idempotency-Key` is required discipline, not optional — a retried call with the same key replays the exact first outcome rather than charging twice.
 
 ## 7. Webhooks
 
@@ -131,7 +131,7 @@ Everything above has an MCP-tool equivalent for an agent that speaks MCP directl
 
 ## Which surface do I want?
 
-| | `docs/INTEGRATING.md` (`Integrator`) | This doc (`Tenant`) |
+| | `docs/legacy/INTEGRATING.md` (`Integrator`) | This doc (`Tenant`) |
 |---|---|---|
 | State Algebra keeps | None — one audit event per call | Full: users, agents, policy versions, payment intents, approvals, orders |
 | You own | The entire transaction lifecycle yourself | Algebra owns intent/approval/execution lifecycle |
@@ -139,4 +139,4 @@ Everything above has an MCP-tool equivalent for an agent that speaks MCP directl
 
 ## What this isn't (yet)
 
-No TypeScript SDK (raw REST/MCP only — see `BUILD_PLAN.md` for what's deferred to Phase 2). No real card-network/processor adapter wired up — every execution in this build runs through `providers/paymentdemo`, a deterministic mock; see `docs/PROVIDER_STATUS.md` for exactly which real rails are `NOT_IMPLEMENTED` vs. `PARTNER_REQUIRED` and why. No fictional reference "DemoWallet" app demonstrating this from a consumer's point of view yet — this doc and `examples/kite-wallet` (the lighter-weight surface) are the runnable references today.
+No TypeScript SDK (raw REST/MCP only — see `docs/legacy/BUILD_PLAN.md` for what's deferred to Phase 2). No real card-network/processor adapter wired up — every execution in this build runs through `providers/paymentdemo`, a deterministic mock; see `docs/legacy/PROVIDER_STATUS.md` for exactly which real rails are `NOT_IMPLEMENTED` vs. `PARTNER_REQUIRED` and why. No fictional reference "DemoWallet" app demonstrating this from a consumer's point of view yet — this doc and `examples/kite-wallet` (the lighter-weight surface) are the runnable references today.

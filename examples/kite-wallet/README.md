@@ -31,5 +31,5 @@ go run ./examples/kite-wallet   # terminal 2
      **REQUIRE_APPROVAL**.
    - A $100.00 charge in a blocked category — **DENY**.
 
-See [docs/INTEGRATING.md](../../docs/INTEGRATING.md) for the full
+See [docs/legacy/INTEGRATING.md](../../docs/legacy/INTEGRATING.md) for the full
 request/response reference.

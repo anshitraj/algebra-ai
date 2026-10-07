@@ -18,9 +18,10 @@ type spendPassInput struct {
 func (srv *Server) registerSpendPassTools(s *gomcp.Server) {
 	gomcp.AddTool(s, &gomcp.Tool{
 		Name: "algebra.spend_pass",
-		Description: "Read the Spend Pass you're spending under: the budget and what's left of it this period, the most one purchase may cost, " +
-			"what you may buy (categories) and where (stores), the amount above which the person must approve, and when the pass expires. " +
-			"Check it before shopping so you only propose purchases the person has allowed. Purchases outside it are refused by Algebra, whatever you do.",
+		Description: "Read the Spend Pass you are spending under: the budget in USDC and what is left of it this period, the most one call may cost, " +
+			"the amount above which the person must approve, which providers it allows, its controls (calls per minute, what to do about a provider it has never paid, " +
+			"whether it is frozen) and when it expires. Check it before asking for something expensive: Algebra refuses anything outside it, whatever you do. " +
+			"Amounts are in micro-USDC (1000000 is one USDC).",
 	}, func(ctx context.Context, _ *gomcp.CallToolRequest, in spendPassInput) (*gomcp.CallToolResult, app.PassView, error) {
 		if srv.SpendPasses == nil {
 			return nil, app.PassView{}, fmt.Errorf("spend passes are not enabled on this server")

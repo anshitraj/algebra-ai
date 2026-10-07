@@ -5,7 +5,7 @@
 // against a running cmd/api; nothing here is a canned transcript.
 //
 // It also imports policy.Rules directly (github.com/project-algebra/algebra/policy,
-// a public package — see docs/INTEGRATING.md) to build its own budget
+// a public package — see docs/legacy/INTEGRATING.md) to build its own budget
 // policy, proving that surface works too, not just the REST endpoint.
 //
 // Run:

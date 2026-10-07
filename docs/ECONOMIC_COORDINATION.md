@@ -6,8 +6,10 @@ most one of them hold commit authority at a time. It freezes the outcome
 when it's ambiguous, reconciles from evidence, and signs what actually
 happened.
 
-This file records the Phase 0 audit (what exists and what changes) and the
-design that later phases implement.
+This file records the Phase 0 audit (what existed and what changed) and the
+design the later phases implemented. The layer that does the work around it,
+routing, quoting, the rails and the catalogs, is [EXECUTION.md](EXECUTION.md);
+what has been added to the coordinator since is under "Since Phase 0" below.
 
 ## Phase 0: repository audit
 
@@ -22,7 +24,7 @@ design that later phases implement.
 | `internal/domain/paymentintent` | B2B "pay merchant X amount Y" state machine | Kept | It's shaped around one payment request, not one outcome with many executors. Economic intents are a new entity rather than a rename |
 | `internal/domain/intent` (PurchaseIntent) | Consumer shopping flow | Kept (reference app) | None |
 | `internal/mcpserver`, REST `/api/v1` | Agent surfaces with bearer tokens | Yes | Adds `economic.*` tools and `/api/v1/economic-intents` |
-| `docs/SOLANA_DEVNET_USDC.md` | Devnet design only, no code | Partly | The real rail is x402 exact on Solana mainnet, behind the `Rail` interface; devnet is never labelled real |
+| A Solana devnet rail | Existed as a design only | Built | x402 on Solana mainnet and devnet are separate rails behind the `Rail` interface (`x402-solana`, `x402-solana-devnet`); devnet is never labelled real |
 | Ecommerce connectors, deals, plugins, scam shield | Reference shopping app | Kept untouched | They become a future execution rail under the same model |
 
 Demo-only paths stay labelled as demo: `demo_checkout`, `mock`, and the
@@ -122,8 +124,31 @@ payloads.
 |---|---|
 | 0 | This audit |
 | 1–4 | Intent, reservation state machine, authority, concurrency tests |
-| 5 | x402 exact + Solana mainnet USDC rail + a real provider (needs a small project-funded wallet). The executor, x402 runner and sandbox end-to-end are built: see [EXECUTION.md](EXECUTION.md). The real rail is not. |
+| 5 | x402 exact + Solana USDC rails + a real provider (needs a small funded wallet). Built: the executor, the x402 runner, the sandbox end to end, and the mainnet and devnet rails, verified on a fake cluster and against live read-only calls. No real payment has been made yet; see [EXECUTION.md](EXECUTION.md). |
 | 6 | Reconciliation engine and sweeper |
 | 7 | Intent Receipt v2 |
 | 8 | Telemetry and `cmd/verify-intent` |
-| 9+ | More providers, MCP and SDK polish, dashboard, external users |
+| 9+ | More providers, MCP and SDK polish, dashboard, external users. Since Phase 0: the router, the catalogs, the spend firewall, payment channels, swaps (below and in [EXECUTION.md](EXECUTION.md)). |
+
+## Since Phase 0
+
+What the coordinator gained, and why it stays correct:
+
+- **The spend firewall hooks into the same two checkpoints.** The kill switch, the
+  velocity limits and the new-provider rule are evaluated when an attempt is
+  reserved and again in `AuthorizePayment`, the last moment before a rail signs. A frozen
+  pass releases nothing, even for an attempt already executing. A provider the person has
+  never paid, over the pass's cap, moves the intent `OPEN → AWAITING_APPROVAL`, so the
+  person's approval is the same human-only transition as for the approval line.
+- **Usage-based payments.** `METERED_CAPTURE` attempts hold a ceiling and commit what the
+  chain proves was used: the Solana payment-channels program escrows the ceiling, and the
+  rail reads the distribution (or the channel account) to say what was paid.
+- **Swaps.** A `solana.swap` attempt's "payment" is the swap: the `solana-swap` rail signs
+  Jupiter's transaction only after simulating it and checking the wallet's accounts, and
+  settles from the chain by the signature (which is the wallet's, as fee payer). The same
+  rule as every rail holds: `NOT_SETTLED` only when it landed and failed, or its blockhash
+  expired at a finalized height (`Evidence.ValidUntilHeight`) and it is nowhere on chain.
+- **Answers are kept for replay.** The provider's answer is sealed at rest for a limited time
+  and tied to the committed reservation and its result hash, so asking again for a committed
+  outcome returns it (nothing is paid, nothing runs) instead of "already committed". The
+  coordinator still holds the money invariants; the vault only remembers what was delivered.

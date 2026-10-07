@@ -1,6 +1,6 @@
 # AgenticPaymentIntent
 
-`internal/domain/paymentintent.AgenticPaymentIntent` is what a tenant's agent creates to request a single agentic payment — the core primitive of the B2B product. See `docs/B2B_INTEGRATION.md` for the integration guide and `ARCHITECTURE.md` for how this fits into the whole system.
+`internal/domain/paymentintent.AgenticPaymentIntent` is what a tenant's agent creates to request a single agentic payment — the core primitive of the B2B product. See `docs/legacy/B2B_INTEGRATION.md` for the integration guide and `ARCHITECTURE.md` for how this fits into the whole system.
 
 ## Why this isn't `PurchaseIntent`
 
@@ -74,7 +74,7 @@ There is deliberately no `approve`/`reject` tool exposed to an agent (REST or MC
 | `category` / `international` | Same policy dimensions `PurchaseIntent.Constraints` already has. |
 | `amount_minor_units` / `currency` / `tolerance_minor_units` | Integer minor units, no floats — same convention as every other money field in the codebase. |
 | `payment_source_alias` | A reference into `internal/domain/payment.PaymentSource` — never the credential itself. |
-| `policy_version` | Which `PolicySet` version evaluated this — see `docs/B2B_INTEGRATION.md`'s policy section. |
+| `policy_version` | Which `PolicySet` version evaluated this — see `docs/legacy/B2B_INTEGRATION.md`'s policy section. |
 | `provider_transaction_id` / `provider_status` / `final_amount_minor_units` / `final_currency` | Populated only after execution, from what the provider actually confirmed — never fabricated locally. |
 
 No field on this struct can hold a raw payment credential — there is no such field to begin with, the same non-custodial guarantee `internal/domain/payment.PaymentSource`'s package doc already states.

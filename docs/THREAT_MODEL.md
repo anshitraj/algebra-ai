@@ -1,10 +1,56 @@
 # Threat Model
 
-Scope: Project Algebra control plane (Go core), its MCP/REST surfaces, and its interfaces to merchants/payment/privacy providers. This is a living document — extend it as connectors and payment rails go from stub to real.
+Scope: Algebra's control plane (Go core), its MCP and REST surfaces, its rails and its interfaces to paid API providers, catalogs and the open web. This is a living document: extend it as rails and providers go from fake to real.
 
-Methodology: enumerate the threats named explicitly in the build mandate, state the mitigation that exists **in this codebase today**, and mark anything that's a design commitment for a not-yet-built component.
+Methodology: enumerate the threats, state the mitigation that exists **in this codebase today**, name the test that pins it, and say plainly what is not covered. The first half is the current product, an agent paying for APIs on Solana; the second half is the original shopping and tenant-payments surface, which is kept and still builds.
 
 ## Trust boundaries
+
+1. Person ↔ agent: an agent spends under its own Spend Pass and can never approve its own spending. Human-only endpoints accept only a session cookie.
+2. Agent ↔ Algebra: a scoped, revocable bearer token (hashed at rest), resolved on every call.
+3. Algebra ↔ providers, catalogs, Jupiter, Gemini: all untrusted. Reached only at public addresses; their text is data; their prices are claims; their answers are labelled untrusted.
+4. Algebra ↔ rails: the wallet's key never leaves the rail. Each rail has ceilings of its own and proves settlement from chain state.
+5. Algebra ↔ the person's data: kept answers sealed, inputs bounded, erasure complete.
+
+## Threat catalogue: the execution surface
+
+| # | Threat | Mitigation today | Status |
+|---|---|---|---|
+| E1 | A provider asks more than it listed, or changes its terms between the quote and the payment | The live unpaid `402` is the price, never the listing; `price_above_listing` refuses more than 5% over; terms (payee, asset, network, a higher price) are re-checked before paying and a change is refused | Real. `TestRunRefusesToPayWhenTheTermsChanged`, `internal/app/execution_guards_test.go` |
+| E2 | A honeypot: an endpoint priced to trap agents that pay whatever a `402` says | `price_outlier` (more than 10× the class median and over $0.05; $1,000 a call is never paid); the pass's per-call cap and approval line; the new-provider rule caps a stranger at $0.05 by default; the rail's own ceiling (1 USDC x402, 5 USDC swap) | Real. Demonstrated by `cmd/demo-provider`'s `trap` persona |
+| E3 | A dead or flaky provider wastes the call or the budget | A free health probe every 15 minutes (`provider_down`: failing twice in a row and recently); candidates priced all at once with a 1.5 s grace after the first price; fallback only when the coordinator shows the earlier attempt moved no money; routing history demotes a provider that delivers under half the time | Real. `TestRouter_*` |
+| E4 | Impersonation in an open directory: a stranger lists itself as "Birdeye" to take another provider's place in a pass's allow-list | Coinbase's directory names providers by the host their endpoints are called at, not by the name they give (`cdp:api-exa-ai`). Circle's directory is curated | **Partial.** PayAI's provider IDs still derive from the listed name, so a pass that allows `payai:birdeye` trusts a name. Allow host-derived or Circle/Pay.sh IDs for anything that matters; moving PayAI to host IDs is a breaking change not yet made. `TestCDPNamesProvidersByHostNotByTheNameTheyChoose` |
+| E5 | Prompt injection through provider text, catalog text or a provider's answer | Catalog and provider text is bounded, sanitized and shown as data, labelled `untrusted`; answers carry `response_is_untrusted_provider_data`; tool descriptions tell the model so; a model's output is never executed, only parsed for a URL | Real by construction (structural), partial by nature: sanitization cannot make text trustworthy |
+| E6 | SSRF through a provider, candidate or web-discovered URL | One HTTP client for everything outbound: https only, connects only to public addresses (checked on the dialled IP, after DNS, so rebinding fails), never follows a redirect, bounded bodies. Loopback only on the sandbox provider's own port | Real. `internal/platform/safehttp` tests |
+| E7 | The payment header is sent somewhere it shouldn't be | No redirects; the header goes only to the endpoint that was priced; the payment value never reaches a stored record even if a provider echoes it | Real. `TestRunNeverFollowsARedirectWithThePayment`, `TestPaymentValueNeverAppearsInAnObservation` |
+| E8 | Paying twice (a retry, a fallback, two agents chasing one outcome, a lost response) | One live attempt and one commitment per outcome, enforced by Postgres; an ambiguous outcome freezes and is settled from the chain; a repeat of a committed request returns the kept answer and pays nothing | Real. [ECONOMIC_COORDINATION.md](ECONOMIC_COORDINATION.md), `TestExecution_AmbiguousOutcomeBlocksFallbackUntilReconciled`, `TestReplay_*` |
+| E9 | A looping or compromised agent overspends | Budget, per-call cap, approval line, allow-list; calls per minute per pass and per provider; the new-provider rule; a per-pass freeze and a kill switch that stop even a payment in flight (re-checked in `AuthorizePayment`); a dry run to ask first | Real. `internal/app/policy_controls_test.go` |
+| E10 | A stolen agent token | The token's authority is the pass: bounded, revocable, freezable; stored as a hash; sent as a header, so it never passes through the model; rate limited | Real. A stolen token can spend the pass's remaining budget until revoked |
+| E11 | A malicious or broken Jupiter transaction drains the wallet or approves a stranger to | The rail never reads the instructions: it simulates the transaction and signs only if the wallet's accounts change as stated (USDC down by at most the amount, the token up by at least the quote less slippage, SOL down by at most 0.005, every other token account no lower, no owner, delegate, close authority, freeze or closure change). It also holds its own ceilings (5 USDC, 3%) | Real, on a fake chain that can misbehave. `TestRailRefusesToSignWhatTheSimulationShows`, `TestSwapOverHTTP_ATransactionThatDoesMoreThanItSaysIsNeverSigned`. **Not run against real Jupiter**; use a dedicated wallet, because the rail judges the accounts the wallet has |
+| E12 | A swap lands for less than simulated (price moves between simulation and landing) | The transaction's own minimum output must be no looser than the slippage allowed (checked against Jupiter's stated floor, which matches ours to one atom on real data); settlement records what actually left the wallet | Partly: the floor is Jupiter's statement of what is embedded in the transaction, which the simulation cannot read. Exposure is bounded by the 5 USDC ceiling |
+| E13 | Settlement fraud: a provider or executor claims it was paid, or that it wasn't | A rail proves settlement from chain state by the payer's own signature; `NOT_SETTLED` only when it landed and failed or its blockhash expired at a finalized height and it is nowhere on chain | Real (on fake clusters; the encoders and derivations are checked against live ones) |
+| E14 | Paying on the wrong cluster | The rail checks the RPC node's genesis hash at startup (a mismatch stops startup); mainnet and devnet are separate rails with separate wallets; `allowed_networks` restricts an intent | Real |
+| E15 | Web discovery: a model invents or is steered to a URL, leaks the agent's input, or runs up cost | The model is trusted for an address only, which is probed for free; the probe carries the class's sample input, never the agent's; finds are unverified web candidates that the pass, the new-provider rule and the guards still decide on; a Spend Pass is required and each agent gets ten searches an hour | Real. `TestWebDiscovery_*` |
+| E16 | The agent's input reaches providers it didn't choose: the free price request carries it to every candidate (up to twelve) | Documented in the privacy policy and the tool text: name the provider to ask only that one; a provider the pass forbids is never asked | **Not mitigated structurally.** This is the cost of quoting before choosing; a "price without input" mode for sensitive work is not built |
+| E17 | A kept answer is read by someone else, or outlives its welcome | Sealed (AES-256-GCM) under a key derived from the master key and used for nothing else; additional data binds person, intent and reservation, so a copied row doesn't open; tampering is detected; retention 24 hours by default, 7 days at most; per-request opt-out; the asking agent's own pass is re-checked and the body must match the committed result hash; erasing an account deletes them | Real. `TestResultVault*`, `TestReplay_*`, `TestEraseUser_TakesWhatTheirAgentsLeftBehind` |
+| E18 | A catalog is huge, malformed or hostile (denial of service, poisoned entries) | Bounded bodies and pages (Coinbase's is read to five pages), every field validated and length-limited, one bad entry never sinks the rest, a catalog that can't be read leaves the others, stale copies served labelled | Real. `providers/bazaar`, `providers/catalog` tests |
+| E19 | The MCP endpoint: an unauthenticated or cross-site caller | Every tool resolves the caller from a bearer token and acts only as that agent; the endpoint is stateless (no session to hijack); the SDK rejects a non-local `Host` on a local connection (DNS rebinding); the same rate limits as REST | Real. `TestMCPOverHTTP_NoTokenNoPayment` |
+| E20 | The console's agent borrows a pass it shouldn't | Only the console agent, only with a pass of the same signed-in person; every other agent naming a pass is refused; the person approves, never the agent | Real |
+| E21 | A kill switch that doesn't | It freezes every pass and is re-checked at the last moment before a rail signs | Real. A payment already confirmed on chain cannot be stopped |
+
+### Not yet mitigated (execution surface)
+
+- **Input leakage to unchosen providers during quoting** (E16), and **name-derived provider IDs in PayAI's directory** (E4).
+- **A real payment or swap has never been made.** The rails are verified on fake clusters and against live read-only calls. Their first real runs should use the smallest amounts and a dedicated wallet.
+- **The wallet is a key in a file**, not behind a KMS or HSM.
+- **No recipient allow-list for passes**, which is why cross-chain transfers (CCTP) are not built: a burn to a wrong address is irrecoverable.
+- **No MFA, no new-device alerts, no anomaly detection** on pass changes or spending patterns beyond the velocity limits.
+
+## Threat catalogue: the original commerce surface (kept)
+
+These rows describe the shopping agent and the tenant payment intents, which still build and pass their tests but are not the current product.
+
+### Trust boundaries (original surface)
 
 1. User ↔ Agent (authentication vs. authorization)
 2. Agent ↔ Algebra (capability-scoped, revocable `AgentIdentity`)
@@ -13,8 +59,6 @@ Methodology: enumerate the threats named explicitly in the build mandate, state 
 5. Algebra ↔ Payment rails (no PAN/CVV/private-key custody, ever)
 6. Tenant ↔ Algebra (capability-scoped, revocable `Tenant` bearer token — distinct from an `AgentIdentity`; a tenant administers policy/webhooks/users, it never itself spends)
 7. Algebra ↔ `paymentprovider.Provider` (a scoped credential's real value crosses this boundary exactly once, wrapped in `shared.SensitiveValue`, never persisted or logged)
-
-## Threat catalogue
 
 | # | Threat | Mitigation today | Status |
 |---|---|---|---|
@@ -52,13 +96,13 @@ Methodology: enumerate the threats named explicitly in the build mandate, state 
 | 32 | Account takeover via OAuth email linking | An OAuth identity links to an existing account by email only when the provider marks the email verified (GitHub `/user/emails` `verified`, Google `email_verified`); otherwise sign-in is refused. State + PKCE verifier live in an HMAC-signed, 10-minute, path-scoped cookie; `next` redirects are same-site paths only | Real (tested) |
 | 33 | Credential stuffing / email enumeration on sign-in and reset | argon2id (m=64 MiB, t=3, p=2); unknown email and wrong password return the same error in the same time (dummy-hash verify); password reset answers identically for unknown emails; reset tokens are single-use, 30-minute, hashed at rest | Real — rate limiting is the Redis limiter above (per IP / session); no CAPTCHA or lockout |
 
-## Rate limiting and circuit breakers (real, added post-Phase-1)
+### Rate limiting and circuit breakers (original surface)
 
 - **Rate limiting** (mandate §49): a fixed-window limiter (`internal/platform/redis.Client.Allow`) sits in front of both transports — `rateLimitMiddleware` in `internal/api/v1` (keyed by agent-token hash, falling back to source IP for unauthenticated endpoints) and in `internal/mcpserver` (keyed by the calling tool's `agent_token` argument, via `Server.AddReceivingMiddleware`). Both fail **open** on a Redis error — a cache outage must not cascade into a full API outage over a defense-in-depth control — and both are a no-op if Redis isn't configured at all (correct for local dev, not for production; see `docs/LOCAL_DEVELOPMENT.md`).
 - **Circuit breakers** (mandate §38): `internal/platform/resilience.Registry` hands out one breaker per merchant-connector name; `DiscoveryService.callConnector` is the single choke point every discovery-side connector call goes through, wrapped with both the breaker and an explicit per-connector timeout (independent of whatever timeout the caller's own context carries). Proven end-to-end with a connector that always fails (`internal/app/orchestration_test.go`'s `TestOrchestration_CircuitBreaker_StopsCallingFailingConnector`) — the breaker actually stops the calls, not just exists in isolation.
 - **Distributed lock** (mandate §35): `OrderService.Execute` optionally acquires a short-lived Redis lock per intent ID before doing the real work, so concurrent execution attempts on the same intent fail fast instead of all racing through the expensive path — `approvals.MarkConsumed`'s atomic compare-and-swap remains the actual correctness guarantee regardless (§32), this is purely an efficiency layer on top of it.
 
-## Not yet mitigated (explicitly, so it isn't silently assumed)
+### Not yet mitigated (original surface)
 
 - **Webhook-endpoint URL SSRF** (threat #28) — a tenant-registered webhook URL is never validated against an allowlist or checked for internal/link-local addresses before Algebra POSTs to it, unlike `MerchantURLAllowlist` for merchant-supplied product URLs.
 - **No durable outbound-webhook queue** — `app.WebhookDispatchService.Dispatch` retries in-process (3 attempts, exponential backoff) on a goroutine with no persistence; an attempt that exhausts retries while the tenant's endpoint is down is lost, not queued for later.

@@ -66,7 +66,7 @@ func mustBootstrapUserAndAgent(t *testing.T, b *wiring.Bundle) (userID, agentID 
 // "shipping:home" alias every test intent below uses. Without this,
 // OrderService.resolveFulfillment has nothing to resolve and the mock
 // connector correctly refuses to check out an undeliverable order — see
-// docs/PRIVACY.md: the merchant call is the only place a resolved address
+// docs/legacy/PRIVACY.md: the merchant call is the only place a resolved address
 // exists, and it only exists if a profile was ever stored for the alias.
 func mustSeedShipping(t *testing.T, b *wiring.Bundle, userID string) {
 	t.Helper()

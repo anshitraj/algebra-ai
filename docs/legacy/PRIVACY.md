@@ -24,7 +24,7 @@ One deliberate detail: `GetDeliveryOptions` is called during discovery with the 
 
 - Each encrypted value is bound (via AEAD "additional data") to its own row's `(id, user_id, type)` — ciphertext from one profile cannot be swapped into another's row and decrypt successfully. Tested in `encryption_test.go` (`TestAESGCM_WrongAADFails`).
 - A GCM authentication failure (wrong key, tampered ciphertext, wrong AAD) returns a single generic error — no information about *why* it failed, which is what keeps this from becoming a padding-oracle-style side channel.
-- The key (`ALGEBRA_MASTER_KEY`) is a static local-dev env var in this build. **Production target**: a Cloud KMS-wrapped data-encryption key, unwrapped once at process start — see [GCP_DEPLOYMENT.md](GCP_DEPLOYMENT.md). No GCP project is configured in this environment, so that step isn't built, only designed for.
+- The key (`ALGEBRA_MASTER_KEY`) is a static local-dev env var in this build. **Production target**: a Cloud KMS-wrapped data-encryption key, unwrapped once at process start — see [GCP_DEPLOYMENT.md](../GCP_DEPLOYMENT.md). No GCP project is configured in this environment, so that step isn't built, only designed for.
 
 ## What's classified as private-profile data
 

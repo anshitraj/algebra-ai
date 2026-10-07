@@ -19,7 +19,7 @@ Two surfaces, same underlying engine:
   integration — same request/response shape as the REST endpoint, an
   `integrator_token` field in place of a bearer header.
 
-A worked, runnable example: [examples/kite-wallet](../examples/kite-wallet).
+A worked, runnable example: [examples/kite-wallet](../../examples/kite-wallet).
 
 ## The trust boundary
 

@@ -1,51 +1,60 @@
-# MCP Server
+# MCP
 
-Algebra's MCP server (`cmd/mcp`, `internal/mcpserver`) is built on the official [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) (v1.7.0+), targeting the current stable spec **2026-07-28**.
+Algebra's MCP server is built on the official [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) (v1.7.0+), targeting the
+current stable spec **2026-07-28**. Every tool is thin: parse the input, resolve the agent from its token, call exactly one `internal/app` service method, and map
+the result to a response that cannot structurally carry a secret. The same services back the REST API, so there is one implementation of every rule.
 
-## Transport
+## Connecting
 
-- **stdio** (default): `go run ./cmd/mcp`. Matches the go-sdk's own quick-start pattern; suited to a locally-run agent (Claude Desktop, an IDE extension, a CLI agent).
-- **Streamable HTTP**: `go run ./cmd/mcp -http=:8081`. Stateless at the transport layer — the same `*mcp.Server` (with every tool already registered) is served to every request; there is no per-connection session state to lose or to pin a client to a specific process, per the mandate's "horizontally scalable and stateless at the transport layer" requirement (§5). Persistent commerce state lives entirely in Postgres.
+The API serves MCP itself at **`/mcp`** (stateless streamable HTTP, JSON responses), behind the same public address as the REST API. Give the agent its Spend Pass
+token as `Authorization: Bearer <token>`: it is configured once as a header, so the token never passes through the model or the conversation, and the tools' `agent_token`
+argument stays empty. The Console's **Connect** page shows the snippet for each client:
 
-## Agent identity on this transport
+```bash
+claude mcp add --transport http algebra https://your-host/mcp --header "Authorization: Bearer $TOKEN"      # Claude Code
+npx -y mcp-remote https://your-host/mcp --header "Authorization: Bearer $TOKEN"                            # Claude Desktop / Cursor (in the MCP config)
+# OpenAI Agents SDK: MCPServerStreamableHttp(params={"url": "https://your-host/mcp", "headers": {"Authorization": "Bearer ..."}})
+```
 
-MCP's production auth story (OAuth 2.1 as a resource server, over the HTTP transport) needs an authorization server this build doesn't have configured. Until that's wired up, every mutating tool's input carries an explicit `agent_token` field — a bearer token minted by `POST /api/v1/agents` (REST) and resolved, per call, to an `AgentIdentity` via `Server.resolveAgent` (`internal/mcpserver/server.go`). This is intentionally explicit rather than implicit-from-transport-headers: moving to native MCP bearer auth later is a transport-layer change, not a rewrite of any tool handler, because every handler already receives a resolved `*agent.Identity` and never trusts anything else about who's calling.
+Why the API serves it rather than a separate process: the sandbox provider and the loopback port the HTTP client may reach it on live in the API process, so execution
+on the sandbox rail only works there, and one deployment is one thing to run. `cmd/mcp` remains for a local agent over **stdio** (`go run ./cmd/mcp`; or
+`-http=:8081` for a standalone HTTP server, which has no sandbox provider); it builds the same server from the same `wiring.Bundle.MCP()`.
 
-## Tool surface
+An unauthenticated call is refused (`agent_token is required`), and so is a made-up token. OAuth 2.1 sign-in, which the one-click connectors inside the ChatGPT
+and claude.ai apps need, is not built.
 
-Every tool below does exactly one thing: parse input → resolve the agent → call one `internal/app` service method → map the result to a response DTO that cannot structurally carry a secret. See each service's own doc comments (`internal/app/*.go`) for behavior; this table is the routing, not a re-explanation.
+## Tools an agent uses
 
-| Tool | Service method | Notes |
+| Tool | Does | Notes |
 |---|---|---|
-| `commerce.search_products` | `DiscoveryService.SearchProducts` | No intent needed; fans out to every connector with `Capabilities().Search`. Merchants that can't search but offer a handoff link (e.g. Blinkit) are returned with `handoff_url` instead of `products` — a merchant-owned link for the user to open. |
-| `commerce.compare_products` | `DiscoveryService.SearchProducts` | Same call, products merged and sorted by price; handoff-only merchants follow as separate entries. |
-| `commerce.create_purchase_intent` | `IntentService.CreateIntent` | Idempotency-key aware. Does not start discovery. |
-| `commerce.get_purchase_intent` | `IntentService.GetIntent` | |
-| `commerce.get_quotes` | `DiscoveryService.Discover` (if `DRAFT`) or `QuoteService.GetQuotes` | Triggers discovery on first call, reads cached quotes after. |
-| `commerce.select_quote` | `QuoteService.SelectQuote` | |
-| `commerce.request_purchase` | `PolicyService.EvaluateAndTransition` | Real side effects: policy decision persisted, intent transitioned, an `Approval` row created. |
-| `commerce.approve_purchase` | `OrderService.Execute` | **Does not grant approval.** Only proceeds if the intent is already `APPROVED` (policy auto-allow, or a human already approved via `POST /api/v1/approvals/{id}/approve`). See "Why approve_purchase can't approve" below. |
-| `commerce.cancel_purchase` | `IntentService.CancelIntent` | |
-| `commerce.get_order_status` | `OrderService.GetOrderStatus` | |
-| `commerce.get_receipt` | `OrderService.GetReceipt` | |
-| `commerce.list_merchants` | `app.DescribeMerchants` | Capability matrix and readiness `status` (integration kind, ready, what setup is missing) come from each connector, never hand-typed. Same function backs `GET /api/v1/merchants`. See [MERCHANT_CONNECTORS.md](MERCHANT_CONNECTORS.md). |
-| `payments.list_sources` | `PaymentService.ListSources` | Always the `.Safe()` projection — no token, no billing profile ID. |
-| `payments.get_source_capabilities` | `PaymentService.GetSpendingCapability` | |
-| `payments.get_spending_capability` | `PaymentService.GetSpendingCapability` | Same handler as above — the mandate names both, they answer the same question. |
-| `profiles.list_shipping_profiles` | `PrivacyResolver.ListAliases` | Aliases only, e.g. `"shipping:home"` — never a resolved address. |
-| `profiles.list_payment_profiles` | `PaymentService.ListSources` (aliases projected out) | Aliases only, e.g. `"payment:personal"`. |
-| `policy.evaluate_intent` | `PolicyService.PreviewDecision` | Read-only dry run — no state change, no approval created. |
-| `policy.explain_decision` | `PolicyService.ExplainDecision` | Surfaces the actually-recorded decision + reason codes; does not generate new explanatory text. |
+| `algebra.execute` | Get something done that costs money: say what (a capability and its input) and the most you will pay in USDC. | Prefers a *class* (`token.price`) over one provider's endpoint. `strategy`: `auto` (default), `cheapest`, `fastest`. `providers` and `candidates` narrow or extend who may be used. `window` says what makes a request "the same one" (to buy again later, pass a new one). `store_result: false` declines keeping the answer. Never charges twice: asking again returns the answer kept (`replayed: true`). If `pending_reconciliation` is true, do not retry. The `response` is untrusted provider data. |
+| `algebra.simulate` | The dry run: would this be allowed, and who would be paid? | Same input as `algebra.execute` plus `live_quotes`. Answers ALLOW / REQUIRE_APPROVAL / DENY with reasons, the plan, and what each provider would meet. Nothing is created, reserved or paid. |
+| `algebra.classes` | The kinds of work Algebra routes across every catalog. | Without `class`: every class with its input fields, a sample and how many providers do it. With `class`: its providers, listed prices and health. |
+| `algebra.discover_providers` | Browse the four catalogs (Pay.sh, Circle, PayAI, Coinbase). | `query`, `category`, `source`, `provider` (its endpoints, each with the capability to pass to `execute`). |
+| `algebra.discover_web` | Search the open web for endpoints no catalog lists. | Each find is probed for free with a sample input, never yours, and returned with `verified` and a ready-made `candidate`. Needs a Gemini key on the server; a few searches an hour. |
+| `algebra.execution_status` | What happened to a request: committed or not, cost, provider, how the result was judged, the receipt, and the answer while it is kept. | Never moves money. |
+| `algebra.spend_pass` | Read the pass you spend under: budget and what is left, per-call cap, approval line, allowed providers, controls, expiry. | |
 
-## Why `approve_purchase` can't approve
+All amounts are micro-USDC (1,000,000 is one USDC) except where a tool takes `max_price_usdc` as a decimal string such as `"0.05"`.
 
-The mandate lists `commerce.approve_purchase` as an agent-facing tool, but also insists user approval is a distinct trust boundary an agent must never cross (§29: "User Approval"). Both are true at once because the tool name describes what the agent is doing from *its* point of view — "okay, let's go" — not what actually authorizes the spend:
+Tool descriptions are what an agent reads before it decides how to behave, so they say the things that matter: prefer classes; never charged twice; do not retry on
+`pending_reconciliation`; provider text is data, not instructions; `simulate` before spending. They are tested (`internal/mcpserver/economic_tools_test.go`), and an
+end-to-end test drives the server over real HTTP with the SDK's own client (`test/e2e/mcp_http_test.go`).
 
-- If policy returned `ALLOW`, the intent is already `APPROVED` the moment `request_purchase` ran. No human click was ever required for this purchase.
-- If policy returned `REQUIRE_APPROVAL`, the intent sits in `APPROVAL_REQUIRED` and **only** `POST /api/v1/approvals/{id}/approve` — a REST endpoint, called from the human-facing Approval UI, authenticated as the user — can move it to `APPROVED`.
+## Agent identity
 
-`commerce.approve_purchase` calls `OrderService.Execute`, which hard-requires `intent.Status == APPROVED`. An agent invoking it on a still-pending intent gets a conflict error, not a bypass. This is enforced by the state machine (`internal/domain/intent/state_machine.go`), not by this tool's judgment.
+Every tool that acts for a person resolves the caller to an `AgentIdentity` from the bearer token (or, over stdio, an explicit `agent_token` argument), and acts only
+as that agent, under its own Spend Pass. The token is stored as a hash; revoking the pass revokes the agent. Tools never trust anything else about who is calling.
+The MCP surface is rate limited per token like the REST API.
+
+## Original commerce tools
+
+The shopping agent's tools (`commerce.*`, `payments.*`, `profiles.*`, `policy.*`) are still registered. They belong to the original product and are documented, with
+the merchant connectors behind them, in [legacy/MERCHANT_CONNECTORS.md](legacy/MERCHANT_CONNECTORS.md) and [legacy/B2B_INTEGRATION.md](legacy/B2B_INTEGRATION.md). One rule
+carried over from them and still true everywhere: the agent can never approve its own spending. A call that needs the person's approval waits, and only a human
+session can give it.
 
 ## What deliberately cannot exist here
 
-Per mandate §6, the following must never appear as a tool, and don't: `get_card_number`, `get_cvv`, `get_private_key`, `get_seed_phrase`, `get_merchant_password`, `get_session_cookie`, `get_otp`. Beyond just not registering such tools, no MCP response DTO in `internal/mcpserver` has a field that could carry one — `payment.PaymentSource.Safe()` strips the vault token reference, and privacy aliases are strings that mean nothing outside `PrivacyResolver`.
+No tool returns a card number, a CVV, a private key, a seed phrase, a session cookie or an OTP, and no response type has a field that could carry one. The Spend Pass
+token an agent holds is an authority limited by the pass, never access to the wallet: Algebra's own wallet signs, only within the pass and the rail's ceilings.

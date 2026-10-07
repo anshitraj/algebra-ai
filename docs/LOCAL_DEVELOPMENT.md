@@ -1,87 +1,114 @@
-# Local Development
+# Local development
 
 ## Prerequisites
 
 - Go 1.26+
 - Node 20+ and pnpm (for the web app in `web/`)
-- A Postgres database — a hosted one (e.g. Neon) via `DATABASE_URL`, or `make dev-up` for Docker Postgres + Redis
-- `openssl` (or anything that can generate 32 random bytes + base64) for `ALGEBRA_MASTER_KEY`
+- PostgreSQL: `make dev-up` (Docker: Postgres and Redis), the native script below (Windows, no Docker), or a hosted database via `DATABASE_URL`
+- `openssl` (or anything that can generate 32 random bytes and base64 them) for `ALGEBRA_MASTER_KEY`
 
 ## One-time setup
 
 ```bash
 cp .env.example .env
-openssl rand -base64 32   # paste the output into .env as ALGEBRA_MASTER_KEY
-cp web/.env.local.example web/.env.local   # add at least one LLM key for the agent
+openssl rand -base64 32                     # paste into .env as ALGEBRA_MASTER_KEY
+cp web/.env.local.example web/.env.local    # add an LLM key for the console's agent chat (GEMINI_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY)
+pnpm --dir web install
 ```
 
-Migrations (`migrations/*.sql`) run automatically on first connect — see `internal/platform/postgres.Migrate`, called from `internal/platform/wiring.Build`. There is no separate "run migrations" step to remember.
+Migrations (`migrations/*.sql`) run automatically when the API starts (`internal/platform/postgres.Migrate`, called from `wiring.Build`). There is no separate step.
 
 ## Without Docker (Windows)
 
-`scripts\dev-native.ps1 up` starts a throwaway PostgreSQL cluster (127.0.0.1:5433) and an isolated Redis-compatible server (:6380) from the PostgreSQL and Memurai/Redis installs already on the machine, with their data under `.data/`. `api` runs the API against them, `test` runs the Postgres integration tests on a separate database, `status` and `down` do what they say. It never touches an existing Postgres or Redis, and never the `DATABASE_URL` in `.env`: the script sets its own in the process, and the process environment wins over `.env`.
+`scripts\dev-native.ps1 up` starts a throwaway PostgreSQL cluster (127.0.0.1:5433) and an isolated Redis-compatible server (:6380) from the PostgreSQL and Memurai/Redis installs already on the
+machine, with their data under `.data/` (gitignored). It never touches an existing Postgres or Redis, and never the `DATABASE_URL` in `.env`: the script sets its own in the process, and the
+process environment wins over `.env`.
+
+```powershell
+scripts\dev-native.ps1 up        # Postgres :5433 (databases algebra and algebra_test) and Redis :6380
+scripts\dev-native.ps1 api       # the API on 127.0.0.1:8080 against them, with the wallets below
+scripts\dev-native.ps1 test      # the Postgres integration tests and the end-to-end tests, on algebra_test
+scripts\dev-native.ps1 status    # and down
+```
+
+Wallets: if `.data/solana-devnet.json` exists it becomes the devnet rail's wallet; `.data/solana-mainnet.json` becomes the mainnet wallet only when `SOLANA_ALLOW_MAINNET=yes` is already set.
 
 ## Run it
 
 ```bash
-go run ./cmd/api                  # REST API on :8080
-pnpm --dir web dev                # web app on :3000 — proxies /api/v1 to the API
+go run ./cmd/api                    # REST API and MCP on :8080 (the MCP server is at /mcp)
+pnpm --dir web dev                  # console on :3000, proxying /api/v1 and /mcp to the API
 ```
 
-Open http://localhost:3000, create an account, answer the four setup questions, and you land in the agent. The browser only ever talks to the web app's own origin; `web/next.config.ts` rewrites `/api/v1/*` to `ALGEBRA_API_URL` (default `http://localhost:8080`), so the API's HttpOnly session cookie is first-party.
+Open http://localhost:3000. Create an account (or use **Try the demo**: one click, no sign-up, on the sandbox rail with simulated USDC; `DEMO_ACCOUNTS=off` hides it), then **Spend passes** to issue
+a USDC pass. The browser only ever talks to the web app's own origin; `web/next.config.ts` rewrites `/api/v1/*` and `/mcp` to `ALGEBRA_API_URL` (default `http://localhost:8080`), so the API's HttpOnly
+session cookie is first-party. To run a second copy of the web app from the same checkout (Next locks one dev server per build dir), set `NEXT_DIST_DIR=.next-alt` and a different port.
 
-To run a second copy of the web app from the same checkout (Next locks one dev server per build dir), set `NEXT_DIST_DIR=.next-alt` and a different port.
+With `ECONOMIC_SANDBOX=on` (the default outside production) the API hosts a simulated paid provider and a simulated rail, so the whole flow runs with no wallet and no money. Sandbox receipts are marked `test`.
 
-## Run the MCP server
+### Against real providers on devnet
 
 ```bash
-go run ./cmd/mcp                 # stdio transport (for a local agent/IDE)
-go run ./cmd/mcp -http=:8081     # streamable HTTP transport
+go run ./cmd/solana-wallet -new -out .data/solana-devnet.json     # fund at faucet.circle.com (Solana Devnet)
+go run ./cmd/demo-provider                                         # alpha, beta, flaky, greedy, trap, meter on :8402; a devnet facilitator of its own
+ECONOMIC_PROVIDERS="$(go run ./cmd/demo-provider -print-config)" go run ./cmd/api
 ```
+
+`.claude/launch.json` has the same as named configurations (`demo-provider`, `api-demo`, `web-demo`). Mainnet, the first real payment and `x402-dryrun` (prices a real provider and has a node simulate
+the payment, sending nothing) are in the runbook in [EXECUTION.md](EXECUTION.md).
+
+### The MCP server on its own
+
+```bash
+go run ./cmd/mcp                 # stdio, for a local agent or IDE (no sandbox provider in that process)
+go run ./cmd/mcp -http=:8081     # standalone streamable HTTP
+```
+
+An agent normally connects to the API's own `/mcp` instead: [MCP.md](MCP.md).
 
 ## Tests
 
 ```bash
-make test               # unit tests — no external dependencies, always run
-make test-integration   # needs a reachable DATABASE_URL; exercises real Postgres repos + the sandbox E2E flow
+make test               # unit tests: no external dependencies, always run
+make test-integration   # needs DATABASE_URL and ALGEBRA_MASTER_KEY: real Postgres repos, and the end-to-end flows over HTTP and MCP
 ```
 
-Tests that need Postgres check `DATABASE_URL`/`ALGEBRA_MASTER_KEY` at the top and call `t.Skip` if they're not set — `make test` alone never requires a database.
+Tests that need Postgres check `DATABASE_URL` and `ALGEBRA_MASTER_KEY` at the top and skip themselves when they aren't set, so `make test` alone never needs a database. Against the native database:
+
+```bash
+DATABASE_URL="postgres://algebra@127.0.0.1:5433/algebra_test?sslmode=disable" REDIS_ADDR=127.0.0.1:6380 \
+ALGEBRA_MASTER_KEY="$(cat .data/local-master.key)" go test ./... -count=1 -p 1
+```
+
+`-p 1` keeps the packages that reset tables from running at once. The end-to-end tests (`test/e2e`) are hermetic: they turn every provider catalog off, blank the Gemini key, and use the sandbox, a fake Solana
+node and a fake Jupiter (`providers/jupiter/jupitertest`), so nothing leaves the machine. Web: `pnpm --dir web exec tsc --noEmit` and `pnpm --dir web lint`.
 
 ## Accounts and sessions
 
-People sign in to the web app with email + password (argon2id) or Google / GitHub OAuth (`internal/api/v1/auth.go`). A sign-in creates:
+People sign in to the web app with email and password (argon2id) or Google / GitHub OAuth (`internal/api/v1/auth.go`). A sign-in creates:
 
 - an **HttpOnly, SameSite=Lax session cookie** (`algebra_session`, SHA-256-hashed at rest in `user_sessions`), and
-- a **per-session console agent** — the identity every agent-scoped endpoint acts as when called with the cookie. Its token is sealed (AES-256-GCM) on the session row; the web app's server-side LLM loop fetches it via `POST /api/v1/auth/agent-token` so tool calls authenticate as the agent, never as the human.
+- a **per-session console agent**: the identity every agent-scoped endpoint acts as when called with the cookie. Its token is sealed (AES-256-GCM) on the session row; the web app's server-side loop fetches
+  it via `POST /api/v1/auth/agent-token`, so tool calls authenticate as the agent, never as the human.
 
-Signing out revokes both. Human-only endpoints — approving or rejecting a purchase, adding payment methods or addresses, revoking agents, everything under `/api/v1/me` — accept **only** the session cookie. An agent bearer token is rejected there, which is what keeps approval out of any agent's reach, including our own LLM loop.
+Signing out revokes both. Human-only endpoints (approving, passes and their controls, the kill switch, everything under `/api/v1/me`) accept **only** the session cookie. An agent bearer token is rejected
+there, which is what keeps approval out of any agent's reach, including the console's own chat.
 
-Google / GitHub buttons appear once their client IDs are set (see `.env.example` for the exact redirect URIs). Password-reset emails go through Resend when `RESEND_API_KEY` is set; otherwise the reset link is printed to the API's log — fine locally, never in production.
-
-## Demo and production accounts
-
-The sign-in page offers two ways in:
-
-- **Demo** — one click, no signup (`POST /api/v1/auth/demo`). Each visitor gets a fresh `demo` account (`users.mode`), already onboarded with a made-up Bengaluru address and guardrails that show every policy outcome (auto-approve under ₹1,000, cap ₹50,000). The agent shops real listings and prices, and checks out through **Demo checkout** (`connectors/democheckout`): simulated cart, quote and order, `DEMO-` order numbers, no money. Guardrails and approvals run for real. Every order gets a page with a delivery tracker, a map and a printable demo invoice (`/console/orders/{id}`). Needs web search (`GEMINI_API_KEY`) to price listings.
-- **Production** — a real (`live`) account. Live accounts are never routed to Demo checkout or the mock test store; they buy only from real, connected stores.
-
-`DEMO_ACCOUNTS=off` hides the demo. `PASSWORD_LOGIN=off` removes email + password sign-in, for when Google/GitHub should be the only way to create a real account.
-
-## Agent evals
-
-`pnpm --dir web eval:agent [scenario-id ...]` has a simulated shopper chat with the real agent (system prompt, tools, provider loop), with Algebra's API replaced by fixtures. A judge model then grades each conversation against a checklist (`web/evals/agent/scenarios.ts`). Reports go to `web/evals/agent/results/`. Needs `GEMINI_API_KEY` in `web/.env.local`. On the free tier, `gemini-3.1-pro` allows 250 requests a day, so run with `EVAL_MODEL=gemini-3.8-flash` when it's used up. Add a scenario whenever a real conversation goes wrong.
+Google / GitHub buttons appear once their client IDs are set (`.env.example` has the redirect URIs). Password-reset emails go through Resend when `RESEND_API_KEY` is set; otherwise the reset link is printed
+to the API's log, which is fine locally and never in production. `PASSWORD_LOGIN=off` removes email and password sign-in.
 
 ## Scripts without a browser
 
-Mint an agent for an external MCP client from a signed-in session (`POST /api/v1/agents` with the cookie), or — for local scripts written before accounts existed — set `ALGEBRA_DEV_AUTH=true` to re-enable the old shortcuts:
+Mint an agent token from a signed-in session (`POST /api/v1/me/passes` with the cookie), or, for local scripts, set `ALGEBRA_DEV_AUTH=true` to re-enable the old shortcuts. That lets any caller act as any
+user, so never on a reachable host:
 
 ```bash
-# ALGEBRA_DEV_AUTH=true only. This lets any caller act as any user — never on a reachable host.
 curl -X POST localhost:8080/api/v1/users -H 'Content-Type: application/json' -d '{"email":"dev@example.com"}'
-curl -X POST localhost:8080/api/v1/agents -H 'Content-Type: application/json' \
-  -d '{"user_id":"user_...","client_id":"cli","name":"test-agent","permissions":["shopping.read","shopping.create_intent","shopping.execute","payments.request","orders.read","profiles.read","policy.read"]}'
-# Human-only endpoints then accept X-User-ID: user_...
+curl -X POST localhost:8080/api/v1/me/passes -b cookies.txt -H 'Content-Type: application/json' \
+  -d '{"label":"scratch","agent_kind":"custom","currency":"USDC","budget_minor_units":1000000,"budget_period":"total","expires_in_days":1}'   # the token is in the response, once
 ```
 
-Without that flag, `POST /api/v1/users` requires a tenant token and `POST /api/v1/agents` requires a session (for yourself) or a tenant token (for one of the tenant's own users).
+## Agent evals
+
+`pnpm --dir web eval:agent [scenario-id ...]` runs simulated conversations against the console's real agent (system prompt, tools, provider loop) with Algebra's API replaced by fixtures, and a judge model grades each
+against a checklist (`web/evals/agent/scenarios.ts`). Needs `GEMINI_API_KEY` in `web/.env.local`. Add a scenario whenever a real conversation goes wrong.

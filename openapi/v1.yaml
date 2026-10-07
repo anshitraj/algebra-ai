@@ -3,6 +3,8 @@ info:
   title: Project Algebra API
   version: "1.0"
   description: >
+    The original shopping and tenant payment-intent REST API, kept as it was. The current
+    product (an agent paying for APIs on Solana) is documented in execution.yaml.
     Agentic-commerce control plane REST API. Shares the exact same
     application services as the MCP server (see docs/MCP.md) — this spec
     documents the human/account-management surface plus the same commerce
@@ -96,7 +98,7 @@ components:
         provider_mode: { type: string, enum: [mock, sandbox, real] }
     PaymentSource:
       type: object
-      description: Never carries a card number, CVV, or vault token — see docs/PAYMENT_SECURITY.md.
+      description: Never carries a card number, CVV, or vault token — see docs/legacy/PAYMENT_SECURITY.md.
       properties:
         id: { type: string }
         alias: { type: string, example: "payment:personal" }
@@ -157,7 +159,7 @@ paths:
       summary: >
         Mint a new Integrator bearer token (shown exactly once) — the B2B
         counterpart to POST /agents, for a third-party application calling
-        POST /policy/evaluate-transaction. See docs/INTEGRATING.md.
+        POST /policy/evaluate-transaction. See docs/legacy/INTEGRATING.md.
       security: []
       requestBody:
         content:
@@ -184,7 +186,7 @@ paths:
       summary: >
         Standalone policy decision for a third-party integrator's own
         transaction — no Algebra purchase intent involved. See
-        docs/INTEGRATING.md for the full request/response reference and
+        docs/legacy/INTEGRATING.md for the full request/response reference and
         worked examples.
       security: [{ integratorToken: [] }]
       requestBody:
@@ -404,7 +406,7 @@ paths:
       security: []
       responses:
         '200':
-          description: Merchant options, sorted by name. See docs/MERCHANT_CONNECTORS.md.
+          description: Merchant options, sorted by name. See docs/legacy/MERCHANT_CONNECTORS.md.
           content:
             application/json:
               schema:

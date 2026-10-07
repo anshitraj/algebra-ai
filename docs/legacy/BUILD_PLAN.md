@@ -2,7 +2,7 @@
 
 Status: Phase 1 (Foundation) in progress. Written after repository audit, before implementation, per build mandate.
 
-> **This is a point-in-time snapshot**, written before the Next.js console (`web/`), the standalone `Integrator` policy-evaluation surface, and the B2B agentic-payments layer (`Tenant`/`AgenticPaymentIntent`/`paymentprovider.Provider`) existed — several statements below (e.g. "no Next.js console") are now stale by omission, not by correction. For current state, see [README.md](README.md), [docs/B2B_INTEGRATION.md](docs/B2B_INTEGRATION.md), and [docs/PROVIDER_STATUS.md](docs/PROVIDER_STATUS.md). This document is kept as-is rather than rewritten — it's the historical record of the original audit and plan.
+> **This is a point-in-time snapshot**, written before the Next.js console (`web/`), the standalone `Integrator` policy-evaluation surface, and the B2B agentic-payments layer (`Tenant`/`AgenticPaymentIntent`/`paymentprovider.Provider`) existed — several statements below (e.g. "no Next.js console") are now stale by omission, not by correction. For current state, see [README.md](../../README.md), [docs/legacy/B2B_INTEGRATION.md](B2B_INTEGRATION.md), and [docs/legacy/PROVIDER_STATUS.md](PROVIDER_STATUS.md). This document is kept as-is rather than rewritten — it's the historical record of the original audit and plan.
 
 ## 1. Repository audit result
 
@@ -51,13 +51,13 @@ docs/              — architecture, threat model, MCP, payment security, privac
                       connectors, GCP deployment, local dev
 ```
 
-Full detail and diagrams: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Full detail and diagrams: [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
 Python discovery/normalization workers and the TypeScript frontend/SDK are designed for (interfaces, schemas) but not built in Phase 1 — the mandate explicitly scopes Phase 1 to the Go foundation with no UI.
 
 ## 3. Data model
 
-PostgreSQL is authoritative for all financial/commerce state (never Redis-only). Core tables (see [migrations/0001_init.sql](migrations/0001_init.sql)):
+PostgreSQL is authoritative for all financial/commerce state (never Redis-only). Core tables (see [migrations/0001_init.sql](../../migrations/0001_init.sql)):
 
 `users, agents, agent_permissions, purchase_intents, intent_items, merchant_connectors, private_profiles, payment_sources, quotes, quote_items, approvals, orders, order_events, policy_decisions, audit_events, idempotency_keys, webhook_events`
 
@@ -73,7 +73,7 @@ Five boundaries, never collapsed into one:
 4. **Algebra ↔ Privacy** — `PrivacyResolver` is the only path from an alias (`shipping:home`, `payment:personal`) to real PII/payment metadata. The LLM/agent never sees resolved values; only merchant-execution code paths call the resolver, and every resolution is audited.
 5. **Algebra ↔ Payment rails** — no PAN/CVV/private-key custody. Cards go through a tokenization vault (interface now, sandbox adapter now, real vendor later); crypto is non-custodial (Algebra prepares, wallet signs, network executes).
 
-Full threat catalogue: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+Full threat catalogue: [docs/THREAT_MODEL.md](../THREAT_MODEL.md).
 
 ## 5. Real vs. sandbox vs. mock vs. not-yet-implemented
 
@@ -91,7 +91,7 @@ This is the authoritative labeling for everything shipped in this build; the com
 - Secret/PII leakage into logs or MCP tool results: mitigated by a redaction layer in `internal/platform/logging` plus MCP tool output types that structurally cannot carry PAN/CVV/OTP/private-key fields (they don't exist as struct fields anywhere in the MCP layer).
 - SSRF via merchant/browser connectors: domain allowlist + URL validation live in the `merchant` domain package and are enforced before any outbound connector call.
 
-Full list: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+Full list: [docs/THREAT_MODEL.md](../THREAT_MODEL.md).
 
 ## 7. Implementation phases (this session)
 
@@ -120,7 +120,7 @@ This machine's Docker Desktop backend is crash-looping on a corrupted internal s
 
 Given that, `internal/platform/postgres/integration_test.go` and `test/e2e/e2e_test.go` are fully written (real SQL against the real schema; the full sandbox purchase flow end to end) and skip cleanly when no database is reachable — they have **not** been run against a live database in this session. Everything not requiring a database — all domain-layer unit tests, and the `internal/app` orchestration tests running the same flow against in-memory fakes plus the real mock connector and real policy engine — has been run and is green; see the completion report's "Tests" section, including a real bug those orchestration tests caught and a fix that landed as a direct result.
 
-To finish verification once the Docker/Postgres situation is sorted: `make dev-up && make test-integration` (see [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)).
+To finish verification once the Docker/Postgres situation is sorted: `make dev-up && make test-integration` (see [docs/LOCAL_DEVELOPMENT.md](../LOCAL_DEVELOPMENT.md)).
 
 ## 9. Wiring audit — components that existed but were unreachable
 
@@ -137,11 +137,11 @@ A pass specifically looking for code that was built, tested in isolation, and th
 | `order_events` rows were written but never readable. | Fixed — `OrderRepo.ListEvents`. |
 | `merchant.AllowedDomains` / `ValidateURL` defined but enforcing nothing. | Fixed. Now hardened with loopback/private/link-local rejection (independent of the allowlist) and applied to every merchant-supplied product URL via `DiscoveryService.SetURLAllowlist`. Tested against metadata-endpoint and private-subnet URLs. |
 | `providers/arcium` + `internal/domain/confidential` never constructed anywhere — dead packages. | Fixed — `LocalEncryptedProvider` is constructed in `wiring.Build` and exposed on the `Bundle`. |
-| `Authenticate`, `GetProduct`, `RemoveFromCart` on `Connector` still have no callers. | **Left as-is, deliberately.** These are interface surface a real connector genuinely needs (session establishment, product detail, cart editing); inventing artificial call sites would be worse than documenting the gap — see [docs/MERCHANT_CONNECTORS.md](docs/MERCHANT_CONNECTORS.md)'s call-site table. |
+| `Authenticate`, `GetProduct`, `RemoveFromCart` on `Connector` still have no callers. | **Left as-is, deliberately.** These are interface surface a real connector genuinely needs (session establishment, product detail, cart editing); inventing artificial call sites would be worse than documenting the gap — see [docs/legacy/MERCHANT_CONNECTORS.md](MERCHANT_CONNECTORS.md)'s call-site table. |
 
 ## 10. Merchant options: Zepto, Swiggy Instamart, Amazon, Flipkart, Blinkit
 
-Each merchant uses the best official integration that actually exists — see the audit table in §1 and [docs/MERCHANT_CONNECTORS.md](docs/MERCHANT_CONNECTORS.md) for the per-merchant contract, limits, and sources.
+Each merchant uses the best official integration that actually exists — see the audit table in §1 and [docs/legacy/MERCHANT_CONNECTORS.md](MERCHANT_CONNECTORS.md) for the per-merchant contract, limits, and sources.
 
 What was added:
 
