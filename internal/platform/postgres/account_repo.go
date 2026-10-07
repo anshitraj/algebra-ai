@@ -267,6 +267,13 @@ func (r *AccountRepo) EraseUser(ctx context.Context, userID string, at time.Time
 		{"payment methods", `UPDATE payment_sources SET revoked_at = COALESCE(revoked_at, $2),
 			nickname = NULL, last4 = NULL, issuer_meta = NULL, expiry_meta = NULL WHERE user_id = $1`},
 		{"agents", `UPDATE agents SET revoked_at = COALESCE(revoked_at, $2) WHERE user_id = $1`},
+		// What their agents left behind: no pass may spend any more, the answers kept
+		// for repeat requests go, and what they asked is scrubbed from their intents.
+		// The intents, receipts and the hash of each request stay: records the law
+		// requires, tied now to nobody.
+		{"spend passes", `UPDATE spend_passes SET revoked_at = COALESCE(revoked_at, $2) WHERE user_id = $1`},
+		{"kept results", `DELETE FROM intent_results WHERE principal_id = $1`},
+		{"request inputs", `UPDATE economic_intents SET input = '{}'::jsonb WHERE principal_id = $1`},
 	}
 	for _, s := range steps {
 		args := []any{userID}

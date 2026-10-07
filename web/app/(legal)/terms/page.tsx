@@ -4,23 +4,25 @@ import { LEGAL } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "Terms of Service — Algebra",
-  description: "The agreement between you and Algebra: your account, your agent and approvals, stores, plans and billing.",
+  description: "The agreement between you and Algebra: your account, Spend Passes and approvals, providers, payments on Solana, and what Algebra does not promise.",
 };
 
 export default function TermsPage() {
   return (
     <LegalDoc
       title="Terms of Service"
-      intro={`These terms are the agreement between you and ${LEGAL.who} for using Algebra's website, console, shopping agent and API. By creating an account, starting a demo or using the service, you accept them.`}
+      intro={`These terms are the agreement between you and ${LEGAL.who} for using Algebra's website, console, API and MCP server. By creating an account or using the service, you accept them.`}
     >
       <Section title="What Algebra is">
         <p>
-          Algebra is a shopping agent with spending controls. You tell it what you want; it searches stores, compares options and — within the
-          guardrails you set — places orders for you, asking for your approval above the limits you choose.
+          Algebra is a router and a spend firewall for AI agents that pay for APIs. An agent says what it wants done and the most it will pay. Algebra
+          finds providers of that work, asks each for its price, checks the request against the limits you set, pays the provider in USDC on Solana
+          from a wallet Algebra controls, makes the call, checks the result and gives back the result with a signed receipt.
         </p>
         <p>
-          Algebra is non-custodial. We never hold your money, and we never see or store your card number, CVV, UPI PIN, wallet key or OTP.
-          Payment for anything you buy is between you and the store.
+          Algebra is software. It is not a bank, an exchange, a money transmitter or an investment adviser, and it does not hold balances for you. A
+          Spend Pass is a limit on what an agent may spend, not a deposit. You never give Algebra, or your agent, a card number, a wallet private key
+          or any other secret of yours.
         </p>
       </Section>
 
@@ -32,81 +34,95 @@ export default function TermsPage() {
         </ul>
       </Section>
 
-      <Section title="Your agent, your guardrails, your approvals">
+      <Section title="Spend Passes, limits and approvals">
         <ul>
           <li>
-            You decide the rules: per-purchase and daily caps, the amount above which a purchase needs your approval, and categories it may never buy.
-            Algebra checks every purchase against them on our servers before it happens.
+            You decide the rules for each agent: a budget, the most one call may cost, the amount above which a call waits for your approval, which
+            providers it may pay, how fast it may spend, and what to do about a provider you have never paid. Algebra checks every payment against
+            them on our servers before it is made.
           </li>
           <li>
-            A purchase within your auto-approve limit can be placed without asking you again. A purchase you approve, or one inside a limit you set,
-            is your purchase.
+            A call inside the limits you set can be paid without asking you again. A payment inside your limits, or one you approve, is your payment.
+            Approvals are yours to give: an agent cannot approve its own spending.
           </li>
           <li>
-            The agent uses AI models and can make mistakes. Review what it proposes before you approve. Prices it shows from web search are what a
-            store listed at the time and may have changed; the store&apos;s own checkout price is the one that counts.
+            The kill switch freezes every pass at once, including a payment about to be made. A payment already confirmed on the blockchain cannot be
+            stopped.
           </li>
-          <li>Approvals are always yours to give. The agent cannot approve a purchase for you.</li>
+          <li>
+            Agents use AI models and can make mistakes: they can ask for the wrong thing, or for too much of it. Set limits you can live with. A dry
+            run (&quot;simulate&quot;) shows what a request would do without paying anything.
+          </li>
         </ul>
       </Section>
 
-      <Section title="Stores and what you buy">
+      <Section title="Providers and what you buy">
         <p>
-          When you buy something, your contract of sale is with the store, not with Algebra. The store is responsible for the product, its price,
-          delivery, returns, refunds and warranty, under its own terms. If you follow a link to buy on a store&apos;s own site, their terms apply there.
+          The APIs your agents pay for are run by other people. Algebra reads public catalogs of them (Pay.sh, Circle&apos;s Agent Marketplace,
+          PayAI and Coinbase&apos;s x402 Bazaar) and, when asked and configured, searches the open web. A listing is not an endorsement, and a listed
+          price is not a quote: Algebra asks the provider for its real price before paying, and refuses providers that are down, that ask more than they
+          list or that ask many times what the same work usually costs.
         </p>
         <p>
-          To place an order for you, Algebra shares with that store only what the order needs — the items and the delivery address you approved.
-        </p>
-      </Section>
-
-      <Section title="Demo accounts">
-        <p>
-          A demo account searches real stores but checks out through a simulated store: no money moves, nothing ships, and demo order numbers are
-          not real orders. Demo accounts expire after three days and have lower daily limits.
+          Your contract for the work is with the provider, under its own terms. What a provider returns is third-party data: Algebra checks that it
+          arrived and that it has the shape expected, which is not a promise that it is correct, complete or fit for your purpose.
         </p>
       </Section>
 
-      <Section title="Plans and billing">
+      <Section title="Payments on Solana, and swaps">
         <ul>
-          <li>The Developer plan is free, with the monthly allowance shown on the pricing page.</li>
           <li>
-            The Growth plan is a monthly subscription, billed in advance through Razorpay and renewed automatically each month until you cancel.
-            Prices are in Indian rupees; applicable taxes are shown at checkout.
+            Payments are in USDC on Solana. A confirmed blockchain payment is final: Algebra cannot reverse it, and refunds, if any, are for the
+            provider to give.
           </li>
           <li>
-            Cancel anytime under Plan &amp; billing. You keep Growth until the end of the month you paid for, and you are not charged again. See the{" "}
-            <a href="/refunds">refund and cancellation policy</a>.
+            Payments are public on the blockchain: the wallet addresses, the amount and the time can be seen by anyone, including who was paid.
           </li>
-          <li>We may change prices with at least 30 days&apos; notice; a change applies from your next renewal after that.</li>
+          <li>
+            Where Algebra offers it, an agent can buy a token with USDC through Jupiter. Token prices move, a swap can lose value, and Algebra gives no
+            advice about whether to make one. Algebra signs a swap only if the transaction would spend no more than the amount authorized and would
+            deliver at least the quote less the slippage you allowed; that limits what one swap can cost, not what the token is worth afterwards.
+          </li>
+          <li>
+            Networks marked devnet or sandbox use test money with no value. Do not send real funds to a test address.
+          </li>
         </ul>
+      </Section>
+
+      <Section title="Receipts">
+        <p>
+          Every payment comes with a receipt that Algebra signs. It records what was asked, which provider did it, what was paid and what the chain
+          showed, and it can be checked by anyone against Algebra&apos;s published keys. It proves what Algebra recorded; it does not prove that the
+          provider&apos;s answer is true.
+        </p>
       </Section>
 
       <Section title="Fair use">
         <p>Don&apos;t use Algebra to:</p>
         <ul>
-          <li>buy anything illegal, or anything a store&apos;s terms forbid;</li>
-          <li>get around your own guardrails, our limits or a store&apos;s limits, for example by splitting one purchase into several;</li>
+          <li>pay for anything illegal, or anything a provider&apos;s terms forbid;</li>
+          <li>get around your own limits, ours or a provider&apos;s, for example by splitting one payment into several;</li>
           <li>disrupt, overload, scrape or reverse-engineer the service, or access accounts or data that aren&apos;t yours;</li>
-          <li>create accounts or demos in bulk, or resell access without our written agreement.</li>
+          <li>create accounts in bulk, or resell access without our written agreement.</li>
         </ul>
-        <p>Daily limits on agent messages and demo accounts keep the service fair for everyone.</p>
+        <p>Rate limits keep the service fair for everyone, and web searches for providers are limited to a few an hour for each agent.</p>
       </Section>
 
       <Section title="Services we rely on">
         <p>
-          Algebra uses third-party services to work: AI model providers (such as Google Gemini, Anthropic and OpenAI) to run the agent, Google Search
-          for live listings, the stores you shop at, Razorpay for plan payments and an email provider for account emails. Their availability and
-          terms are outside our control.
+          Algebra depends on services we do not control: the Solana network and the node providers that serve it, Circle (USDC), the provider
+          catalogs named above, Jupiter for swaps, AI model providers such as Google Gemini, Anthropic and OpenAI for the console&apos;s agent and for
+          web search, and an email provider for account emails. Their availability and terms are outside our control.
         </p>
       </Section>
 
       <Section title="Disclaimers and liability">
         <p>
-          We work hard to keep Algebra accurate and available, but the service is provided &quot;as is&quot;. To the extent the law allows, we are not
-          liable for indirect or consequential loss, for a store&apos;s acts or products, or for prices and availability shown from third-party
-          listings. Our total liability to you for any claim is limited to the fees you paid us in the three months before it arose. Nothing here
-          limits rights you have under the Consumer Protection Act, 2019 or any other law that can&apos;t be limited by contract.
+          This is early software. We work hard to keep it correct and available, but the service is provided &quot;as is&quot;. To the extent the law
+          allows, we are not liable for indirect or consequential loss, for a provider&apos;s acts or answers, for losses from the price of a token
+          or from a payment the blockchain has confirmed, or for what a third-party catalog says. Our total liability to you for any claim is limited
+          to what you paid us in the three months before it arose, and nothing here limits a right you have under a law that cannot be limited by
+          contract.
         </p>
       </Section>
 

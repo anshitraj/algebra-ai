@@ -129,6 +129,17 @@ func (a *API) exportMe(w http.ResponseWriter, r *http.Request) {
 	if sessions, err := a.b.Accounts.ListSessions(ctx, sess.UserID); err == nil {
 		out["signed_in_devices"] = sessions
 	}
+	// What their agents did: the Spend Passes, and the requests made under them
+	// with the input each carried. The answers kept for repeat requests are not
+	// here; they have their own route while they are kept.
+	if passes, err := a.b.SpendPasses.List(ctx, sess.UserID); err == nil {
+		out["spend_passes"] = passes
+	}
+	if a.b.Economic != nil {
+		if requests, err := a.b.Economic.List(ctx, sess.UserID, 200); err == nil {
+			out["requests"] = requests
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Disposition", `attachment; filename="algebra-data-export.json"`)
 	writeJSON(w, http.StatusOK, out)

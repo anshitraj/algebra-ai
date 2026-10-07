@@ -4,25 +4,25 @@ import { LEGAL } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "Contact — Algebra",
-  description: "Reach Algebra for help with your account, billing, privacy requests or a grievance.",
+  description: "Reach Algebra for help with your account, privacy requests or a grievance.",
 };
 
-const GITHUB_ISSUES = "https://github.com/anshitraj/algebra/issues";
+const GITHUB_ISSUES = "https://github.com/anshitraj/algebra-ai/issues";
 
 export default function ContactPage() {
   return (
     <LegalDoc
       title="Contact us"
-      intro="For help with your account or plan, a privacy request or a complaint, here's how to reach us. For an order from a store, contact that store first — it handles delivery, returns and refunds for what it sold."
+      intro="For help with your account, a privacy request or a complaint, here's how to reach us. For the work an API provider did, or didn't, do, the provider's own terms apply: ask the provider."
     >
-      <Section title="Support and billing">
+      <Section title="Support">
         {LEGAL.supportEmail ? (
           <p>
             Email <a href={`mailto:${LEGAL.supportEmail}`}>{LEGAL.supportEmail}</a>. We reply within two business days.
           </p>
         ) : (
           <p>
-            Open an issue on <a href={GITHUB_ISSUES}>GitHub</a>. Don&apos;t include personal details there.
+            Open an issue on <a href={GITHUB_ISSUES}>GitHub</a>. Don&apos;t include personal details, tokens or wallet keys there.
           </p>
         )}
       </Section>
@@ -56,7 +56,8 @@ export default function ContactPage() {
 
       <Section title="Developers">
         <p>
-          Questions about the API, MCP server or policy engine: <a href={GITHUB_ISSUES}>GitHub issues</a>.
+          Questions about the API, the MCP server or the router: <a href={GITHUB_ISSUES}>GitHub issues</a>. A security problem: please don&apos;t
+          open a public issue; use GitHub&apos;s private vulnerability reporting on the repository, or write to the support address when one is listed.
         </p>
       </Section>
     </LegalDoc>

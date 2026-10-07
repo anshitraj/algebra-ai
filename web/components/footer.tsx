@@ -39,7 +39,6 @@ const columns = [
     links: [
       { label: "Terms", href: "/terms" },
       { label: "Privacy", href: "/privacy" },
-      { label: "Refunds & cancellation", href: "/refunds" },
       { label: "Contact", href: "/contact" },
     ],
   },

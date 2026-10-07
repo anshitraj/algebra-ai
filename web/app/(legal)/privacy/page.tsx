@@ -4,14 +4,14 @@ import { LEGAL } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "Privacy Policy — Algebra",
-  description: "What Algebra collects, why, who it's shared with, how long it's kept, and how to see, correct or delete it.",
+  description: "What Algebra collects, what leaves it when an agent makes a request, who it goes to, how long it is kept, and how to see, correct or delete it.",
 };
 
 export default function PrivacyPage() {
   return (
     <LegalDoc
       title="Privacy Policy"
-      intro={`This policy explains what personal data ${LEGAL.who} collects when you use Algebra, why, who it goes to, and the rights you have over it under India's Digital Personal Data Protection Act, 2023. We collect only what the service needs, and we never sell your data.`}
+      intro={`This policy explains what personal data ${LEGAL.who} collects when you use Algebra, what leaves Algebra when your agent makes a request, who it goes to, and the rights you have over it under India's Digital Personal Data Protection Act, 2023. We collect only what the service needs, and we never sell your data.`}
     >
       <Section title="What we collect">
         <ul>
@@ -20,15 +20,18 @@ export default function PrivacyPage() {
             GitHub account you sign in with.
           </li>
           <li>
-            <strong>Your rules and preferences</strong> — your guardrails (spending caps, approval line, blocked categories), your onboarding answers,
-            and preferences the agent learns, such as a clothing size or which banks&apos; cards you hold.
+            <strong>Spend Passes and agent tokens</strong> — each pass&apos;s label, limits and controls. A token is shown to you once and stored only
+            as a hash.
           </li>
           <li>
-            <strong>Delivery addresses</strong> — encrypted with AES-256-GCM before they are stored, and decrypted only to place an order you approved.
+            <strong>Requests your agents make</strong> — what each asked for (the kind of work, its input, the most it would pay), which providers
+            were priced and chosen, the decisions made, what was paid, and the signed receipt. The input is whatever your agent sent, so it can contain
+            personal data if your agent put it there: send only what the work needs.
           </li>
           <li>
-            <strong>Purchases</strong> — what you asked the agent to buy, the quotes it found, policy decisions, your approvals, orders and their
-            status, kept as an audit trail.
+            <strong>Answers</strong> — the provider&apos;s answer to a paid request is kept so that asking again returns it instead of paying twice.
+            It is encrypted at rest and deleted after 24 hours unless the operator of the instance sets another time (never more than 7 days), and a
+            request can ask for its answer not to be kept at all. Otherwise we keep only a hash of it.
           </li>
           <li>
             <strong>Agent chats</strong> — your messages and the agent&apos;s replies are sent to our server and to the AI provider to produce each
@@ -37,19 +40,36 @@ export default function PrivacyPage() {
           <li>
             <strong>Devices</strong> — for each signed-in session, its IP address, browser and last activity, so you can see and sign out devices.
           </li>
+        </ul>
+        <p>We never collect card numbers, wallet private keys or one-time passwords.</p>
+      </Section>
+
+      <Section title="What leaves Algebra when your agent makes a request">
+        <ul>
           <li>
-            <strong>Plan payments</strong> — your Razorpay subscription and payment IDs. Card and UPI details go straight to Razorpay; we never see
-            them.
+            <strong>Price requests.</strong> To compare providers, Algebra asks each candidate (up to twelve) what it would charge, with a free request
+            that carries your agent&apos;s input. Providers you did not choose therefore see what your agent asked for. If an input is sensitive, name
+            the provider you want and the others are not asked.
+          </li>
+          <li>
+            <strong>The provider that is paid</strong> receives the input again with the payment, and the payment on the blockchain shows the wallet,
+            the amount and the time.
+          </li>
+          <li>
+            <strong>Searching the web for providers</strong> (when your agent asks and the operator has set it up) sends a description of the kind of
+            work wanted to Google&apos;s Gemini, not your agent&apos;s input. Endpoints it finds are priced with a sample input, never yours.
+          </li>
+          <li>
+            <strong>Swaps</strong> send the token and amount to Jupiter and a transaction to a Solana node.
           </li>
         </ul>
-        <p>We never collect card numbers, CVVs, UPI PINs, wallet keys or one-time passwords.</p>
       </Section>
 
       <Section title="Why we use it">
         <ul>
           <li>to run your account and keep it secure;</li>
-          <li>to find products, apply your guardrails, ask for your approval and place orders you approve;</li>
-          <li>to bill your plan and send account emails such as password resets;</li>
+          <li>to find providers, apply your limits, ask for your approval, pay, and prove what happened;</li>
+          <li>to send account emails such as password resets;</li>
           <li>to prevent abuse and fraud, and to meet legal and accounting obligations.</li>
         </ul>
         <p>We process your data on the basis of your consent, given when you create an account, and for the legitimate uses the law allows.</p>
@@ -58,17 +78,14 @@ export default function PrivacyPage() {
       <Section title="Who we share it with">
         <ul>
           <li>
-            <strong>Stores</strong> — only for an order you approved: the items and the delivery address for that order.
+            <strong>Providers</strong> — as described above: those asked for a price, and the one paid.
+          </li>
+          <li>
+            <strong>The Solana network and its node providers</strong> — payments are public by nature.
           </li>
           <li>
             <strong>AI model providers</strong> (Google Gemini, Anthropic or OpenAI, depending on the model in use) — your chat messages and the
             results of the agent&apos;s searches, to generate replies.
-          </li>
-          <li>
-            <strong>Google Search</strong> — the product searches the agent runs. These carry the search text, not your identity.
-          </li>
-          <li>
-            <strong>Razorpay</strong> — to take payment for your plan.
           </li>
           <li>
             <strong>Our email provider and hosting providers</strong> — to send account emails and run the service.
@@ -80,27 +97,29 @@ export default function PrivacyPage() {
 
       <Section title="How long we keep it">
         <p>
-          Account data stays while your account exists. When you delete your account we erase your name, email, sign-ins, sessions, saved addresses
-          and preferences straight away, and revoke every agent. Orders and their audit trail are financial records the law requires us to keep; after
-          deletion they remain tied only to an anonymous ID, not to you. Demo accounts expire after three days. Sessions that have ended are cleared
-          after a week.
+          Account data stays while your account exists. When you delete your account we erase your name, email, sign-ins and sessions, revoke every
+          agent and Spend Pass, delete every answer we kept and remove the input of your requests. The requests themselves, their receipts and the
+          hash of each request are records the law and the blockchain require us to keep; after deletion they remain tied only to an anonymous ID, not
+          to you. Sessions that have ended are cleared after a week.
         </p>
       </Section>
 
       <Section title="How we protect it">
         <p>
-          Addresses and stored agent credentials are encrypted at rest. Sessions use secure, HTTP-only cookies. Passwords are hashed, never stored.
-          Every purchase is checked against your guardrails on our servers, and access to data is limited to what each part of the service needs.
+          Answers are encrypted at rest under a key used for nothing else. Sessions use secure, HTTP-only cookies. Passwords and agent tokens are
+          hashed, never stored. Every payment is checked against your limits on our servers, outgoing requests can only reach public internet
+          addresses, and access to data is limited to what each part of the service needs.
         </p>
       </Section>
 
       <Section title="Your rights">
         <ul>
           <li>
-            <strong>See your data</strong> — download it anytime under Account → Your data.
+            <strong>See your data</strong> — download it anytime under Account → Your data: your account, Spend Passes, requests and devices. The
+            answers we keep for repeat requests are readable through the API for as long as they are kept.
           </li>
           <li>
-            <strong>Correct it</strong> — edit your name, guardrails, preferences and addresses in the console, or ask us.
+            <strong>Correct it</strong> — edit your name and limits in the console, or ask us.
           </li>
           <li>
             <strong>Erase it</strong> — delete your account under Account → Your data.

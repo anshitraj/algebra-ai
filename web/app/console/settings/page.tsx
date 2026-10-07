@@ -195,7 +195,7 @@ export default function SettingsPage() {
           <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
             <div className="flex-1">
               <p className="text-sm text-foreground">Download your data</p>
-              <p className="mt-0.5 text-xs text-muted">Your account, guardrails, preferences, purchase requests, orders and devices, as one JSON file.</p>
+              <p className="mt-0.5 text-xs text-muted">Your account, Spend Passes, the requests your agents made and devices, as one JSON file.</p>
             </div>
             <a
               href={api.DATA_EXPORT_URL}
@@ -210,7 +210,7 @@ export default function SettingsPage() {
               <div className="flex-1">
                 <p className="text-sm text-foreground">Delete account</p>
                 <p className="mt-0.5 text-xs text-muted">
-                  Erases your name, email, sign-ins, saved addresses and preferences, and revokes every agent. Orders stay on record without your details. This can&apos;t be undone.
+                  Erases your name, email and sign-ins, revokes every agent and Spend Pass, and deletes the answers kept for your requests and what they asked. The requests and their receipts stay on record, tied to nobody. This can&apos;t be undone.
                 </p>
               </div>
               {!deleting && (
