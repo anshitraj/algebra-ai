@@ -1,10 +1,11 @@
 // Package bazaar reads x402 discovery directories ("bazaars"): public lists
 // of paid x402 endpoints, each with the payment terms its provider publishes.
-// Two are wired in: Circle's Agent Marketplace (agents.circle.com, served by
-// GET https://api.circle.com/v2/x402/discovery/resources) and PayAI's
-// facilitator bazaar (GET https://facilitator.payai.network/discovery/resources).
-// Both speak the same discovery format, with small differences a Profile
-// captures.
+// Three are wired in: Circle's Agent Marketplace (agents.circle.com, served by
+// GET https://api.circle.com/v2/x402/discovery/resources), PayAI's
+// facilitator bazaar (GET https://facilitator.payai.network/discovery/resources)
+// and Coinbase's CDP bazaar (GET https://api.cdp.coinbase.com/platform/v2/x402/
+// discovery/resources). All speak the same discovery format, with small
+// differences a Profile captures.
 //
 // Algebra keeps what it can pay: endpoints that accept Circle's real USDC on
 // Solana, mainnet or devnet, as plain x402 (not Circle Gateway batching and
@@ -19,6 +20,7 @@
 package bazaar
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -66,6 +68,22 @@ type Profile struct {
 	PageSize int
 	// Source is the discovery source candidates from it carry.
 	Source routing.DiscoverySource
+
+	// Unfiltered: the directory ignores the network filter and lists every
+	// chain's endpoints together (Coinbase's lists 35,000, a tenth of them
+	// payable on Solana). The reader then walks the list in the directory's own
+	// order, most used first, for MaxPages pages, and keeps what can be paid on
+	// Solana; the tail is endpoints nobody has paid more than once.
+	Unfiltered bool
+	MaxPages   int
+	// HostIDs names a provider by the host its endpoints are called at instead
+	// of by the name it gives itself. In an open directory anybody can list
+	// themselves under any name, and a provider ID is what a Spend Pass allows,
+	// so it must not be a name a stranger can choose.
+	HostIDs bool
+	// TTL and StaleFor override how long a copy is served, for a directory too
+	// big to read often.
+	TTL, StaleFor time.Duration
 }
 
 // Circle is Circle's Agent Marketplace. Only plain x402 without a browser
@@ -93,6 +111,25 @@ func PayAI(discoveryURL string) Profile {
 		Name: "payai", Prefix: "payai:", CapabilityPrefix: "payai.", URL: discoveryURL,
 		Networks: map[string][]string{chain.Solana: {caipMainnet, "solana"}, chain.SolanaDevnet: {caipDevnet, "solana-devnet"}},
 		PageSize: 1000, Source: routing.SourceX402,
+	}
+}
+
+// CDP is Coinbase's x402 Bazaar, the directory behind its facilitator: the
+// biggest, and the only one that says how much each endpoint is paid.
+func CDP(discoveryURL string) Profile {
+	if discoveryURL == "" {
+		discoveryURL = "https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources"
+	}
+	return Profile{
+		Name: "cdp", Prefix: "cdp:", CapabilityPrefix: "cdp.", URL: discoveryURL,
+		PageURL:  "https://docs.cdp.coinbase.com/x402/bazaar",
+		Networks: map[string][]string{chain.Solana: {caipMainnet}, chain.SolanaDevnet: {caipDevnet}},
+		Query:    url.Values{"type": {"http"}},
+		PageSize: 1000, Source: routing.SourceX402,
+		Unfiltered: true, MaxPages: 5, HostIDs: true,
+		// Five pages of about 3 MB each: read twice an hour at most, and kept for
+		// a day if Coinbase is unreachable.
+		TTL: 30 * time.Minute, StaleFor: 24 * time.Hour,
 	}
 }
 
@@ -131,10 +168,10 @@ var _ catalog.Source = (*Client)(nil)
 // New builds a Client.
 func New(cfg Config) *Client {
 	if cfg.TTL <= 0 {
-		cfg.TTL = 10 * time.Minute
+		cfg.TTL = cmp.Or(cfg.Profile.TTL, 10*time.Minute)
 	}
 	if cfg.StaleFor <= 0 {
-		cfg.StaleFor = 6 * time.Hour
+		cfg.StaleFor = cmp.Or(cfg.Profile.StaleFor, 6*time.Hour)
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -257,6 +294,9 @@ func (c *Client) fetch(ctx context.Context) (*snapshot, error) {
 	if c.cfg.HTTP == nil {
 		return nil, errors.New("bazaar: no HTTP client configured")
 	}
+	if c.cfg.Profile.Unfiltered {
+		return c.fetchUnfiltered(ctx)
+	}
 	var items []netItem
 	clusters := []string{chain.Solana, chain.SolanaDevnet}
 	for _, cluster := range clusters {
@@ -278,12 +318,61 @@ func (c *Client) fetch(ctx context.Context) (*snapshot, error) {
 	return parse(c.cfg.Profile, items, c.cfg.Now())
 }
 
+// fetchUnfiltered reads a directory that lists every chain together: the
+// first MaxPages pages, keeping each entry under the Solana clusters it can be
+// paid on. A page that fails after the first leaves what was read: the list is
+// ordered by use, so the head is the part worth having.
+func (c *Client) fetchUnfiltered(ctx context.Context) (*snapshot, error) {
+	var items []netItem
+	size := c.cfg.Profile.PageSize
+	for page := 0; page < max(c.cfg.Profile.MaxPages, 1); page++ {
+		raws, total, err := c.page(ctx, "", page*size)
+		if err != nil {
+			if page == 0 {
+				return nil, err
+			}
+			break
+		}
+		for _, raw := range raws {
+			for _, cluster := range solanaClusters(raw) {
+				items = append(items, netItem{network: cluster, raw: raw})
+			}
+		}
+		if len(raws) == 0 || (page+1)*size >= total {
+			break
+		}
+	}
+	return parse(c.cfg.Profile, items, c.cfg.Now())
+}
+
+// solanaClusters are the Solana clusters an entry has some payment option on,
+// before it is looked at any closer.
+func solanaClusters(raw json.RawMessage) []string {
+	var probe struct {
+		Accepts []struct {
+			Network string `json:"network"`
+		} `json:"accepts"`
+	}
+	if json.Unmarshal(raw, &probe) != nil {
+		return nil
+	}
+	var out []string
+	for _, a := range probe.Accepts {
+		if n := chain.NormalizeNetwork(a.Network); (n == chain.Solana || n == chain.SolanaDevnet) && !slices.Contains(out, n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 func (c *Client) page(ctx context.Context, network string, offset int) ([]json.RawMessage, int, error) {
 	q := url.Values{}
 	for k, v := range c.cfg.Profile.Query {
 		q[k] = v
 	}
-	q.Set("network", network)
+	if network != "" {
+		q.Set("network", network)
+	}
 	q.Set("limit", strconv.Itoa(c.cfg.Profile.PageSize))
 	q.Set("offset", strconv.Itoa(offset))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.cfg.Profile.URL+"?"+q.Encode(), nil)
@@ -326,7 +415,13 @@ type rawItem struct {
 	Method      string          `json:"method"`
 	Tags        []string        `json:"tags"`
 	InputSchema json.RawMessage `json:"inputSchema"`
-	Extensions  struct {
+	// Quality is what a directory that watches its facilitator says about use.
+	Quality struct {
+		Calls        int64  `json:"l30DaysTotalCalls"`
+		Payers       int64  `json:"l30DaysUniquePayers"`
+		LastCalledAt string `json:"lastCalledAt"`
+	} `json:"quality"`
+	Extensions struct {
 		Bazaar struct {
 			Info struct {
 				Input json.RawMessage `json:"input"`
@@ -439,6 +534,19 @@ func inputOf(it rawItem) json.RawMessage {
 	return nil
 }
 
+// usageOf is what the directory says an entry was paid lately, if it says.
+func usageOf(it rawItem) *catalog.Usage {
+	q := it.Quality
+	if q.Calls <= 0 && q.Payers <= 0 {
+		return nil
+	}
+	u := &catalog.Usage{Calls30d: max(q.Calls, 0), Payers30d: max(q.Payers, 0)}
+	if t, err := time.Parse(time.RFC3339, q.LastCalledAt); err == nil {
+		u.LastCalledAt = t.UTC()
+	}
+	return u
+}
+
 // amountOf reads an accept's price, v2 ("amount") or v1 ("maxAmountRequired").
 func amountOf(a rawAccept) (int64, bool) {
 	raw := a.Amount
@@ -494,6 +602,9 @@ func parse(p Profile, items []netItem, now time.Time) (*snapshot, error) {
 		host := strings.ToLower(u.Hostname())
 		name := catalog.CleanText(firstNonEmpty(it.Metadata.Provider.Name, it.ServiceName, it.Metadata.ServiceName, host), catalog.MaxTitle)
 		slug := catalog.Slug(name, 48)
+		if p.HostIDs {
+			slug = catalog.Slug(host, 48)
+		}
 		if slug == "" {
 			continue
 		}
@@ -545,11 +656,13 @@ func parse(p Profile, items []netItem, now time.Time) (*snapshot, error) {
 					Capability: catalog.CapabilityID(p.CapabilityPrefix+slug, method, path),
 					Method:     method, Path: path, URL: catalog.UnescapeBraces(u.String()), PathParams: catalog.PathParams(path),
 					Description: catalog.CleanText(firstNonEmpty(it.Metadata.Description, it.Description), catalog.MaxDescription),
-					InputSchema: inputOf(it), Callable: true,
+					InputSchema: inputOf(it), Callable: true, Usage: usageOf(it),
 				},
 			}
 			recs[key] = r
 			order = append(order, key)
+		} else if u := usageOf(it); u != nil && (r.ep.Usage == nil || u.Calls30d > r.ep.Usage.Calls30d) {
+			r.ep.Usage = u
 		}
 		if t, err := time.Parse(time.RFC3339, it.LastUpdated); err == nil && t.After(r.updated) {
 			r.updated = t
@@ -596,6 +709,10 @@ func group(p Profile, recs map[string]*endpointRec, order []string, now time.Tim
 		snap.endpoints[id] = append(snap.endpoints[id], ep)
 		hosts[id][r.host]++
 		prov.EndpointCount++
+		if ep.Usage != nil {
+			prov.Calls30d += ep.Usage.Calls30d
+			prov.Payers30d = max(prov.Payers30d, ep.Usage.Payers30d)
+		}
 		prov.MinPriceMinor = min(prov.MinPriceMinor, ep.PriceMinor)
 		prov.MaxPriceMinor = max(prov.MaxPriceMinor, ep.PriceMinor)
 		prov.FreeTier = prov.FreeTier || ep.Free

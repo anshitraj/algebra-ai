@@ -8,7 +8,7 @@ import (
 	"github.com/project-algebra/algebra/providers/catalog"
 )
 
-// The catalogs of paid APIs (Pay.sh and Circle's Agent Marketplace), for the
+// The catalogs of paid APIs (Pay.sh, Circle's Agent Marketplace, PayAI and Coinbase's Bazaar), for the
 // landing page, the console and agents. They are read-only views of public
 // documents that this server reads through its own SSRF-safe client and
 // caches, so they need no session (like GET /api/v1/merchants). The global

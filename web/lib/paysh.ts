@@ -145,6 +145,12 @@ export const CATALOGS: { id: string; name: string; url: string; blurb: string }[
     url: "https://payai.network",
     blurb: "The open bazaar of x402 services that settle through PayAI's facilitator on Solana.",
   },
+  {
+    id: "cdp",
+    name: "Coinbase Bazaar",
+    url: "https://docs.cdp.coinbase.com/x402/bazaar",
+    blurb: "Coinbase's directory of x402 services across every chain, with how much each was paid lately. Algebra reads its most used Solana endpoints.",
+  },
 ];
 
 export function catalogName(source: string): string {

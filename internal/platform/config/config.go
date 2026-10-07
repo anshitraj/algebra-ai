@@ -107,10 +107,11 @@ type Config struct {
 	// PaySh is the Pay.sh catalog of paid APIs (providers/paysh), which
 	// agents can browse and name as providers.
 	PaySh PayShConfig
-	// Circle is Circle's Agent Marketplace and PayAI PayAI's facilitator
-	// bazaar (providers/bazaar).
+	// Circle is Circle's Agent Marketplace, PayAI PayAI's facilitator bazaar
+	// and CDP Coinbase's x402 Bazaar (providers/bazaar).
 	Circle CircleConfig
 	PayAI  CircleConfig
+	CDP    CircleConfig
 
 	// Results is how long the answer to a paid call is kept, so asking again
 	// returns it (RESULT_RETENTION, RESULT_MAX_BYTES; see results.go).
@@ -133,12 +134,13 @@ type PayShConfig struct {
 }
 
 // CircleConfig configures reading an x402 discovery directory (Circle's
-// Agent Marketplace, PayAI's bazaar).
+// Agent Marketplace, PayAI's bazaar, Coinbase's CDP bazaar).
 type CircleConfig struct {
-	// Enabled is on unless CIRCLE_AGENTS_ENABLED=off (PAYAI_ENABLED=off).
+	// Enabled is on unless CIRCLE_AGENTS_ENABLED=off (PAYAI_ENABLED=off,
+	// CDP_BAZAAR_ENABLED=off).
 	Enabled bool
 	// DiscoveryURL defaults to the directory's own (CIRCLE_DISCOVERY_URL,
-	// PAYAI_DISCOVERY_URL); it must be https.
+	// PAYAI_DISCOVERY_URL, CDP_DISCOVERY_URL); it must be https.
 	DiscoveryURL string
 }
 
@@ -386,6 +388,9 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	if err := loadDirectory(&cfg.PayAI, "PAYAI_ENABLED", "PAYAI_DISCOVERY_URL"); err != nil {
+		return nil, err
+	}
+	if err := loadDirectory(&cfg.CDP, "CDP_BAZAAR_ENABLED", "CDP_DISCOVERY_URL"); err != nil {
 		return nil, err
 	}
 	if err := loadResults(&cfg.Results); err != nil {

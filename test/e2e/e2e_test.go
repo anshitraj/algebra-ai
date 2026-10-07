@@ -30,6 +30,9 @@ func requireBundle(t *testing.T) *wiring.Bundle {
 	if os.Getenv("DATABASE_URL") == "" || os.Getenv("ALGEBRA_MASTER_KEY") == "" {
 		t.Skip("DATABASE_URL / ALGEBRA_MASTER_KEY not set; skipping E2E test (see docs/LOCAL_DEVELOPMENT.md)")
 	}
+	// The shopping flow needs no provider catalog, and building one would read
+	// them from the internet in the background.
+	noCatalogs(t)
 	cfg, err := config.FromEnv()
 	if err != nil {
 		t.Fatalf("loading config: %v", err)

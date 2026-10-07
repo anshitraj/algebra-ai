@@ -1,0 +1,1500 @@
+{
+ "items": [
+  {
+   "accepts": [
+    {
+     "amount": "7000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "acceptId": "legacy",
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "name": "USD Coin",
+      "totalUsd": 0.006999999999999999,
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 60,
+     "network": "eip155:8453",
+     "payTo": "0x6d6E695b09861467c7d462f5AAF31cF3540B9192",
+     "scheme": "exact"
+    },
+    {
+     "amount": "7000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "acceptId": "solana-usdc-mainnet",
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP",
+      "name": "USD Coin",
+      "totalUsd": 0.006999999999999999,
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 60,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "12Ec2cJmfR1C9uwejzxcuMhUgEC7wDrLgm1wBvvR5w9E",
+     "scheme": "exact"
+    },
+    {
+     "amount": "7000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "acceptId": "base-usdc-gateway",
+      "assets": [
+       {
+        "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        "authorizationVersions": [
+         "1",
+         "2"
+        ],
+        "decimals": 6,
+        "symbol": "USDC"
+       }
+      ],
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "minValiditySeconds": 604800,
+      "name": "GatewayWalletBatched",
+      "totalUsd": 0.006999999999999999,
+      "verifyingContract": "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+      "version": "1"
+     },
+     "maxTimeoutSeconds": 604900,
+     "network": "eip155:8453",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "scheme": "exact"
+    },
+    {
+     "amount": "7000",
+     "asset": "0x79A02482A880bCE3F13e09Da970dC34db4CD24d1",
+     "extra": {
+      "acceptId": "worldchain-usdc-gateway",
+      "assets": [
+       {
+        "address": "0x79a02482a880bce3f13e09da970dc34db4cd24d1",
+        "authorizationVersions": [
+         "1",
+         "2"
+        ],
+        "decimals": 6,
+        "symbol": "USDC"
+       }
+      ],
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "minValiditySeconds": 604800,
+      "name": "GatewayWalletBatched",
+      "totalUsd": 0.006999999999999999,
+      "verifyingContract": "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+      "version": "1"
+     },
+     "maxTimeoutSeconds": 604900,
+     "network": "eip155:480",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "scheme": "exact"
+    },
+    {
+     "amount": "7000",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "extra": {
+      "acceptId": "arc-usdc-gateway",
+      "assets": [
+       {
+        "address": "0x3600000000000000000000000000000000000000",
+        "authorizationVersions": [
+         "1",
+         "2"
+        ],
+        "decimals": 6,
+        "symbol": "USDC"
+       }
+      ],
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "minValiditySeconds": 604800,
+      "name": "GatewayWalletBatched",
+      "totalUsd": 0.006999999999999999,
+      "verifyingContract": "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+      "version": "1"
+     },
+     "maxTimeoutSeconds": 604900,
+     "network": "eip155:5042",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "scheme": "exact"
+    },
+    {
+     "amount": "7000",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "extra": {
+      "acceptId": "arc-usdc-circle",
+      "assetTransferMethod": "eip3009",
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "name": "USDC",
+      "totalUsd": 0.006999999999999999,
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:5042",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "scheme": "exact"
+    },
+    {
+     "amount": "7000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "acceptId": "base-usdc-circle",
+      "assetTransferMethod": "eip3009",
+      "breakdown": {
+       "search": 0.006999999999999999
+      },
+      "name": "USD Coin",
+      "totalUsd": 0.006999999999999999,
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:8453",
+     "payTo": "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC",
+     "scheme": "exact"
+    }
+   ],
+   "bundleSlugs": [
+    "daily-news-search",
+    "news-audio-briefing",
+    "people-sourcing-enrichment"
+   ],
+   "curated": true,
+   "description": "Exa /search endpoint",
+   "extensions": {
+    "agentkit": {
+     "_options": {
+      "mode": {
+       "type": "free-trial",
+       "uses": 100
+      },
+      "network": "eip155:480",
+      "statement": "Verify your agent is backed by a real human to access Exa"
+     },
+     "info": {
+      "domain": "api.exa.ai",
+      "issuedAt": "2026-10-06T20:00:10.019Z",
+      "nonce": "cf361b8eabed056622d9ad34d78642c4",
+      "resources": [
+       "https://api.exa.ai/search"
+      ],
+      "statement": "Verify your agent is backed by a real human to access Exa",
+      "uri": "https://api.exa.ai/search",
+      "version": "1"
+     },
+     "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+       "address": {
+        "type": "string"
+       },
+       "chainId": {
+        "type": "string"
+       },
+       "domain": {
+        "type": "string"
+       },
+       "expirationTime": {
+        "format": "date-time",
+        "type": "string"
+       },
+       "issuedAt": {
+        "format": "date-time",
+        "type": "string"
+       },
+       "nonce": {
+        "type": "string"
+       },
+       "notBefore": {
+        "format": "date-time",
+        "type": "string"
+       },
+       "requestId": {
+        "type": "string"
+       },
+       "resources": {
+        "items": {
+         "format": "uri",
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "signature": {
+        "type": "string"
+       },
+       "statement": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string"
+       },
+       "uri": {
+        "format": "uri",
+        "type": "string"
+       },
+       "version": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "domain",
+       "address",
+       "uri",
+       "version",
+       "chainId",
+       "type",
+       "nonce",
+       "issuedAt",
+       "signature"
+      ],
+      "type": "object"
+     },
+     "supportedChains": [
+      {
+       "chainId": "eip155:480",
+       "type": "eip191"
+      },
+      {
+       "chainId": "eip155:480",
+       "type": "eip1271"
+      }
+     ]
+    },
+    "bazaar": {
+     "info": {
+      "input": {
+       "body": {
+        "numResults": 10,
+        "query": "example search query",
+        "type": "auto"
+       },
+       "bodyType": "json",
+       "method": "POST",
+       "type": "http"
+      }
+     }
+    }
+   },
+   "iconUrl": "https://res.cloudinary.com/bdb-prod/image/upload/c_fill,ar_1:1,w_256,h_256,f_auto,q_auto/v1780076809/bazaar-icons/41b0408e3ae73b69.png",
+   "lastUpdated": "2026-10-06T20:00:10.079Z",
+   "quality": {
+    "l30DaysTotalCalls": 4992,
+    "l30DaysUniquePayers": 88,
+    "lastCalledAt": "2026-10-06T18:00:08.843Z"
+   },
+   "resource": "https://api.exa.ai/search",
+   "serviceName": "Exa",
+   "tags": [
+    "search",
+    "ai",
+    "web",
+    "research"
+   ],
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "150000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:8453",
+     "payTo": "0x325bdF6F7efAB24a2210c48c1b64cAb2eAe1d430",
+     "scheme": "exact"
+    },
+    {
+     "amount": "150000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "CjNFTjvBhbJJd2B5ePPMHRLx1ELZpa8dwQgGL727eKww",
+      "lastValidBlockHeight": "432016318",
+      "recentBlockhash": "3mBZ5C99M165ePdDc7Lqawur4hsqcHK2DJU7ppYN5roB"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "8EgACpZ16XWEt7YjJPsh1ZheVRZUGmmwQ8nJdmA1o5w4",
+     "scheme": "exact"
+    }
+   ],
+   "description": "FullEnrich People Search — filter by company domain/name/LinkedIn URL, seniority, title, location, skills, and 20+ FullEnrich filters. Default lean roster: companies map + company_id refs; include_employment_history or verbose for full history. $0.15 when results found; free when no matches.",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "body": {
+        "current_company_domains": [
+         {
+          "value": "stripe.com"
+         }
+        ],
+        "current_company_names": [
+         {
+          "value": "Timber Creek High School"
+         }
+        ],
+        "current_position_seniority_level": [
+         {
+          "value": "C-level"
+         },
+         {
+          "value": "VP"
+         },
+         {
+          "value": "Director"
+         },
+         {
+          "value": "Senior"
+         }
+        ],
+        "current_position_titles": [
+         {
+          "value": "Software Engineer"
+         }
+        ],
+        "offset": 0,
+        "person_locations": [
+         {
+          "value": "New York"
+         }
+        ],
+        "person_names": [
+         {
+          "value": "Julie Abel"
+         }
+        ],
+        "person_skills": [
+         {
+          "value": "Rust"
+         },
+         {
+          "value": "DeFi"
+         }
+        ]
+       },
+       "bodyType": "json",
+       "method": "POST",
+       "type": "http"
+      }
+     }
+    }
+   },
+   "lastUpdated": "2026-10-06T19:22:15.888Z",
+   "quality": {
+    "l30DaysTotalCalls": 1002,
+    "l30DaysUniquePayers": 48,
+    "lastCalledAt": "2026-10-06T18:27:28.588Z"
+   },
+   "resource": "https://stableenrich.dev/api/fullenrich/people-search",
+   "serviceName": "StableEnrich",
+   "tags": [
+    "Fullenrich"
+   ],
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "5000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:8453",
+     "payTo": "0x06dFF3c8380b5D1799874adA903fc3422882FD6f",
+     "scheme": "exact"
+    },
+    {
+     "amount": "5000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "CjNFTjvBhbJJd2B5ePPMHRLx1ELZpa8dwQgGL727eKww",
+      "lastValidBlockHeight": "431933298",
+      "recentBlockhash": "C4k8iHDu7sZcKYvSsBrYk4piAscf9wSRymK6qAwwsDQQ"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "95xcrFtRVn2fkoAKiCUKxPpTc1GN8MTyonVwLFfJfzux",
+     "scheme": "exact"
+    }
+   ],
+   "bundleSlugs": [
+    "media-creative-generation"
+   ],
+   "curated": true,
+   "description": "Buy an upload slot. Agent uploads file via returned URL.",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "body": {
+        "contentType": "text/plain",
+        "filename": "quick-note.txt",
+        "tier": "short-10mb"
+       },
+       "bodyType": "json",
+       "method": "POST",
+       "type": "http"
+      }
+     }
+    }
+   },
+   "lastUpdated": "2026-10-06T12:49:15.817Z",
+   "quality": {
+    "l30DaysTotalCalls": 365,
+    "l30DaysUniquePayers": 45,
+    "lastCalledAt": "2026-10-06T12:49:15.486Z"
+   },
+   "resource": "https://stableupload.dev/api/upload",
+   "serviceName": "StableUpload",
+   "tags": [
+    "Upload"
+   ],
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "1000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "description": "Seller wash risk and wallet reputation for a Solana x402 merchant: wash label, fleet %, payer count, plus tier + score. 0.001 USDC. No signed V7 receipt (use GET /v1/intel/trust for the portable proof). Free preflight is allow|warn|block only. Sponsored Solana accepts require a payment client that honors accepts[].extra.feePayer (for example @x402/svm ExactSvmScheme); AgentCash cannot settle that Solana rail.",
+     "extra": {
+      "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "decimals": 6,
+      "feePayer": "BFK9TLC3edb13K6v4YyH3DwPb5DSUpkWvb7XnqCL9b4F",
+      "recentBlockhash": "A9uMG1rZZ6UU1U3zGD4i6Dbs2q1pXWxrpC8qrMhKD9hu"
+     },
+     "maxAmountRequired": "1000",
+     "maxTimeoutSeconds": 45,
+     "mimeType": "application/json",
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "GFpLvocNdEjnSsLH3VJQL6wGcjGxTbUBrj6fqN3Qe1Gs",
+     "resource": "https://intel.twzrd.xyz/v1/intel/quick/GFpLvocNdEjnSsLH3VJQL6wGcjGxTbUBrj6fqN3Qe1Gs",
+     "scheme": "exact"
+    },
+    {
+     "amount": "1000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "description": "Seller wash risk and wallet reputation for a Solana x402 merchant: wash label, fleet %, payer count, plus tier + score. 0.001 USDC. No signed V7 receipt (use GET /v1/intel/trust for the portable proof). Free preflight is allow|warn|block only. Sponsored Solana accepts require a payment client that honors accepts[].extra.feePayer (for example @x402/svm ExactSvmScheme); AgentCash cannot settle that Solana rail.",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxAmountRequired": "1000",
+     "maxTimeoutSeconds": 3600,
+     "mimeType": "application/json",
+     "network": "eip155:8453",
+     "payTo": "0xfB9819456bd9248A9D3c9E12F4cb7bBda5fc2578",
+     "resource": "https://intel.twzrd.xyz/v1/intel/quick/GFpLvocNdEjnSsLH3VJQL6wGcjGxTbUBrj6fqN3Qe1Gs",
+     "scheme": "exact"
+    }
+   ],
+   "description": "Seller wash risk and wallet reputation for a Solana x402 merchant: wash label, fleet %, payer count, plus tier + score. 0.001 USDC. No signed V7 receipt (use GET /v1/intel/trust for the portable proof). Free preflight is allow|warn|block only. Sponsored Solana accepts require a payment client that h",
+   "extensions": {
+    "bazaar": {
+     "exampleUrl": "https://intel.twzrd.xyz/v1/intel/quick/GFpLvocNdEjnSsLH3VJQL6wGcjGxTbUBrj6fqN3Qe1Gs",
+     "info": {
+      "input": {
+       "discoverable": true,
+       "method": "GET",
+       "pathParams": {
+        "solana_address": "Solana wallet address (base58-encoded public key, 43–44 characters)"
+       },
+       "queryParams": {},
+       "type": "http"
+      }
+     },
+     "routeTemplate": "/v1/intel/quick/GFpLvocNdEjnSsLH3VJQL6wGcjGxTbUBrj6fqN3Qe1Gs"
+    },
+    "twzrd_attempt": {
+     "attempt_key": "6bd75764-5bda-42db-bc81-3ba970a18d06",
+     "schema": "twzrd.attempt.v1"
+    }
+   },
+   "lastUpdated": "2026-10-06T14:36:36.627Z",
+   "quality": {
+    "l30DaysTotalCalls": 29,
+    "l30DaysUniquePayers": 8,
+    "lastCalledAt": "2026-10-06T14:36:35.903Z"
+   },
+   "resource": "https://intel.twzrd.xyz/v1/intel/quick/:solana_address",
+   "serviceName": "TWZRD Agent Intelligence",
+   "tags": [
+    "agent",
+    "reputation",
+    "trust",
+    "intelligence",
+    "x402"
+   ],
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "50000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "merchant": "x402Atlas",
+      "name": "USD Coin",
+      "tier": "standard",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:8453",
+     "payTo": "0x8C128f1Ee62Bb5e47867CfbAe2ad89be325Df1b2",
+     "scheme": "exact"
+    },
+    {
+     "amount": "50000",
+     "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+     "extra": {
+      "merchant": "x402Atlas",
+      "name": "USD Coin",
+      "tier": "standard",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:137",
+     "payTo": "0x8C128f1Ee62Bb5e47867CfbAe2ad89be325Df1b2",
+     "scheme": "exact"
+    },
+    {
+     "amount": "50000",
+     "asset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+     "extra": {
+      "merchant": "x402Atlas",
+      "name": "USD Coin",
+      "tier": "standard",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:42161",
+     "payTo": "0x8C128f1Ee62Bb5e47867CfbAe2ad89be325Df1b2",
+     "scheme": "exact"
+    },
+    {
+     "amount": "50000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP",
+      "merchant": "x402Atlas",
+      "tier": "standard"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "ASt6xvRyQ7ntERsmcYVMdLqZvz1GEN8Fzexzq62tXrNQ",
+     "scheme": "exact"
+    }
+   ],
+   "description": "Flight search by departure and arrival airports in the URL — compare live itineraries, fares, schedules, stops and emissions across airlines, similar to Google Flights, as clean JSON.",
+   "extensions": {
+    "bazaar": {
+     "category": "travel",
+     "info": {
+      "input": {
+       "method": "GET",
+       "pathParams": {
+        "arrival": "JFK",
+        "departure": "LHR"
+       },
+       "type": "http"
+      }
+     },
+     "routeTemplate": "/search/:departure/:arrival",
+     "tags": [
+      "flights",
+      "flight-search",
+      "airfare",
+      "travel",
+      "airlines",
+      "airports",
+      "tickets",
+      "prices",
+      "schedules",
+      "carbon-emissions"
+     ]
+    }
+   },
+   "lastUpdated": "2026-10-05T09:38:03.45Z",
+   "quality": {
+    "l30DaysTotalCalls": 27,
+    "l30DaysUniquePayers": 8,
+    "lastCalledAt": "2026-10-05T09:38:03.313Z"
+   },
+   "resource": "https://flights.use.x402atlas.com/search/:departure/:arrival",
+   "serviceName": "Flight Search & Airfares",
+   "tags": [
+    "flights",
+    "flight-search",
+    "airfare",
+    "travel",
+    "airlines"
+   ],
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "1000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:8453",
+     "payTo": "0x3dA40A9aD36640a2C0F533BAC368490095574664",
+     "scheme": "exact"
+    },
+    {
+     "amount": "1000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "5Wxg3V6gcmFmmP6SXmGZQAUZPFYsSwoeN2Qewt5BotWz",
+     "scheme": "exact"
+    }
+   ],
+   "description": "Latest crypto token prices by ticker symbol, CoinGecko id, or chain:address (BTC, ETH, SOL, or base:0x…): current spot price, token symbol, decimals, and a confidence score, for up to 50 coins in one call. Pass ?at=<unix> for the historical price at a point in time. Sourced from DefiLlama across eve",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "method": "GET",
+       "queryParams": {
+        "coins": "BTC,ETH,SOL"
+       },
+       "type": "http"
+      }
+     }
+    }
+   },
+   "lastUpdated": "2026-10-06T18:33:12.49Z",
+   "quality": {
+    "l30DaysTotalCalls": 145,
+    "l30DaysUniquePayers": 57,
+    "lastCalledAt": "2026-10-06T18:33:12.019Z"
+   },
+   "resource": "https://crypto.apitoll.cloud/v1/crypto/price",
+   "serviceName": "ApiToll Crypto Prices",
+   "tags": [
+    "crypto",
+    "prices",
+    "token-price",
+    "defi",
+    "market-data"
+   ],
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "2000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:8453",
+     "payTo": "0x480CD46E6faDe651a0437DeaddA53D5c8e7D846A",
+     "scheme": "exact"
+    },
+    {
+     "amount": "2000",
+     "asset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:42161",
+     "payTo": "0x480CD46E6faDe651a0437DeaddA53D5c8e7D846A",
+     "scheme": "exact"
+    },
+    {
+     "amount": "2000",
+     "asset": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:137",
+     "payTo": "0x480CD46E6faDe651a0437DeaddA53D5c8e7D846A",
+     "scheme": "exact"
+    },
+    {
+     "amount": "2000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "5yASLjtNssGXDv6bR9e71WXKxRymDiUzbgkGPqkQNgRn",
+     "scheme": "exact"
+    }
+   ],
+   "description": "Search 10,000+ gift card & voucher brands across 180+ countries by name and country. Pay in USDC via x402, no account.",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "method": "GET",
+       "queryParams": {
+        "country": "US",
+        "q": "amazon"
+       },
+       "type": "http"
+      }
+     }
+    },
+    "builder-code": {
+     "info": {
+      "a": "bc_suil8bdj"
+     },
+     "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+       "a": {
+        "description": "App builder code",
+        "pattern": "^[a-z0-9_]{1,32}$",
+        "type": "string"
+       },
+       "s": {
+        "description": "Service builder codes",
+        "items": {
+         "pattern": "^[a-z0-9_]{1,32}$",
+         "type": "string"
+        },
+        "maxItems": 11,
+        "type": "array"
+       },
+       "w": {
+        "description": "Wallet builder code",
+        "pattern": "^[a-z0-9_]{1,32}$",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     }
+    }
+   },
+   "iconUrl": "https://res.cloudinary.com/bdb-prod/image/upload/c_fill,ar_1:1,w_256,h_256,f_auto,q_auto/v1780566420/bazaar-icons/33192fb7239597bd.png",
+   "lastUpdated": "2026-10-05T16:22:49.574Z",
+   "quality": {
+    "l30DaysTotalCalls": 159,
+    "l30DaysUniquePayers": 36,
+    "lastCalledAt": "2026-10-05T16:22:49.24Z"
+   },
+   "resource": "https://api.bitrefill.com/x402/gift-cards/search",
+   "serviceName": "Bitrefill",
+   "tags": [
+    "gift-cards",
+    "vouchers",
+    "search",
+    "usdc",
+    "base"
+   ],
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "1000000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 60,
+     "network": "eip155:8453",
+     "payTo": "0x4aAbE17C239eF71c3A26bA7C2b3e0AeBbfC1DF26",
+     "scheme": "exact"
+    },
+    {
+     "amount": "1000000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "D6ZhtNQ5nT9ZnTHUbqXZsTx5MH2rPFiBBggX4hY1WePM"
+     },
+     "maxTimeoutSeconds": 60,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "ECUPkq6DP8VUSEueL4qNznyNDJLwu6PQhnMQ5cuZsTLH",
+     "scheme": "exact"
+    },
+    {
+     "amount": "1000000",
+     "asset": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+     "extra": {
+      "feePayer": "D6ZhtNQ5nT9ZnTHUbqXZsTx5MH2rPFiBBggX4hY1WePM"
+     },
+     "maxTimeoutSeconds": 60,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "ECUPkq6DP8VUSEueL4qNznyNDJLwu6PQhnMQ5cuZsTLH",
+     "scheme": "exact"
+    }
+   ],
+   "description": "Apify is the largest and most trusted marketplace of tools for web scraping, crawling, data extraction, and automation. Use these tools, called Actors, to extract structured data from social media, e-commerce sites, search engines, maps, travel sites, or any other website. Turn the open web into a r",
+   "extensions": {
+    "bazaar": {
+     "category": "Data",
+     "discoverable": true,
+     "info": {
+      "input": {
+       "method": "GET",
+       "queryParams": {
+        "amount": "2",
+        "currency": "usd"
+       },
+       "type": "http"
+      }
+     },
+     "tags": [
+      "automation",
+      "web-data",
+      "crawling",
+      "context",
+      "scraping"
+     ]
+    }
+   },
+   "iconUrl": "https://res.cloudinary.com/bdb-prod/image/upload/c_fill,ar_1:1,w_256,h_256,f_auto,q_auto/v1782409571/bazaar-icons/1cba6e0591a8daf3.png",
+   "lastUpdated": "2026-10-06T19:34:49.44Z",
+   "quality": {
+    "l30DaysTotalCalls": 134,
+    "l30DaysUniquePayers": 35,
+    "lastCalledAt": "2026-10-06T18:20:04.532Z"
+   },
+   "resource": "https://agi.apify.com/protocols/x402/prepaid-tokens",
+   "serviceName": "Apify",
+   "tags": [
+    "automation",
+    "web-data",
+    "crawling",
+    "context",
+    "scraping"
+   ],
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "5000000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:8453",
+     "payTo": "0x3291e96b3bff7ed56e3ca8364273c5b4654b2b37",
+     "scheme": "exact"
+    },
+    {
+     "amount": "5000000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "3MZVk97x9SeRxbYpc3jhzRfU2fyA3emYutnqfn9kNfYX",
+     "scheme": "exact"
+    }
+   ],
+   "description": "Get a prepaid card for use inside the United States",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "method": "GET",
+       "queryParams": {
+        "amount": 5
+       },
+       "type": "http"
+      }
+     }
+    }
+   },
+   "iconUrl": "https://res.cloudinary.com/bdb-prod/image/upload/c_fill,ar_1:1,w_256,h_256,f_auto,q_auto/v1786434962/bazaar-icons/7a92f58248689da4.png",
+   "lastUpdated": "2026-10-05T22:49:53.807Z",
+   "quality": {
+    "l30DaysTotalCalls": 55,
+    "l30DaysUniquePayers": 40,
+    "lastCalledAt": "2026-10-05T22:49:53.507Z"
+   },
+   "resource": "https://laso.finance/get-card",
+   "serviceName": "Laso Finance",
+   "tags": [
+    "prepaid-card",
+    "usa",
+    "spending"
+   ],
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "990000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:8453",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "1980000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:8453",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "4950000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:8453",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "990000",
+     "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:137",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "1980000",
+     "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:137",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "4950000",
+     "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:137",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "990000",
+     "asset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:42161",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "1980000",
+     "asset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:42161",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "4950000",
+     "asset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:42161",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "990000",
+     "asset": "0x79a02482a880bce3f13e09da970dc34db4cd24d1",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USDC",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:480",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "1980000",
+     "asset": "0x79a02482a880bce3f13e09da970dc34db4cd24d1",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USDC",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:480",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "4950000",
+     "asset": "0x79a02482a880bce3f13e09da970dc34db4cd24d1",
+     "extra": {
+      "assetTransferMethod": "eip3009",
+      "name": "USDC",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "eip155:480",
+     "payTo": "0xDD350976B8cfFc65938C0464d39A2C78BE079bd0",
+     "scheme": "exact"
+    },
+    {
+     "amount": "990000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "DGxcPrAHL9YM3hW7iXuHFJmr87Zr6AMA4jCYHBpuvMgE",
+     "scheme": "exact"
+    },
+    {
+     "amount": "1980000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "DGxcPrAHL9YM3hW7iXuHFJmr87Zr6AMA4jCYHBpuvMgE",
+     "scheme": "exact"
+    },
+    {
+     "amount": "4950000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+     },
+     "maxTimeoutSeconds": 300,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "DGxcPrAHL9YM3hW7iXuHFJmr87Zr6AMA4jCYHBpuvMgE",
+     "scheme": "exact"
+    }
+   ],
+   "description": "a lucky. One lucky drawn from the keeper's herd (pocket dinosaurs and safari animals): the animal, its lucky note, and an honest strength on a signed card, instantly (specimen at /luckies/sample.svg). Amounts above the minimum record as tips. Full listing: https://scvd.store/menu/luckies. MCP tool: ",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "method": "GET",
+       "queryParams": {
+        "agent_name": "friendly-agent"
+       },
+       "type": "http"
+      }
+     }
+    }
+   },
+   "lastUpdated": "2026-09-19T12:55:25.983Z",
+   "quality": {
+    "l30DaysTotalCalls": 8,
+    "l30DaysUniquePayers": 2,
+    "lastCalledAt": "2026-09-19T12:55:25.818Z"
+   },
+   "resource": "https://scvd.store/api/buy/luckies",
+   "serviceName": "SCVD General Store",
+   "tags": [
+    "x402",
+    "signed-artifacts",
+    "verification",
+    "attestation",
+    "conformance"
+   ],
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "3000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "currency": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "credentialTypes": [
+       "authorization"
+      ],
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxAmountRequired": "3000",
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:8453",
+     "payTo": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "recipient": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "scheme": "exact"
+    },
+    {
+     "amount": "3000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "currency": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "name": "USD Coin",
+      "receiverAuthorizer": "0x11dF9F6280632aB8F12926b3f569E493EaEcf81b",
+      "version": "2",
+      "withdrawDelay": 86400
+     },
+     "maxAmountRequired": "3000",
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:8453",
+     "payTo": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "recipient": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "scheme": "batch-settlement"
+    }
+   ],
+   "description": "ERC20 token balance for any Ethereum wallet - USDC, USDT, DAI, or any token - via balanceOf (eth_call) on OneSource live Ethereum RPC",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "method": "GET",
+       "queryParams": {
+        "address": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+        "contract": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+        "network": "ethereum"
+       },
+       "type": "http"
+      }
+     }
+    }
+   },
+   "lastUpdated": "2026-10-04T22:07:34.519Z",
+   "quality": {
+    "l30DaysTotalCalls": 727,
+    "l30DaysUniquePayers": 721,
+    "lastCalledAt": "2026-10-04T22:07:34.422Z"
+   },
+   "resource": "https://api.onesource.io/api/chain/erc20-balance",
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "1000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "currency": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "credentialTypes": [
+       "authorization"
+      ],
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxAmountRequired": "1000",
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:8453",
+     "payTo": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "recipient": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "scheme": "exact"
+    },
+    {
+     "amount": "1000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "currency": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "name": "USD Coin",
+      "receiverAuthorizer": "0x11dF9F6280632aB8F12926b3f569E493EaEcf81b",
+      "version": "2",
+      "withdrawDelay": 86400
+     },
+     "maxAmountRequired": "1000",
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:8453",
+     "payTo": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "recipient": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "scheme": "batch-settlement"
+    }
+   ],
+   "description": "Latest Ethereum block height - current chain tip via eth_blockNumber",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "method": "GET",
+       "queryParams": {
+        "network": "ethereum"
+       },
+       "type": "http"
+      }
+     }
+    }
+   },
+   "lastUpdated": "2026-10-06T18:31:38.564Z",
+   "quality": {
+    "l30DaysTotalCalls": 792,
+    "l30DaysUniquePayers": 674,
+    "lastCalledAt": "2026-10-06T18:31:38.356Z"
+   },
+   "resource": "https://api.onesource.io/api/chain/block-number",
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "3000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "currency": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "credentialTypes": [
+       "authorization"
+      ],
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxAmountRequired": "3000",
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:8453",
+     "payTo": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "recipient": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "scheme": "exact"
+    },
+    {
+     "amount": "3000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "currency": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "name": "USD Coin",
+      "receiverAuthorizer": "0x11dF9F6280632aB8F12926b3f569E493EaEcf81b",
+      "version": "2",
+      "withdrawDelay": 86400
+     },
+     "maxAmountRequired": "3000",
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:8453",
+     "payTo": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "recipient": "0x52E29e0d2Aa49bfBfC548C0A9F2196F4aa51f3ea",
+     "scheme": "batch-settlement"
+    }
+   ],
+   "description": "Live wallet balance - native ETH plus up to 20 caller-supplied ERC20 tokens in one bounded RPC batch",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "method": "GET",
+       "queryParams": {
+        "address": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+        "network": "ethereum"
+       },
+       "type": "http"
+      }
+     }
+    }
+   },
+   "lastUpdated": "2026-10-04T22:07:29.998Z",
+   "quality": {
+    "l30DaysTotalCalls": 644,
+    "l30DaysUniquePayers": 641,
+    "lastCalledAt": "2026-10-04T22:07:29.887Z"
+   },
+   "resource": "https://api.onesource.io/api/chain/live-balance",
+   "type": "http",
+   "x402Version": 2
+  },
+  {
+   "accepts": [
+    {
+     "amount": "1000000000",
+     "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:8453",
+     "payTo": "0x480CD46E6faDe651a0437DeaddA53D5c8e7D846A",
+     "scheme": "upto"
+    },
+    {
+     "amount": "1000000000",
+     "asset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:42161",
+     "payTo": "0x480CD46E6faDe651a0437DeaddA53D5c8e7D846A",
+     "scheme": "upto"
+    },
+    {
+     "amount": "1000000000",
+     "asset": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
+     "extra": {
+      "name": "USD Coin",
+      "version": "2"
+     },
+     "maxTimeoutSeconds": 3600,
+     "network": "eip155:137",
+     "payTo": "0x480CD46E6faDe651a0437DeaddA53D5c8e7D846A",
+     "scheme": "upto"
+    },
+    {
+     "amount": "1000000000",
+     "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "extra": {
+      "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+     },
+     "maxTimeoutSeconds": 3600,
+     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+     "payTo": "5yASLjtNssGXDv6bR9e71WXKxRymDiUzbgkGPqkQNgRn",
+     "scheme": "upto"
+    }
+   ],
+   "description": "Pay a Bitrefill invoice in USDC via x402 to buy gift cards, eSIMs & mobile top-ups across 180+ countries.",
+   "extensions": {
+    "bazaar": {
+     "info": {
+      "input": {
+       "body": {
+        "invoice_id": "c2b27180-610e-4132-af77-ad42fc0ac444"
+       },
+       "bodyType": "json",
+       "method": "POST",
+       "type": "http"
+      }
+     }
+    },
+    "builder-code": {
+     "info": {
+      "a": "bc_suil8bdj"
+     },
+     "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+       "a": {
+        "description": "App builder code",
+        "pattern": "^[a-z0-9_]{1,32}$",
+        "type": "string"
+       },
+       "s": {
+        "description": "Service builder codes",
+        "items": {
+         "pattern": "^[a-z0-9_]{1,32}$",
+         "type": "string"
+        },
+        "maxItems": 11,
+        "type": "array"
+       },
+       "w": {
+        "description": "Wallet builder code",
+        "pattern": "^[a-z0-9_]{1,32}$",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     }
+    }
+   },
+   "iconUrl": "https://res.cloudinary.com/bdb-prod/image/upload/c_fill,ar_1:1,w_256,h_256,f_auto,q_auto/v1780566420/bazaar-icons/33192fb7239597bd.png",
+   "lastUpdated": "2026-10-06T09:20:10.943Z",
+   "quality": {
+    "l30DaysTotalCalls": 27,
+    "l30DaysUniquePayers": 12,
+    "lastCalledAt": "2026-10-06T09:20:10.534Z"
+   },
+   "resource": "https://api.bitrefill.com/x402/invoice/pay",
+   "serviceName": "Bitrefill",
+   "tags": [
+    "checkout",
+    "payment",
+    "gift-cards",
+    "esims",
+    "usdc"
+   ],
+   "type": "http",
+   "x402Version": 2
+  }
+ ],
+ "pagination": {
+  "limit": 1000,
+  "offset": 0,
+  "total": 35115
+ },
+ "x402Version": 2
+}

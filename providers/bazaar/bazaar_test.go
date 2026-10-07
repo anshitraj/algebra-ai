@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -242,6 +243,8 @@ type fakeDir struct {
 	hits  int
 	down  bool
 	query []string
+	// failFrom, when set, fails every request at or past that offset.
+	failFrom int
 }
 
 func newFakeDir(t *testing.T, pages map[string][]json.RawMessage) *fakeDir {
@@ -258,6 +261,10 @@ func newFakeDir(t *testing.T, pages map[string][]json.RawMessage) *fakeDir {
 		q := r.URL.Query()
 		items := f.pages[q.Get("network")]
 		off, _ := strconv.Atoi(q.Get("offset"))
+		if f.failFrom > 0 && off >= f.failFrom {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
 		limit, _ := strconv.Atoi(q.Get("limit"))
 		page := []json.RawMessage{}
 		if off < len(items) {
@@ -422,5 +429,176 @@ func TestTemplatedPathsAreCallableAndKeepOneFormOfPlaceholder(t *testing.T) {
 	}
 	if len(cands) != 3 || templated != 2 {
 		t.Errorf("candidates: %d, templated %d", len(cands), templated)
+	}
+}
+
+// --- Coinbase's CDP bazaar: one list for every chain, ordered by use ---
+
+const baseUSDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+
+// cdpItem builds a CDP-style entry (no metadata block; the name, tags and
+// usage are top level) payable on Solana, or on Base only.
+func cdpItem(host, name string, solana bool, mod func(m map[string]any)) json.RawMessage {
+	accept := map[string]any{"scheme": "exact", "network": "eip155:8453", "asset": baseUSDC, "payTo": "0xabc", "amount": "1000"}
+	if solana {
+		accept = map[string]any{"scheme": "exact", "network": caipMainnet, "asset": usdc, "payTo": "PayTo1111111111111111111111111111", "amount": "1000"}
+	}
+	m := map[string]any{
+		"resource": "https://" + host + "/v1/thing", "type": "http", "x402Version": 2, "lastUpdated": "2026-10-01T00:00:00Z",
+		"serviceName": name, "description": "does a thing", "accepts": []any{accept},
+		"quality":    map[string]any{"l30DaysTotalCalls": 12, "l30DaysUniquePayers": 3, "lastCalledAt": "2026-10-06T00:00:00Z"},
+		"extensions": map[string]any{"bazaar": map[string]any{"info": map[string]any{"input": map[string]any{"method": "GET", "type": "http"}}}},
+	}
+	if mod != nil {
+		mod(m)
+	}
+	b, _ := json.Marshal(m)
+	return b
+}
+
+func TestCDPRealSample(t *testing.T) {
+	var items []netItem
+	for _, raw := range fixture(t, "cdp-sample.json") {
+		for _, cluster := range solanaClusters(raw) {
+			items = append(items, netItem{network: cluster, raw: raw})
+		}
+	}
+	snap, err := parse(CDP(""), items, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, p := range snap.providers {
+		ids = append(ids, p.ID)
+		if _, err := econ.NormalizeProvider(p.ID); err != nil {
+			t.Errorf("%s: %v", p.ID, err)
+		}
+		if p.Source != "cdp" || strings.Join(p.Networks, ",") != "solana" || p.PageURL != "https://docs.cdp.coinbase.com/x402/bazaar" {
+			t.Errorf("provider: %+v", p)
+		}
+	}
+	// Named by host. Entries payable only on Base (onesource) are not listed.
+	slices.Sort(ids)
+	want := "cdp:agi-apify-com,cdp:api-bitrefill-com,cdp:api-exa-ai,cdp:crypto-apitoll-cloud,cdp:flights-use-x402atlas-com,cdp:intel-twzrd-xyz,cdp:laso-finance,cdp:scvd-store,cdp:stableenrich-dev,cdp:stableupload-dev"
+	if got := strings.Join(ids, ","); got != want {
+		t.Fatalf("providers:\n got %s\nwant %s", got, want)
+	}
+
+	exa := snap.providers[snap.byID["cdp:api-exa-ai"]]
+	if exa.Name != "Exa" || exa.Host != "api.exa.ai" || exa.MinPriceMinor != 7000 || exa.Calls30d != 4992 || exa.Payers30d != 88 || exa.EndpointCount != 1 {
+		t.Errorf("exa: %+v", exa)
+	}
+	e := snap.endpoints["cdp:api-exa-ai"][0]
+	if e.Method != "POST" || e.Network != "solana" || !e.Callable || e.Usage == nil || e.Usage.Calls30d != 4992 || e.Usage.LastCalledAt.IsZero() ||
+		!strings.HasPrefix(e.Capability, "cdp.api-exa-ai.post.") {
+		t.Errorf("exa endpoint: %+v", e)
+	}
+
+	// An express-style path is callable and says what it takes.
+	tw := snap.endpoints["cdp:intel-twzrd-xyz"][0]
+	if !tw.Callable || strings.Join(tw.PathParams, ",") != "solana_address" || tw.URL != "https://intel.twzrd.xyz/v1/intel/quick/{solana_address}" {
+		t.Errorf("templated: %+v", tw)
+	}
+
+	// Several prices on Solana: the cheapest is listed.
+	if scvd := snap.providers[snap.byID["cdp:scvd-store"]]; scvd.MinPriceMinor != 990000 {
+		t.Errorf("cheapest of three: %+v", scvd)
+	}
+
+	// Bitrefill also lists a Solana "upto" endpoint; only plain "exact" is read.
+	if bit := snap.providers[snap.byID["cdp:api-bitrefill-com"]]; bit.EndpointCount != 1 {
+		t.Errorf("only the exact endpoint: %+v", bit)
+	}
+}
+
+func TestCDPNamesProvidersByHostNotByTheNameTheyChoose(t *testing.T) {
+	real := cdpItem("public-api.birdeye.so", "Birdeye", true, nil)
+	impostor := cdpItem("evil.example", "Birdeye", true, nil)
+
+	snap, err := parse(CDP(""), listed("solana", real, impostor), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, p := range snap.providers {
+		ids = append(ids, p.ID)
+	}
+	slices.Sort(ids)
+	if strings.Join(ids, ",") != "cdp:evil-example,cdp:public-api-birdeye-so" {
+		t.Errorf("a stranger can't take the real Birdeye's ID by calling itself Birdeye: %v", ids)
+	}
+	for _, p := range snap.providers {
+		if p.Name != "Birdeye" {
+			t.Errorf("the name is still shown: %+v", p)
+		}
+	}
+}
+
+func TestCDPReadsTheHeadOfAListThatIgnoresTheNetworkFilter(t *testing.T) {
+	var all []json.RawMessage
+	solanaFirst2000 := 0
+	for i := range 2500 {
+		solana := i%4 == 0
+		if solana && i < 2000 {
+			solanaFirst2000++
+		}
+		all = append(all, cdpItem(fmt.Sprintf("host-%d.example", i), fmt.Sprintf("Service %d", i), solana, nil))
+	}
+	f := newFakeDir(t, map[string][]json.RawMessage{"": all})
+	p := CDP("")
+	p.MaxPages = 2 // the third page is never asked for
+	c := client(p, f, &clock{t: time.Unix(1_800_000_000, 0)})
+
+	l, err := c.List(context.Background(), catalog.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.hits != 2 || l.Total != solanaFirst2000 {
+		t.Fatalf("two pages, the Solana-payable entries of both: hits=%d providers=%d want %d", f.hits, l.Total, solanaFirst2000)
+	}
+	for i, q := range f.query {
+		if strings.Contains(q, "network=") || !strings.Contains(q, "type=http") || !strings.Contains(q, "limit=1000") || !strings.Contains(q, fmt.Sprintf("offset=%d", i*1000)) {
+			t.Errorf("request %d: %q", i, q)
+		}
+	}
+}
+
+func TestCDPKeepsWhatItReadWhenALaterPageFails(t *testing.T) {
+	var all []json.RawMessage
+	for i := range 1500 {
+		all = append(all, cdpItem(fmt.Sprintf("host-%d.example", i), fmt.Sprintf("Service %d", i), true, nil))
+	}
+	f := newFakeDir(t, map[string][]json.RawMessage{"": all})
+	f.failFrom = 1000
+	c := client(CDP(""), f, &clock{t: time.Unix(1_800_000_000, 0)})
+	l, err := c.List(context.Background(), catalog.Filter{})
+	if err != nil || l.Total != 1000 {
+		t.Fatalf("the first page stands: %v %+v", err, l)
+	}
+
+	// But a directory that can't be read at all is unavailable.
+	f2 := newFakeDir(t, map[string][]json.RawMessage{"": all})
+	f2.down = true
+	c2 := client(CDP(""), f2, &clock{t: time.Unix(1_800_000_000, 0)})
+	if _, err := c2.List(context.Background(), catalog.Filter{}); !errors.Is(err, catalog.ErrUnavailable) {
+		t.Errorf("first page down: %v", err)
+	}
+}
+
+func TestSolanaClustersOfAnEntry(t *testing.T) {
+	for name, tc := range map[string]struct {
+		raw  string
+		want string
+	}{
+		"mainnet by CAIP-2":  {`{"accepts":[{"network":"` + caipMainnet + `"}]}`, "solana"},
+		"mainnet by v1 name": {`{"accepts":[{"network":"solana"}]}`, "solana"},
+		"both":               {`{"accepts":[{"network":"` + caipDevnet + `"},{"network":"solana"},{"network":"solana"}]}`, "solana-devnet,solana"},
+		"base only":          {`{"accepts":[{"network":"eip155:8453"}]}`, ""},
+		"nothing":            {`{}`, ""},
+		"not json":           {`[`, ""},
+	} {
+		if got := strings.Join(solanaClusters(json.RawMessage(tc.raw)), ","); got != tc.want {
+			t.Errorf("%s: got %q want %q", name, got, tc.want)
+		}
 	}
 }

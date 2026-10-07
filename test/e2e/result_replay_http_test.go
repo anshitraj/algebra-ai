@@ -20,6 +20,15 @@ import (
 	"github.com/project-algebra/algebra/internal/platform/wiring"
 )
 
+// noCatalogs turns every provider catalog off, so that nothing but the sandbox
+// provider is asked for a price and no request leaves this machine.
+func noCatalogs(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{"PAYSH_ENABLED", "CIRCLE_AGENTS_ENABLED", "PAYAI_ENABLED", "CDP_BAZAAR_ENABLED"} {
+		t.Setenv(name, "off")
+	}
+}
+
 // serve runs the real API on a free loopback port, with the sandbox provider
 // the API itself hosts reachable on that same port, as in `go run ./cmd/api`.
 func serve(t *testing.T) (*wiring.Bundle, string) {
@@ -39,11 +48,7 @@ func serve(t *testing.T) (*wiring.Bundle, string) {
 	t.Setenv("SOLANA_MAINNET_KEYPAIR_FILE", "")
 	t.Setenv("SOLANA_MAINNET_KEYPAIR", "")
 	t.Setenv("RESULT_RETENTION", "")
-	// Nothing but the sandbox provider is asked for a price: no catalog, so no
-	// request leaves this machine.
-	t.Setenv("PAYSH_ENABLED", "off")
-	t.Setenv("CIRCLE_AGENTS_ENABLED", "off")
-	t.Setenv("PAYAI_ENABLED", "off")
+	noCatalogs(t)
 	cfg, err := config.FromEnv()
 	if err != nil {
 		t.Fatalf("loading config: %v", err)

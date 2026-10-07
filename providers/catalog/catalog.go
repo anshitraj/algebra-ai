@@ -84,8 +84,15 @@ type Provider struct {
 	// Networks are the Solana clusters some endpoint can be paid on:
 	// "solana" (mainnet) and/or "solana-devnet".
 	Networks []string `json:"networks"`
-	// Source is the catalog that lists it: "pay.sh", "circle" or "payai".
+	// Source is the catalog that lists it: "pay.sh", "circle", "payai" or "cdp".
 	Source string `json:"source"`
+	// Calls30d and Payers30d are how much it was paid in the last 30 days, as a
+	// directory that watches its facilitator reports it: paid calls, and the
+	// most distinct payers any one endpoint had. Zero when the directory
+	// doesn't say. A listing says what an endpoint claims; this says whether
+	// anybody pays it.
+	Calls30d  int64 `json:"calls_30d,omitempty"`
+	Payers30d int64 `json:"payers_30d,omitempty"`
 }
 
 // Payment is one way an endpoint can be paid, as the catalog lists it.
@@ -159,6 +166,17 @@ type Endpoint struct {
 	// templated endpoint is callable: the runner fills the path from the input.
 	Callable bool   `json:"callable"`
 	Reason   string `json:"not_callable_reason,omitempty"`
+	// Usage is how much it was paid lately, when the directory says.
+	Usage *Usage `json:"usage,omitempty"`
+}
+
+// Usage is a directory's count of what an endpoint was paid in the last 30
+// days. It is the directory's number, not Algebra's, and a count of payments
+// is not a count of good answers.
+type Usage struct {
+	Calls30d     int64     `json:"calls_30d"`
+	Payers30d    int64     `json:"payers_30d"`
+	LastCalledAt time.Time `json:"last_called_at,omitzero"`
 }
 
 // Detail is a provider with its endpoints.
@@ -175,7 +193,7 @@ type Filter struct {
 	// ignoring case.
 	Query    string
 	Category string
-	// Source keeps one catalog ("pay.sh", "circle", "payai"); empty keeps all.
+	// Source keeps one catalog ("pay.sh", "circle", "payai", "cdp"); empty keeps all.
 	Source string
 	// Network keeps providers with an endpoint payable on that cluster
 	// ("solana" or "solana-devnet"); empty keeps all.

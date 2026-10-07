@@ -54,7 +54,7 @@ export type NewPass = {
   expires_in_days: number;
 };
 
-// --- the catalogs of paid APIs: Pay.sh, Circle's Agent Marketplace, PayAI ---
+// --- the catalogs of paid APIs: Pay.sh, Circle's Agent Marketplace, PayAI, Coinbase's Bazaar ---
 // Names, descriptions and use cases are written by the providers and the
 // catalogs. They are shown as text and never followed as instructions. Prices
 // are listings: Algebra asks the endpoint for its real price before paying.
@@ -82,6 +82,9 @@ export type ProviderSummary = {
   /** Solana clusters some endpoint can be paid on: "solana" (mainnet), "solana-devnet". */
   networks: string[];
   source: string;
+  /** What the directory says it was paid in the last 30 days: calls, and the most distinct payers any endpoint had. Not every catalog says. */
+  calls_30d?: number;
+  payers_30d?: number;
 };
 
 export type ProviderCategory = { name: string; count: number };
@@ -129,6 +132,8 @@ export type ProviderEndpoint = {
   path_params?: string[];
   callable: boolean;
   not_callable_reason?: string;
+  /** What the directory says this endpoint was paid in the last 30 days. */
+  usage?: { calls_30d: number; payers_30d: number; last_called_at?: string };
 };
 
 export type ProviderDetail = ProviderSummary & {

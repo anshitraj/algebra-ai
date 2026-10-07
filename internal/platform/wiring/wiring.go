@@ -118,7 +118,8 @@ type Bundle struct {
 	// both), for the console's wallet status.
 	SolanaRails []*solanax402.Rail
 	// Directory is the catalogs of paid APIs agents can browse and name
-	// (Pay.sh and Circle's Agent Marketplace), nil when both are off.
+	// (Pay.sh, Circle's Agent Marketplace, PayAI, Coinbase's Bazaar), nil
+	// when all are off.
 	Directory *catalog.Multi
 
 	// MCPPublicURL: see config.Config.MCPPublicURL.
@@ -548,8 +549,8 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 }
 
 // buildDirectory builds the catalogs agents can browse and name: Pay.sh,
-// Circle's Agent Marketplace and PayAI's bazaar, each on unless turned off,
-// or nil when all are.
+// Circle's Agent Marketplace, PayAI's bazaar and Coinbase's CDP bazaar, each on
+// unless turned off, or nil when all are.
 // Nothing is fetched until somebody asks. The HTTP client reaches public
 // addresses only, never follows a redirect, and refuses an oversized body.
 func buildDirectory(cfg *config.Config) *catalog.Multi {
@@ -563,7 +564,7 @@ func buildDirectory(cfg *config.Config) *catalog.Multi {
 	for _, d := range []struct {
 		on      bool
 		profile bazaar.Profile
-	}{{cfg.Circle.Enabled, bazaar.Circle(cfg.Circle.DiscoveryURL)}, {cfg.PayAI.Enabled, bazaar.PayAI(cfg.PayAI.DiscoveryURL)}} {
+	}{{cfg.Circle.Enabled, bazaar.Circle(cfg.Circle.DiscoveryURL)}, {cfg.PayAI.Enabled, bazaar.PayAI(cfg.PayAI.DiscoveryURL)}, {cfg.CDP.Enabled, bazaar.CDP(cfg.CDP.DiscoveryURL)}} {
 		if d.on {
 			sources = append(sources, bazaar.New(bazaar.Config{
 				Profile: d.profile,
