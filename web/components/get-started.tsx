@@ -18,7 +18,7 @@ const STEPS = [
   },
   {
     title: "Your agent asks",
-    body: "It says what it wants, a token risk score say, and the most it will pay. Algebra finds providers on Pay.sh, Circle's Agent Marketplace and PayAI, and asks each for its real price.",
+    body: "It says what it wants, a token risk score say, and the most it will pay. Algebra finds providers on Pay.sh, Circle's Agent Marketplace, PayAI and Coinbase's Bazaar, and asks each for its real price.",
   },
   {
     title: "Pay, verify, receipt",

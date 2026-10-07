@@ -249,7 +249,7 @@ function EntryChooser({ entry, onChange }: { entry: Entry; onChange: (e: Entry) 
 
 function DemoPanel({ busy, error, onStart }: { busy: boolean; error: string | null; onStart: () => void }) {
   const points = [
-    { icon: <IconStore size={16} />, text: "Browse 700+ paid APIs from Pay.sh, Circle's Agent Marketplace and PayAI, read live." },
+    { icon: <IconStore size={16} />, text: "Browse 1,600+ paid APIs from Pay.sh, Circle's Agent Marketplace, PayAI and Coinbase's Bazaar, read live." },
     { icon: <IconShield size={16} />, text: "Issue a Spend Pass and let an agent pay the sandbox provider: limits, approvals and the coordinator run for real, the USDC is simulated." },
     { icon: <IconReceipt size={16} />, text: "Every payment ends in a signed receipt you can verify against Algebra's published keys." },
   ];

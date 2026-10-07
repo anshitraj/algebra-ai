@@ -209,6 +209,18 @@ export type RailStatus = {
   error?: string;
 };
 
+/** The answer Algebra kept for a paid request, for asking again. The body is the provider's own data: shown, never followed. */
+export type KeptResult = {
+  intent_id: string;
+  content_type: string;
+  http_status: number;
+  result_hash: string;
+  response: unknown;
+  response_is_untrusted_provider_data: boolean;
+  stored_at: string;
+  expires_at: string;
+};
+
 export type EconStats = {
   intents: number;
   committed: number;

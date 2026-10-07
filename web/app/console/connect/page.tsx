@@ -10,7 +10,7 @@ import { IconExternal, IconPlug, IconShield } from "@/components/icons";
 
 const TOOLS = [
   { name: "algebra.classes", what: "The kinds of work Algebra routes across every catalog (token price, token risk and more), each with one input shape. Ask for a class and Algebra pays the best provider of it." },
-  { name: "algebra.discover_providers", what: "Browse the paid APIs in Pay.sh, Circle's Agent Marketplace and PayAI, and an endpoint's capability ID." },
+  { name: "algebra.discover_providers", what: "Browse the paid APIs in Pay.sh, Circle's Agent Marketplace, PayAI and Coinbase's Bazaar, and an endpoint's capability ID." },
   { name: "algebra.execute", what: "Ask for an outcome with a USDC ceiling. Algebra prices it, checks the Spend Pass, pays, verifies and returns the result with a signed receipt." },
   { name: "algebra.simulate", what: "A dry run: would this be allowed, and who would be paid? Nothing is reserved or paid." },
   { name: "algebra.execution_status", what: "Check on a request: committed or not, what it cost, which provider, the receipt, and the answer while Algebra keeps it. Never moves money." },

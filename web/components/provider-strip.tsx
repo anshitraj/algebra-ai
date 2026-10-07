@@ -8,7 +8,7 @@ export function ProviderStrip() {
     <section aria-labelledby="provider-strip-heading" className="pt-4 pb-10 md:pt-6 md:pb-14">
       <Container>
         <p id="provider-strip-heading" className="text-center text-sm text-muted">
-          Paid APIs your agent can call today, from Pay.sh, Circle&apos;s Agent Marketplace and PayAI
+          Paid APIs your agent can call today, from Pay.sh, Circle&apos;s Agent Marketplace, PayAI and Coinbase&apos;s Bazaar
         </p>
         <ul className="mx-auto mt-6 flex max-w-4xl flex-wrap items-center justify-center gap-x-7 gap-y-4 md:gap-x-9">
           {FEATURED_PROVIDERS.map((p) => (

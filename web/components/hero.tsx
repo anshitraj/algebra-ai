@@ -19,7 +19,7 @@ export function Hero() {
           </h1>
           <p className="mt-6 max-w-xl text-[1.0625rem] leading-relaxed text-muted">
             Algebra is the policy-aware execution layer for autonomous agents on Solana. Your agent asks for an outcome.
-            Algebra finds a paid API on Pay.sh, Circle&apos;s Agent Marketplace or PayAI, checks your Spend Pass, pays in USDC over x402, verifies what came back
+            Algebra finds the best paid API across Pay.sh, Circle&apos;s Agent Marketplace, PayAI and Coinbase&apos;s Bazaar, checks your Spend Pass, pays in USDC over x402, verifies what came back
             and signs a receipt. The agent never holds a key.
           </p>
 

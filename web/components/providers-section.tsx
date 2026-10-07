@@ -47,7 +47,7 @@ export function Providers() {
               Every provider, as its catalog lists it.
             </h2>
             <p className="mt-4 max-w-xl text-[1.0625rem] leading-relaxed text-muted">
-              Algebra reads three catalogs of pay-per-call APIs, Pay.sh, Circle&apos;s Agent Marketplace and PayAI, and keeps
+              Algebra reads four catalogs of pay-per-call APIs, Pay.sh, Circle&apos;s Agent Marketplace, PayAI and Coinbase&apos;s Bazaar, and keeps
               what can be paid in USDC on Solana, mainnet or devnet. A listing is not an endorsement and a listed price is not a quote: Algebra asks
               the endpoint for its real terms before it pays.
             </p>

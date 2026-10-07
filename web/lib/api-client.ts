@@ -8,6 +8,7 @@ import type {
   EconIntent,
   EconStats,
   IssuedPass,
+  KeptResult,
   NewPass,
   OnboardingAnswers,
   PassConnect,
@@ -194,6 +195,11 @@ export function listMyEconomicIntents(limit = 50) {
 
 export function getMyEconomicIntent(id: string) {
   return apiFetch<EconIntent>(`/api/v1/me/economic-intents/${encodeURIComponent(id)}`);
+}
+
+/** The answer kept for a paid request, while it is kept (404 once it isn't, or when the request asked not to keep it). */
+export function getMyEconomicResult(id: string) {
+  return apiFetch<KeptResult>(`/api/v1/me/economic-intents/${encodeURIComponent(id)}/result`);
 }
 
 export function getMyEconomicStats(days = 30) {

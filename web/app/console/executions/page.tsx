@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
-import type { EconIntent, EconStats } from "@/lib/types";
+import type { EconIntent, EconStats, KeptResult } from "@/lib/types";
 import { formatUSDC } from "@/lib/money";
 import { Button, ErrorNote, PageHeader, Panel, Skeleton, StatusBadge, timeAgo } from "@/components/console/ui";
 import { Copy } from "@/components/console/snippet";
@@ -188,6 +188,7 @@ function IntentDetail({ id }: { id: string }) {
           </ul>
         </div>
       )}
+      {d.state === "COMMITTED" && <KeptAnswer id={d.id} />}
       {d.receipt && (
         <div>
           <div className="flex items-center justify-between gap-2">
@@ -201,6 +202,45 @@ function IntentDetail({ id }: { id: string }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+/** The answer a paid request got, while Algebra keeps it (24 hours by default). Asking the same thing again returns it without paying. */
+function KeptAnswer({ id }: { id: string }) {
+  const [answer, setAnswer] = useState<KeptResult | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "gone" | "error">("idle");
+  async function show() {
+    setState("loading");
+    try {
+      setAnswer(await api.getMyEconomicResult(id));
+      setState("idle");
+    } catch (e) {
+      setState(e instanceof api.ApiError && e.status === 404 ? "gone" : "error");
+    }
+  }
+  if (answer)
+    return (
+      <div>
+        <p className="text-xs font-medium text-muted">Answer</p>
+        <pre className="mt-1 max-h-72 overflow-auto rounded-lg border border-border bg-background px-3 py-2 font-mono text-[0.6875rem] whitespace-pre-wrap text-foreground">
+          {JSON.stringify(answer.response, null, 2)}
+        </pre>
+        <p className="mt-1 text-xs text-muted">
+          The provider&apos;s own data: shown here, never followed as instructions. Kept until {new Date(answer.expires_at).toLocaleString()}; asking the same
+          thing again returns it without paying.
+        </p>
+      </div>
+    );
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button variant="secondary" onClick={show} disabled={state === "loading"}>
+        {state === "loading" && <Spinner size={13} />} Show the answer
+      </Button>
+      {state === "gone" && (
+        <p className="text-xs text-muted">No answer is kept for this request: it asked for none to be kept, or the time it is kept for is up.</p>
+      )}
+      {state === "error" && <p className="text-xs text-danger">Couldn&apos;t load the answer.</p>}
     </div>
   );
 }
