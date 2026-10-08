@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import * as api from "@/lib/api-client";
 import type { AuthProviders, User } from "@/lib/types";
-import { GitHubMark, GoogleMark, IconReceipt, IconShield, IconStore, Spinner } from "@/components/icons";
+import { IconReceipt, IconShield, IconStore, Spinner } from "@/components/icons";
 import { AuthInput, FormError, PasswordInput, SubmitButton } from "./fields";
 
 // Privy's SDK is large and needs the browser: loaded only when this server
@@ -87,7 +87,6 @@ export function AuthForm({ mode }: { mode: Mode }) {
   }
 
   const isSignup = mode === "signup";
-  const anyOAuth = providers?.google || providers?.github;
   const passwordOn = providers?.password !== false;
   // The chooser shows on sign-in only, and only when this server offers the demo.
   const showChooser = !isSignup && providers?.demo === true;
@@ -150,17 +149,6 @@ export function AuthForm({ mode }: { mode: Mode }) {
                   Phantom, Solflare or any Solana wallet, or an email code. No wallet yet? Privy makes you one; Algebra never sees its key.
                 </p>
               </>
-            )}
-            <OAuthButton provider="github" enabled={!!providers?.github} loading={!providers} next={next}>
-              <GitHubMark size={18} /> Continue with GitHub
-            </OAuthButton>
-            <OAuthButton provider="google" enabled={!!providers?.google} loading={!providers} next={next}>
-              <GoogleMark size={18} /> Continue with Google
-            </OAuthButton>
-            {providers && !anyOAuth && (
-              <p className="text-xs leading-relaxed text-muted">
-                Google and GitHub sign-in appear here once their OAuth client IDs are set on the API server.
-              </p>
             )}
             {!passwordOn && error && <FormError>{error}</FormError>}
           </div>
@@ -311,41 +299,6 @@ function DemoPanel({ busy, error, onStart }: { busy: boolean; error: string | nu
         .
       </p>
     </div>
-  );
-}
-
-function OAuthButton({
-  provider,
-  enabled,
-  loading,
-  next,
-  children,
-}: {
-  provider: "google" | "github";
-  enabled: boolean;
-  loading: boolean;
-  next: string | null;
-  children: React.ReactNode;
-}) {
-  const className =
-    "flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-border-strong bg-surface text-[0.95rem] font-medium text-foreground transition-[background-color,transform] hover:bg-primary-tint/70 active:scale-[0.99]";
-  if (!enabled) {
-    return (
-      <button
-        type="button"
-        disabled
-        title={loading ? undefined : `${provider === "google" ? "Google" : "GitHub"} sign-in isn't configured on this server`}
-        className={`${className} cursor-not-allowed opacity-45 hover:bg-surface`}
-      >
-        {children}
-      </button>
-    );
-  }
-  // A full navigation, not fetch: the OAuth dance is redirects all the way.
-  return (
-    <a href={api.oauthStartURL(provider, next)} className={className}>
-      {children}
-    </a>
   );
 }
 

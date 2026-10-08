@@ -85,7 +85,7 @@ node and a fake Jupiter (`providers/jupiter/jupitertest`), so nothing leaves the
 
 ## Accounts and sessions
 
-People sign in to the web app with email and password (argon2id) or Google / GitHub OAuth (`internal/api/v1/auth.go`). A sign-in creates:
+People sign in to the web app with Privy (an email code or a Solana wallet) or with email and password (argon2id) (`internal/api/v1/auth.go`). A sign-in creates:
 
 - an **HttpOnly, SameSite=Lax session cookie** (`algebra_session`, SHA-256-hashed at rest in `user_sessions`), and
 - a **per-session console agent**: the identity every agent-scoped endpoint acts as when called with the cookie. Its token is sealed (AES-256-GCM) on the session row; the web app's server-side loop fetches
@@ -94,7 +94,7 @@ People sign in to the web app with email and password (argon2id) or Google / Git
 Signing out revokes both. Human-only endpoints (approving, passes and their controls, the kill switch, everything under `/api/v1/me`) accept **only** the session cookie. An agent bearer token is rejected
 there, which is what keeps approval out of any agent's reach, including the console's own chat.
 
-Google / GitHub buttons appear once their client IDs are set (`.env.example` has the redirect URIs). Password-reset emails go through Resend when `RESEND_API_KEY` is set; otherwise the reset link is printed
+The Privy button appears once `PRIVY_APP_ID` is set (see `.env.example`). Password-reset emails go through Resend when `RESEND_API_KEY` is set; otherwise the reset link is printed
 to the API's log, which is fine locally and never in production. `PASSWORD_LOGIN=off` removes email and password sign-in.
 
 ## Scripts without a browser

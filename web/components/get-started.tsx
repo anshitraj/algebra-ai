@@ -5,12 +5,12 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react";
 import { useRef } from "react";
 import { Container } from "./container";
-import { GitHubMark, GoogleMark, IconArrowRight, IconCheck, IconMail, IconShield } from "./icons";
+import { IconArrowRight, IconCheck, IconMail, IconShield, IconWallet } from "./icons";
 
 const STEPS = [
   {
     title: "Sign in",
-    body: "Google, GitHub or email. No wallet to connect, no key to paste.",
+    body: "A Solana wallet or an email code. No wallet yet? One is made for you. No key to paste.",
   },
   {
     title: "Issue a Spend Pass",
@@ -146,9 +146,8 @@ function SignInScene() {
       <p className="font-display text-lg font-semibold text-foreground">Create your account</p>
       <div className="mt-4 space-y-2">
         {[
-          { icon: <GitHubMark size={16} />, label: "Continue with GitHub" },
-          { icon: <GoogleMark size={16} />, label: "Continue with Google" },
-          { icon: <IconMail size={16} />, label: "Continue with email" },
+          { icon: <IconWallet size={16} />, label: "Continue with a wallet" },
+          { icon: <IconMail size={16} />, label: "Continue with an email code" },
         ].map((b, i) => (
           <motion.div
             key={b.label}

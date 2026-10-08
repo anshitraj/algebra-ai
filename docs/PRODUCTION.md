@@ -6,7 +6,7 @@ What it takes to run Algebra for real users, what the code already enforces, and
 
 | Area | State |
 |---|---|
-| Accounts | Email and password (argon2id), Google / GitHub OAuth (PKCE, verified-email linking only), Privy (email code, Google or a Solana wallet; an embedded Solana wallet for anyone without one; its ES256 identity token verified against the app's key), password reset through Resend, HttpOnly / SameSite=Lax / Secure session cookies, per-device sign-out |
+| Accounts | Privy (an email code or a Solana wallet; an embedded Solana wallet for anyone without one; its ES256 identity token verified against the app's key), email and password (argon2id), password reset through Resend, HttpOnly / SameSite=Lax / Secure session cookies, per-device sign-out |
 | Authorization | Human-only endpoints (approvals, passes and their controls, the kill switch, `/me`) accept only a session; agents get scoped, revocable tokens; every intent-scoped call checks the intent belongs to the caller |
 | Spend firewall | Per-pass budget, per-call cap, approval line, provider allow-list, velocity limits, a rule for new providers, a kill switch, all re-checked right before a wallet signs ([SPEND_PASSES.md](SPEND_PASSES.md)) |
 | Money safety | At most one live attempt and one commitment per outcome, enforced by Postgres; an ambiguous outcome freezes and is settled from chain evidence ([ECONOMIC_COORDINATION.md](ECONOMIC_COORDINATION.md)); each rail has hard per-payment ceilings of its own |
@@ -45,8 +45,6 @@ CORS_ALLOWED_ORIGINS=https://app.yourdomain.com
 ENABLED_MERCHANTS=none                               # API-only; there is no shopping connector to run
 RESEND_API_KEY=re_...                                # required in production
 EMAIL_FROM=Algebra <no-reply@yourdomain.com>         # a sender on a Resend-verified domain
-GOOGLE_CLIENT_ID=... / GOOGLE_CLIENT_SECRET=...      # optional
-GITHUB_CLIENT_ID=... / GITHUB_CLIENT_SECRET=...      # optional
 PRIVY_APP_ID=...                                     # optional: sign-in with Privy (wallets, email codes)
 PRIVY_VERIFICATION_KEY="-----BEGIN PUBLIC KEY-----
 ..."  # optional: the dashboard key; without it, fetched from Privy
@@ -89,8 +87,6 @@ GRIEVANCE_OFFICER_EMAIL=grievance@yourdomain.com
 `RESEND_API_KEY` or `REDIS_ADDR` is missing, `DATABASE_URL` disables TLS, or a CORS origin isn't https. A Solana RPC node on the wrong cluster stops startup; one that is merely unreachable leaves
 its rail out, loudly. Redis being unreachable at boot is fatal in production.
 
-OAuth redirect URIs to register: `https://app.yourdomain.com/api/v1/auth/oauth/google/callback` and `.../github/callback`.
-
 ## 4. Build and run
 
 ```bash
@@ -109,7 +105,6 @@ The API's write timeout is 90 seconds, which is what bounds a paid call plus its
 - [ ] A new `ALGEBRA_MASTER_KEY` generated for production (never the dev one) and kept in a secret manager
 - [ ] A production database with its own credentials and point-in-time recovery; Redis provisioned and reachable
 - [ ] Resend domain verified; send yourself a reset email
-- [ ] Google / GitHub OAuth apps created with the production redirect URIs
 - [ ] Privy, if used: the production domain under Allowed origins, "Return user data in an identity token" on, Solana wallets and the login methods you want enabled
 - [ ] A dedicated mainnet wallet, funded with a small amount; its key file readable only by the API; `SOLANA_MAX_PAYMENT_USDC` low; your own RPC node
 - [ ] A first real payment made and checked: `go run ./cmd/x402-dryrun` for the provider, a pass with a tiny budget, `cmd/verify-intent` on the receipt, the signature on the explorer

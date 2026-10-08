@@ -80,8 +80,9 @@ export default function SettingsPage() {
 
   const methods = [
     { id: "password", label: "Email and password", icon: <IconMail size={18} />, on: user.has_password },
-    { id: "google", label: "Google", icon: <GoogleMark size={18} />, on: user.linked_providers.includes("google") },
-    { id: "github", label: "GitHub", icon: <GitHubMark size={18} />, on: user.linked_providers.includes("github") },
+    // Google and GitHub sign-in are no longer offered; an account that linked one earlier still sees it.
+    ...(user.linked_providers.includes("google") ? [{ id: "google", label: "Google", icon: <GoogleMark size={18} />, on: true }] : []),
+    ...(user.linked_providers.includes("github") ? [{ id: "github", label: "GitHub", icon: <GitHubMark size={18} />, on: true }] : []),
     // Privy is listed once used: whether this server offers it is on the sign-in page.
     ...(user.linked_providers.includes("privy")
       ? [{ id: "privy", label: "Privy (wallet or email code)", icon: <IconWallet size={18} />, on: true }]
