@@ -17,6 +17,43 @@ export function networkLabel(n: string | undefined): string {
 }
 
 const KEY = "algebra:network";
+/** Fired in this tab when the choice changes (other tabs get "storage"). */
+const CHANGED = "algebra:network-changed";
+
+/** The saved choice, or mainnet when there is none (or storage is blocked). */
+export function readSavedNetwork(): Network {
+  try {
+    const saved = window.localStorage.getItem(KEY);
+    if (saved === "solana" || saved === "solana-devnet") return saved;
+  } catch {
+    // storage blocked
+  }
+  return "solana";
+}
+
+/** Saves the choice for this browser and tells every switch on the page. */
+export function saveNetwork(n: Network) {
+  try {
+    window.localStorage.setItem(KEY, n);
+  } catch {
+    // the choice still applies for this page
+  }
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: n }));
+}
+
+/** Calls back whenever the choice changes, here or in another tab. */
+export function onNetworkChange(cb: (n: Network) => void): () => void {
+  const local = (e: Event) => cb((e as CustomEvent<Network>).detail);
+  const other = (e: StorageEvent) => {
+    if (e.key === KEY) cb(readSavedNetwork());
+  };
+  window.addEventListener(CHANGED, local);
+  window.addEventListener("storage", other);
+  return () => {
+    window.removeEventListener(CHANGED, local);
+    window.removeEventListener("storage", other);
+  };
+}
 
 type NetworkState = {
   network: Network;
@@ -41,13 +78,10 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   const [railsKey, setRailsKey] = useState(0);
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(KEY);
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring a saved choice after mount
-      if (saved === "solana" || saved === "solana-devnet") setState(saved);
-    } catch {
-      // storage blocked: mainnet for this page
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring a saved choice after mount
+    setState(readSavedNetwork());
+    // The same choice wherever it is made: the site's top bar, another tab.
+    return onNetworkChange(setState);
   }, []);
 
   // Read once for the whole console: the switch, the chat and the panels all show the same wallets.
@@ -62,11 +96,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
 
   const setNetwork = useCallback((n: Network) => {
     setState(n);
-    try {
-      window.localStorage.setItem(KEY, n);
-    } catch {
-      // the choice still applies for this page
-    }
+    saveNetwork(n);
   }, []);
 
   return <Ctx.Provider value={{ network, setNetwork, rails, refreshRails }}>{children}</Ctx.Provider>;

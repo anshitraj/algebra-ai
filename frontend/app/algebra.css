@@ -568,3 +568,17 @@ a:hover > .algebra-mark .mark-right,.algebra-mark:hover .mark-right { transform:
   .landing *,.landing *::before,.landing *::after,.interactive-dashboard *,.console-frame *,.algebra-mark path { animation:none !important; transition:none !important; }
   .reveal-ready { opacity:1; transform:none; }
 }
+
+/* The Solana network switch in the site's top bar: the same choice as the console's. */
+.network-toggle { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--hairline); border-radius: 999px; background: var(--paper-raised); }
+.network-toggle button { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.4; color: var(--ink-soft); }
+.network-toggle button:hover { color: var(--ink); }
+.network-toggle button[aria-checked="true"] { background: var(--ink); color: var(--paper); }
+.network-toggle button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.network-toggle i { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 18%, transparent); }
+.network-toggle button[data-network="solana-devnet"] i { background: var(--warning); }
+.mobile-network { display: none; }
+@media (max-width:850px) {
+  .nav-network { display: none; }
+  .landing-links.is-open .mobile-network { display: inline-flex; align-self: flex-start; margin: 12px 10px 2px; }
+}

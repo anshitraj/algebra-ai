@@ -9,6 +9,7 @@ import { IconCheck, IconPlus, IconShield, IconX, Spinner } from "@/components/ic
 import { Button, ErrorNote, Field, Input, PageHeader, Panel, Skeleton } from "@/components/console/ui";
 import { Copy, Snippet } from "@/components/console/snippet";
 import { ProviderLogo } from "@/components/provider-logo";
+import { OnchainPassPanel } from "@/components/console/onchain-pass";
 
 const AGENTS: { value: AgentKind; label: string; hint: string }[] = [
   { value: "claude", label: "Claude", hint: "Claude Code, Claude Desktop" },
@@ -489,6 +490,7 @@ function PassCard({ pass: p, onRevoked }: { pass: SpendPass; onRevoked: () => vo
           <div className={`h-full rounded-full ${used >= 0.9 ? "bg-danger" : "bg-primary"}`} style={{ width: `${used * 100}%` }} />
         </div>
       </div>
+      {p.currency === "USDC" && <OnchainPassPanel passId={p.id} active={status === "Active"} />}
     </Panel>
   );
 }
