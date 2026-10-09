@@ -82,6 +82,21 @@ func testNetwork(t *testing.T, required bool) *OnchainNetwork {
 		RPC: solana.NewRPC("http://127.0.0.1:1", nil), Payer: kp, Mint: solana.MustPublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"), Required: required}
 }
 
+func TestPassesOnEitherDeploymentAreHonoured(t *testing.T) {
+	n := testNetwork(t, false)
+	anchor, _ := spendpass.New(spendpass.AnchorProgramID)
+	n.Accepted = []spendpass.Program{n.Program, anchor}
+	if p, err := bindingProgram(n, &OnchainBinding{ProgramID: spendpass.AnchorProgramID}); err != nil || p.ID != anchor.ID {
+		t.Fatalf("an Anchor-made pass: %v %v", p, err)
+	}
+	if p, err := bindingProgram(n, &OnchainBinding{ProgramID: spendpass.PinocchioProgramID}); err != nil || p.ID != n.Program.ID {
+		t.Fatalf("a Pinocchio-made pass: %v %v", p, err)
+	}
+	if _, err := bindingProgram(n, &OnchainBinding{ProgramID: "11111111111111111111111111111111"}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("another program: %v", err)
+	}
+}
+
 func TestPassNumberIsStableAndPerPass(t *testing.T) {
 	a, b := PassNumber("pass_1"), PassNumber("pass_2")
 	if a == b || a != PassNumber("pass_1") {
