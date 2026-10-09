@@ -37,8 +37,8 @@ func TestPassAddressMatchesTheCLI(t *testing.T) {
 			t.Fatalf("%s: pass address %s", c.program, got)
 		}
 	}
-	if program(t).ID.String() != PinocchioProgramID {
-		t.Fatal("new passes are made on the Pinocchio program")
+	if program(t).ID.String() != AnchorProgramID {
+		t.Fatal("new passes are made on the Anchor program")
 	}
 }
 

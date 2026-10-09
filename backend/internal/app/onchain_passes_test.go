@@ -84,12 +84,12 @@ func testNetwork(t *testing.T, required bool) *OnchainNetwork {
 
 func TestPassesOnEitherDeploymentAreHonoured(t *testing.T) {
 	n := testNetwork(t, false)
-	anchor, _ := spendpass.New(spendpass.AnchorProgramID)
-	n.Accepted = []spendpass.Program{n.Program, anchor}
-	if p, err := bindingProgram(n, &OnchainBinding{ProgramID: spendpass.AnchorProgramID}); err != nil || p.ID != anchor.ID {
+	pinocchio, _ := spendpass.New(spendpass.PinocchioProgramID)
+	n.Accepted = []spendpass.Program{n.Program, pinocchio}
+	if p, err := bindingProgram(n, &OnchainBinding{ProgramID: spendpass.AnchorProgramID}); err != nil || p.ID != n.Program.ID {
 		t.Fatalf("an Anchor-made pass: %v %v", p, err)
 	}
-	if p, err := bindingProgram(n, &OnchainBinding{ProgramID: spendpass.PinocchioProgramID}); err != nil || p.ID != n.Program.ID {
+	if p, err := bindingProgram(n, &OnchainBinding{ProgramID: spendpass.PinocchioProgramID}); err != nil || p.ID != pinocchio.ID {
 		t.Fatalf("a Pinocchio-made pass: %v %v", p, err)
 	}
 	if _, err := bindingProgram(n, &OnchainBinding{ProgramID: "11111111111111111111111111111111"}); !errors.Is(err, ErrInvalidRequest) {
