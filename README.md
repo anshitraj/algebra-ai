@@ -50,7 +50,7 @@ An agent that can pay for things has three problems, and none is the model's to 
 | **Catalogs** | Pay.sh (75 providers), Circle's Agent Marketplace (27), PayAI's bazaar (1,152) and Coinbase's x402 Bazaar (368 of its most-used Solana endpoints, with how many payers each had in 30 days): 1,622 in all. Provider IDs are what passes and receipts name; in open directories they are derived from the host, not the name a stranger gives itself. |
 | **Web discovery** | For work no catalog lists, Gemini searches the open web for endpoints; each is asked for its price with a free probe (never with your input) and returned as an unverified candidate the pass still has the last word on. |
 | **Swaps** | Buy a token with USDC through Jupiter (`solana.swap`, off by default). The wallet signs only a transaction that, *simulated*, spends no more than the amount, delivers at least the quote less the slippage, and changes nothing else about the wallet: no new delegate, no new owner, no closed account. |
-| **Receipts** | Every outcome gets an Ed25519 receipt with the routing decision, the execution and the settlement. Anyone can verify it against `/.well-known/jwks.json`, at `/verify` or with `cmd/verify-intent`. |
+| **Receipts** | Every outcome gets an Ed25519 receipt with the routing decision, the execution and the settlement. Anyone can verify it against `/.well-known/jwks.json`, at `/verify` or with `backend/cmd/verify-intent`. |
 | **Replay** | The provider's answer is kept sealed (AES-256-GCM, 24 hours by default, opt out per request) so asking again returns it with `replayed: true` instead of "already committed". |
 | **Interfaces** | REST (`/api/v1`), an MCP server at `/mcp` (stateless streamable HTTP, the Spend Pass as a bearer token, so it never passes through the model), and a console with the agent chat, passes, providers, routing, the firewall and executions. |
 
@@ -78,25 +78,28 @@ agent ──► POST /api/v1/execute   (or MCP algebra.execute)
 
 ## Quick start
 
-You need Go 1.26+, Node 20+ with pnpm, and Postgres. On Windows without Docker, `scripts/dev-native.ps1` runs a throwaway Postgres (`:5433`) and Redis (`:6380`) from the installs already on the machine; with Docker, `make dev-up`.
+You need Go 1.26+, Node 20+ with pnpm, and Postgres. On Windows without Docker, `scripts/dev-native.ps1` runs a throwaway Postgres (`:5433`) and Redis (`:6380`) from the installs already on the machine; with Docker, `make infra-up`.
 
 ```bash
-cp .env.example .env                 # then set ALGEBRA_MASTER_KEY: openssl rand -base64 32
-make dev-up                          # Postgres + Redis (or: scripts\dev-native.ps1 up)
-go run ./cmd/api                     # REST + MCP on :8080; migrations run on start
-pnpm --dir web install && pnpm --dir web dev   # console on :3000
+cp backend/.env.example backend/.env   # then set ALGEBRA_MASTER_KEY: openssl rand -base64 32
+make infra-up                          # Postgres + Redis (or: scripts\dev-native.ps1 up)
+make api                               # the backend: REST + MCP on :8080; migrations run on start
+make web                               # the frontend, the console on :3000 (first time: pnpm --dir frontend install)
 ```
+
+The parts are separate. [backend/](backend/README.md) is the Go server (the API, the MCP server, the demo providers and the wallet tools), [frontend/](frontend/README.md) is the Next.js console, and [deploy/](deploy/README.md) says how to run and deploy each one on its own.
 
 Open `http://localhost:3000`, create an account, and issue a Spend Pass (Console → Spend passes). The token is shown once; give it to an agent as `Authorization: Bearer …`. Connecting Claude Code, Claude Desktop, Cursor or the OpenAI Agents SDK is a one-line snippet on the **Connect** page.
 
 With `ECONOMIC_SANDBOX=on` (the default for local runs) Algebra hosts a simulated paid provider and a simulated rail, so you can run the whole flow with no wallet and no money; sandbox receipts are marked `test`.
 
-**Real payments on devnet.** The router and firewall are best seen against providers that behave like the real ones:
+**Real payments on devnet.** The router and firewall are best seen against providers that behave like the real ones. Run these from `backend/`; `ALGEBRA_DATA_DIR` keeps the keys in the repository's `.data/` (the `make` targets and the dev script set it for you):
 
 ```bash
-go run ./cmd/solana-wallet -new -out .data/solana-devnet.json   # fund it at faucet.circle.com (Solana Devnet)
-go run ./cmd/demo-provider                                       # alpha, beta (slow), flaky (down), greedy (overcharges), trap ($25), meter (usage-billed)
-ECONOMIC_PROVIDERS="$(go run ./cmd/demo-provider -print-config)" SOLANA_DEVNET_KEYPAIR_FILE=.data/solana-devnet.json go run ./cmd/api
+cd backend && export ALGEBRA_DATA_DIR="$(pwd)/../.data"
+go run ./cmd/solana-wallet -new -out ../.data/solana-devnet.json   # fund it at faucet.circle.com (Solana Devnet)
+go run ./cmd/demo-provider                                          # alpha, beta (slow), flaky (down), greedy (overcharges), trap ($25), meter (usage-billed)
+ECONOMIC_PROVIDERS="$(go run ./cmd/demo-provider -print-config)" SOLANA_DEVNET_KEYPAIR_FILE=../.data/solana-devnet.json go run ./cmd/api
 curl -s localhost:8080/api/v1/policy/simulate ... -d '{"capability":"token.price","live_quotes":true}'   # ALLOW: would pay demo:beta; flaky, greedy and trap are refused, with reasons
 ```
 
@@ -107,7 +110,7 @@ Wallet and rail details, mainnet, the first-payment runbook and `x402-dryrun` (p
 ## Status, honestly
 
 - **Built and tested:** everything above. The Go suite (unit, Postgres integration and end-to-end over real HTTP and MCP) passes; the web app typechecks and lints clean.
-- **Verified against live services, read-only:** the four payable catalogs, Jupiter's quote API, Solana address derivation and transaction encoding on mainnet and devnet, and real x402 providers priced and their payments built and simulated with `cmd/x402-dryrun`. Mainnet is configured in the demo and dry-runs against live providers (a Circle-listed price provider, a Coinbase-listed token-risk provider with two down and two trap-priced ones refused, PayAI's web search).
+- **Verified against live services, read-only:** the four payable catalogs, Jupiter's quote API, Solana address derivation and transaction encoding on mainnet and devnet, and real x402 providers priced and their payments built and simulated with `backend/cmd/x402-dryrun`. Mainnet is configured in the demo and dry-runs against live providers (a Circle-listed price provider, a Coinbase-listed token-risk provider with two down and two trap-priced ones refused, PayAI's web search).
 - **Real payments, on devnet:** x402 `exact` calls and a metered `upto` call through a Solana payment channel (escrow, voucher, settle and refund in one transaction), each chosen and paid by the router with its guards and the firewall on. The transactions are linked in [docs/DEMO.md](docs/DEMO.md#proof-real-devnet-payments-through-algebra-2026-10-07).
 - **Not yet real:** a mainnet payment, which needs a funded wallet and is the operator's to make (runbook in [docs/EXECUTION.md](docs/EXECUTION.md)), and a swap landing, verified on a fake cluster only.
 - **Not built:** cross-chain transfers (CCTP) and any EVM rail, so Base-only x402 providers are listed but not payable; Monid's tools, listed for comparison but billed from a Monid balance rather than x402, and card rails such as Stripe; selling a token or buying SOL; OAuth sign-in for MCP (a Spend Pass bearer token is used); a recipient allow-list for passes.
@@ -115,29 +118,38 @@ Wallet and rail details, mainnet, the first-payment runbook and `x402-dryrun` (p
 
 ## Repository layout
 
+Each part lives in its own folder, with its own Dockerfile, environment example and README, so it can be built, run and deployed without the others.
+
 ```
-cmd/api                 REST API + MCP server (/mcp) + sandbox provider
-cmd/mcp                 the same MCP tools over stdio, for a local agent
-cmd/demo-provider       paid x402 APIs on devnet that behave like real ones, for demos
-cmd/solana-wallet       create or inspect a wallet; cmd/x402-dryrun prices and simulates, never sends
-cmd/verify-intent       verify an Intent Receipt independently
-internal/domain         entities and rules, zero I/O: econ (intents, reservations), routing (candidates,
-                        quotes, ranking, classes), spendpass, chain
-internal/app            services: economic coordinator, execution (router, quoting, replay, simulate,
-                        web discovery), spend pass controls, health probes
-internal/platform       postgres, redis, solana (RPC, transactions, simulation), safehttp, config, wiring
-internal/api/v1         REST transport (thin); internal/mcpserver: MCP transport (thin)
-providers/              x402client (runner), solanax402 (rail), paychan (payment channels), jupiter (swaps),
-                        catalog + paysh + bazaar (the four catalogs), monid (listed only), webdiscovery,
-                        sandboxpay (the sandbox rail and providers)
-migrations/             versioned SQL; Postgres is authoritative
-web/                    Next.js console and the agent chat
-connectors/, internal/domain/{intent,merchant,...}   the original shopping product, kept
+backend/            the Go server: one module, several programs, one Postgres
+  cmd/api             REST API + MCP server (/mcp) + sandbox provider      (image: backend/Dockerfile)
+  cmd/mcp             the same MCP tools over stdio, for a local agent
+  cmd/demo-provider   paid x402 APIs on devnet that behave like real ones, for demos
+  cmd/solana-wallet   create or inspect a wallet; x402-dryrun prices and simulates, never sends
+  cmd/verify-intent   verify an Intent Receipt independently (also paychan-smoke, monid-import, merchant-login)
+  internal/domain     entities and rules, zero I/O: econ (intents, reservations), routing (candidates,
+                      quotes, ranking, classes), spendpass, chain
+  internal/app        services: economic coordinator, execution (router, quoting, replay, simulate,
+                      web discovery), spend pass controls, health probes
+  internal/platform   postgres, redis, solana (RPC, transactions, simulation), safehttp, config, wiring
+  internal/api/v1     REST transport (thin); internal/mcpserver: MCP transport (thin)
+  providers/          x402client (runner), solanax402 (rail), paychan (payment channels), jupiter (swaps),
+                      catalog + paysh + bazaar (the four catalogs), monid (listed only), webdiscovery,
+                      sandboxpay (the sandbox rail and providers)
+  migrations/         versioned SQL; Postgres is authoritative
+  openapi/            the REST API's OpenAPI documents
+  test/e2e            end-to-end tests over real HTTP and MCP
+  connectors/, policy/, internal/domain/{intent,merchant,...}   the original shopping product, kept
+frontend/           Next.js console and the agent chat                      (image: frontend/Dockerfile)
+deploy/             docker-compose.yml (Postgres, Redis, optional app containers) and how to run each part alone
+docs/               the project's documentation; docs/legacy is the original shopping product
+scripts/            dev-native.ps1: Postgres, Redis and the API on Windows without Docker
+.github/workflows   CI: backend, frontend, migrations, security, Docker image builds
 ```
 
 ## Documents
 
-[Devnet demo](docs/DEMO.md) · [Execution, routing and the Solana rails](docs/EXECUTION.md) · [Economic coordination](docs/ECONOMIC_COORDINATION.md) · [Spend Passes and the firewall](docs/SPEND_PASSES.md) · [MCP](docs/MCP.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Local development](docs/LOCAL_DEVELOPMENT.md) · [Production](docs/PRODUCTION.md) · [REST API](openapi/execution.yaml)
+[Devnet demo](docs/DEMO.md) · [Execution, routing and the Solana rails](docs/EXECUTION.md) · [Economic coordination](docs/ECONOMIC_COORDINATION.md) · [Spend Passes and the firewall](docs/SPEND_PASSES.md) · [MCP](docs/MCP.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Local development](docs/LOCAL_DEVELOPMENT.md) · [Production](docs/PRODUCTION.md) · [REST API](backend/openapi/execution.yaml)
 
 ## Tests
 

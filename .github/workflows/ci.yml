@@ -6,15 +6,19 @@ on:
   pull_request:
 
 jobs:
-  go:
-    name: Go fmt / vet / build / test
+  backend:
+    name: Backend (Go) fmt / vet / build / test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
           cache: true
+          cache-dependency-path: backend/go.sum
 
       - name: gofmt check
         run: |
@@ -37,12 +41,16 @@ jobs:
   security:
     name: Security checks (no secret leakage in logs)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
           cache: true
+          cache-dependency-path: backend/go.sum
 
       - name: Run redaction + audit-forbidden-key tests specifically
         run: |
@@ -51,14 +59,17 @@ jobs:
 
       - name: Check for accidentally committed .env
         run: |
-          if [ -f .env ]; then
-            echo "A .env file is committed — this must never happen."
+          if [ -f .env ] || [ -f ../frontend/.env.local ]; then
+            echo "An env file is committed — this must never happen."
             exit 1
           fi
 
   migrations:
     name: Migration validation (applies cleanly to a fresh Postgres)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     services:
       postgres:
         image: postgres:16-alpine
@@ -76,6 +87,7 @@ jobs:
         with:
           go-version: "1.26"
           cache: true
+          cache-dependency-path: backend/go.sum
       - name: Apply migrations
         env:
           DATABASE_URL: postgres://algebra:algebra@localhost:5432/algebra?sslmode=disable
@@ -107,28 +119,38 @@ jobs:
           EOF
           go run ./cmd/migratecheck
 
-  web:
-    name: Web lint / typecheck / production build
+  frontend:
+    name: Frontend lint / typecheck / production build
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: web
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4 # version from package.json "packageManager"
         with:
-          package_json_file: web/package.json
+          package_json_file: frontend/package.json
       - uses: actions/setup-node@v4
         with:
-          node-version: "22" # matches web/Dockerfile
+          node-version: "22" # matches frontend/Dockerfile
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm exec tsc --noEmit
-      # The rewrite to the API is baked in at build time (see web/Dockerfile);
+      # The rewrite to the API is baked in at build time (see frontend/Dockerfile);
       # any URL works for a compile check.
       - run: pnpm build
         env:
           ALGEBRA_API_URL: http://localhost:8080
           NEXT_TELEMETRY_DISABLED: "1"
+
+  docker:
+    name: Docker images build (backend API, frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backend image
+        run: docker build -t algebra-api backend
+      - name: Frontend image
+        run: docker build -t algebra-web --build-arg ALGEBRA_API_URL=http://localhost:8080 frontend

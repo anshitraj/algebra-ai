@@ -11,7 +11,7 @@ over .env, so the DATABASE_URL in .env (possibly a hosted database) is never
 used or migrated by anything started from here.
 
   scripts\dev-native.ps1 up       start Postgres (:5433) and Redis (:6380); created on first use
-  scripts\dev-native.ps1 api      run the API against them, in the foreground (:8080, loopback only)
+  scripts\dev-native.ps1 api      run the API (backend/) against them, in the foreground (:8080, loopback only)
   scripts\dev-native.ps1 test     run the Postgres integration tests against a separate database
   scripts\dev-native.ps1 status
   scripts\dev-native.ps1 down     stop both
@@ -81,6 +81,8 @@ function Set-LocalEnv([string]$database) {
     $env:REDIS_ADDR         = "127.0.0.1:$RedisPort"
     $env:ALGEBRA_MASTER_KEY = (Get-Content $KeyFile -Raw).Trim()
     $env:HTTP_ADDR          = $ApiAddr
+    # Key files and merchant sessions live in the repository's .data, whichever folder the API runs from.
+    $env:ALGEBRA_DATA_DIR   = $Data
     Set-SolanaWallets
 }
 
@@ -181,12 +183,12 @@ switch ($Cmd) {
     }
     'api' {
         Set-LocalEnv 'algebra'
-        Set-Location $Root
+        Set-Location (Join-Path $Root 'backend')
         go run ./cmd/api
     }
     'test' {
         Set-LocalEnv 'algebra_test'
-        Set-Location $Root
+        Set-Location (Join-Path $Root 'backend')
         go test ./internal/platform/postgres/... ./test/e2e/... -count=1 -v
     }
 }

@@ -1,6 +1,6 @@
 # Legacy documents
 
-Algebra began as a grocery shopping agent for India (Swiggy Instamart, Zepto, Amazon, Flipkart, Blinkit), and then as agentic-payments infrastructure for card apps and wallets: tenants, policy sets, `AgenticPaymentIntent`s and a payment-provider interface. That product still builds, its tests pass and its code is kept (`connectors/`, `internal/domain/intent`, `internal/domain/merchant`, `internal/domain/paymentintent`, and the `commerce.*` and `payments.*` MCP tools), because web search and the merchant connectors are useful if people actually search for things.
+Algebra began as a grocery shopping agent for India (Swiggy Instamart, Zepto, Amazon, Flipkart, Blinkit), and then as agentic-payments infrastructure for card apps and wallets: tenants, policy sets, `AgenticPaymentIntent`s and a payment-provider interface. That product still builds, its tests pass and its code is kept (`backend/connectors/`, `backend/internal/domain/intent`, `backend/internal/domain/merchant`, `backend/internal/domain/paymentintent`, and the `commerce.*` and `payments.*` MCP tools), because web search and the merchant connectors are useful if people actually search for things.
 
 It is not what Algebra is now. Algebra is the router and spend firewall for AI agents that pay for APIs on Solana: start at the [README](../../README.md).
 
@@ -15,4 +15,4 @@ The documents in this folder describe the original product and are kept as they 
 | [PRIVACY.md](PRIVACY.md) | The alias boundary for addresses and payment details in the shopping flow. |
 | [BUILD_PLAN.md](BUILD_PLAN.md) | The original repository audit and build plan, a point-in-time snapshot. |
 
-The REST spec for that surface is [openapi/v1.yaml](../../openapi/v1.yaml). The execution API of the current product is [openapi/execution.yaml](../../openapi/execution.yaml).
+The REST spec for that surface is [backend/openapi/v1.yaml](../../backend/openapi/v1.yaml). The execution API of the current product is [backend/openapi/execution.yaml](../../backend/openapi/execution.yaml).

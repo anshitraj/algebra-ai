@@ -76,7 +76,7 @@ curl -X POST http://localhost:8080/api/v1/agents \
 
 ## 4. Register a payment source
 
-Same flow the reference console already uses — `POST /api/v1/payment-sources` (see the REST reference in `openapi/v1.yaml`) tokenizes a card via the configured `CardVaultProvider` and stores only an alias-scoped reference (`payment:personal`), never a PAN.
+Same flow the reference console already uses — `POST /api/v1/payment-sources` (see the REST reference in `backend/openapi/v1.yaml`) tokenizes a card via the configured `CardVaultProvider` and stores only an alias-scoped reference (`payment:personal`), never a PAN.
 
 ## 5. Create and evaluate an agentic payment intent
 
@@ -119,7 +119,7 @@ curl -X POST http://localhost:8080/api/v1/tenants/$TENANT_ID/webhook-endpoints \
 # {"webhook_endpoint_id":"whep_...", "secret":"whsec_..."}  — shown exactly once
 ```
 
-Every delivery is signed: `X-Algebra-Signature: sha256=<hex hmac>` over the raw body with your `whsec_...` secret (verify with the same construction `internal/app.VerifyHMACSignature` uses — HMAC-SHA256, constant-time compare), plus `X-Algebra-Event-ID` and `X-Algebra-Event-Type`. Events fired today: `payment_intent.created`, `payment_intent.policy_allowed`, `payment_intent.policy_denied`, `payment_intent.approval_required`, `payment_intent.succeeded`, `payment_intent.failed`, `payment_intent.authentication_required`, `payment_intent.provider_unavailable`. Delivery is fire-and-forget with a bounded retry (3 attempts, exponential backoff) and **no durable queue** in this build — an attempt that exhausts its retries while your endpoint is down is lost; poll `GET /api/v1/payment-intents/{id}/status` if you need a fallback.
+Every delivery is signed: `X-Algebra-Signature: sha256=<hex hmac>` over the raw body with your `whsec_...` secret (verify with the same construction `backend/internal/app.VerifyHMACSignature` uses — HMAC-SHA256, constant-time compare), plus `X-Algebra-Event-ID` and `X-Algebra-Event-Type`. Events fired today: `payment_intent.created`, `payment_intent.policy_allowed`, `payment_intent.policy_denied`, `payment_intent.approval_required`, `payment_intent.succeeded`, `payment_intent.failed`, `payment_intent.authentication_required`, `payment_intent.provider_unavailable`. Delivery is fire-and-forget with a bounded retry (3 attempts, exponential backoff) and **no durable queue** in this build — an attempt that exhausts its retries while your endpoint is down is lost; poll `GET /api/v1/payment-intents/{id}/status` if you need a fallback.
 
 ## 8. List transactions and audit
 
@@ -127,7 +127,7 @@ Every delivery is signed: `X-Algebra-Signature: sha256=<hex hmac>` over the raw 
 
 ## MCP
 
-Everything above has an MCP-tool equivalent for an agent that speaks MCP directly rather than calling REST: `payments.create_intent`, `payments.get_intent`, `payments.execute`, `payments.get_status`. Same permission model (`agent_token` field in place of a bearer header), same absence of an approve/reject tool. See `internal/mcpserver/payment_intent_tools.go`.
+Everything above has an MCP-tool equivalent for an agent that speaks MCP directly rather than calling REST: `payments.create_intent`, `payments.get_intent`, `payments.execute`, `payments.get_status`. Same permission model (`agent_token` field in place of a bearer header), same absence of an approve/reject tool. See `backend/internal/mcpserver/payment_intent_tools.go`.
 
 ## Which surface do I want?
 
@@ -139,4 +139,4 @@ Everything above has an MCP-tool equivalent for an agent that speaks MCP directl
 
 ## What this isn't (yet)
 
-No TypeScript SDK (raw REST/MCP only — see `docs/legacy/BUILD_PLAN.md` for what's deferred to Phase 2). No real card-network/processor adapter wired up — every execution in this build runs through `providers/paymentdemo`, a deterministic mock; see `docs/legacy/PROVIDER_STATUS.md` for exactly which real rails are `NOT_IMPLEMENTED` vs. `PARTNER_REQUIRED` and why. No fictional reference "DemoWallet" app demonstrating this from a consumer's point of view yet — this doc and `examples/kite-wallet` (the lighter-weight surface) are the runnable references today.
+No TypeScript SDK (raw REST/MCP only — see `docs/legacy/BUILD_PLAN.md` for what's deferred to Phase 2). No real card-network/processor adapter wired up — every execution in this build runs through `backend/providers/paymentdemo`, a deterministic mock; see `docs/legacy/PROVIDER_STATUS.md` for exactly which real rails are `NOT_IMPLEMENTED` vs. `PARTNER_REQUIRED` and why. No fictional reference "DemoWallet" app demonstrating this from a consumer's point of view yet — this doc and `backend/examples/kite-wallet` (the lighter-weight surface) are the runnable references today.

@@ -20,7 +20,7 @@ who wants to see the router and the spend firewall work end to end.
    settles what the call actually cost from a voucher, and the rest comes back
    in the same transaction.
 
-## The demo providers (`cmd/demo-provider`)
+## The demo providers (`backend/cmd/demo-provider`)
 
 Paid x402 APIs on devnet, each labelled as a demo in every response:
 
@@ -54,15 +54,15 @@ From the Claude desktop app, start the launch configurations `demo-provider`,
 (console on :3300). By hand:
 
 ```bash
-go run ./cmd/demo-provider -key .data/demo-provider.json
+go -C backend run ./cmd/demo-provider -key ../.data/demo-provider.json
 ```
 
 ```powershell
-$env:ECONOMIC_PROVIDERS = (go run ./cmd/demo-provider -print-config); $env:ALGEBRA_API_ADDR = '127.0.0.1:8085'; $env:PUBLIC_WEB_URL = 'http://localhost:3300'; $env:CORS_ALLOWED_ORIGINS = 'http://localhost:3300'; ./scripts/dev-native.ps1 api
+$env:ALGEBRA_DATA_DIR = (Join-Path (Get-Location) '.data'); $env:ECONOMIC_PROVIDERS = (go -C backend run ./cmd/demo-provider -print-config); $env:ALGEBRA_API_ADDR = '127.0.0.1:8085'; $env:PUBLIC_WEB_URL = 'http://localhost:3300'; $env:CORS_ALLOWED_ORIGINS = 'http://localhost:3300'; ./scripts/dev-native.ps1 api
 ```
 
 ```powershell
-$env:ALGEBRA_API_URL = 'http://localhost:8085'; pnpm --dir web exec next dev --port 3300
+$env:ALGEBRA_API_URL = 'http://localhost:8085'; pnpm --dir frontend exec next dev --port 3300
 ```
 
 Sign in, create a USDC Spend Pass (Spend passes), and switch the console to
@@ -109,12 +109,12 @@ providers, paid in Circle's devnet USDC from Algebra's wallet:
 
 ## Payment channels, proven on devnet
 
-`cmd/paychan-smoke` runs the x402 `upto` flow through the real
+`backend/cmd/paychan-smoke` runs the x402 `upto` flow through the real
 payment-channels program with a throwaway token, so it needs devnet SOL but no
 USDC:
 
 ```bash
-go run ./cmd/paychan-smoke -payer .data/solana-devnet.json -provider .data/demo-provider.json
+go -C backend run ./cmd/paychan-smoke -payer ../.data/solana-devnet.json -provider ../.data/demo-provider.json
 ```
 
 A run on 2026-10-07 (devnet):
@@ -156,7 +156,7 @@ the sandbox rail (no chain, no money, receipts marked `test`):
 the misbehaviour in the table above. Ask for `token.price` with
 `"constraints":{"allowed_networks":["sandbox"]}` and the router pays
 sandbox:beta and refuses the other three with their reasons. This is what the
-end-to-end tests drive over HTTP (`test/e2e/router_firewall_http_test.go`):
+end-to-end tests drive over HTTP (`backend/test/e2e/router_firewall_http_test.go`):
 routing and the guards, the dry run, the kill switch, the new-provider gate and
 the per-minute cap.
 
@@ -164,7 +164,7 @@ the per-minute cap.
 
 The `api-demo` launch configuration sets `SOLANA_ALLOW_MAINNET=yes`, so a
 wallet at `.data/solana-mainnet.json` becomes the mainnet rail
-(`go run ./cmd/solana-wallet -new -out .data/solana-mainnet.json` makes one).
+(`go -C backend run ./cmd/solana-wallet -new -out ../.data/solana-mainnet.json` makes one).
 Every payment is capped at 1 USDC unless `SOLANA_MAX_PAYMENT_USDC` says less.
 Unfunded, it still answers dry runs against the live catalogs: switch the
 console to **Mainnet** and use *Would it pass?*, or `POST /api/v1/policy/simulate`

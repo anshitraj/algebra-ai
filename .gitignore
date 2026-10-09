@@ -5,7 +5,7 @@
 *.key
 
 # Go
-/bin/
+bin/
 *.exe
 *.test
 *.out
@@ -32,6 +32,6 @@ Thumbs.db
 # Logs
 *.log
 
-# Local data
+# Local data (keys, the dev database, merchant sessions): never commit, wherever it sits
 /tmp/
-/.data/
+.data/

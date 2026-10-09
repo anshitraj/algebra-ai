@@ -15,15 +15,15 @@ what has been added to the coordinator since is under "Since Phase 0" below.
 
 | Existing component | Responsibility today | Reuse | Change |
 |---|---|---|---|
-| `internal/domain/spendpass`, `SpendPassService` | Per-agent budget, per-purchase cap, ask-above line, allowed categories and merchants, expiry, revocation. `Combine` makes DENY > REQUIRE_APPROVAL > ALLOW. | Yes — it is the authority | Adds a `digital_services` category. The budget counts economic holds and commitments as well as orders. |
+| `backend/internal/domain/spendpass`, `SpendPassService` | Per-agent budget, per-purchase cap, ask-above line, allowed categories and merchants, expiry, revocation. `Combine` makes DENY > REQUIRE_APPROVAL > ALLOW. | Yes — it is the authority | Adds a `digital_services` category. The budget counts economic holds and commitments as well as orders. |
 | `policy` (public package) | Deterministic rule engine | Yes | None |
-| `internal/domain/receipt` | Ed25519 compact JWS, HKDF-derived key, public JWKS, verify | Yes — same key and JWKS | Adds `IntentReceipt` (typ `algebra-intent-receipt+jwt`) |
-| `internal/domain/audit` | Append-only events with a secret deny-list | Pattern reused | Lifecycle telemetry goes to its own append-only `economic_events` table, with the same secret rules |
-| `internal/app/idempotency.go` | HTTP replay per (key, scope) | Kept for requests | Economic idempotency is a separate thing — it covers one *outcome* across agents, providers and rails |
+| `backend/internal/domain/receipt` | Ed25519 compact JWS, HKDF-derived key, public JWKS, verify | Yes — same key and JWKS | Adds `IntentReceipt` (typ `algebra-intent-receipt+jwt`) |
+| `backend/internal/domain/audit` | Append-only events with a secret deny-list | Pattern reused | Lifecycle telemetry goes to its own append-only `economic_events` table, with the same secret rules |
+| `backend/internal/app/idempotency.go` | HTTP replay per (key, scope) | Kept for requests | Economic idempotency is a separate thing — it covers one *outcome* across agents, providers and rails |
 | `OrderService` + Redis `Locker` | Commerce execution under a best-effort lock and CAS | Kept for commerce | Reservations use Postgres row locks and partial unique indexes, not a cache lock |
-| `internal/domain/paymentintent` | B2B "pay merchant X amount Y" state machine | Kept | It's shaped around one payment request, not one outcome with many executors. Economic intents are a new entity rather than a rename |
-| `internal/domain/intent` (PurchaseIntent) | Consumer shopping flow | Kept (reference app) | None |
-| `internal/mcpserver`, REST `/api/v1` | Agent surfaces with bearer tokens | Yes | Adds `economic.*` tools and `/api/v1/economic-intents` |
+| `backend/internal/domain/paymentintent` | B2B "pay merchant X amount Y" state machine | Kept | It's shaped around one payment request, not one outcome with many executors. Economic intents are a new entity rather than a rename |
+| `backend/internal/domain/intent` (PurchaseIntent) | Consumer shopping flow | Kept (reference app) | None |
+| `backend/internal/mcpserver`, REST `/api/v1` | Agent surfaces with bearer tokens | Yes | Adds `economic.*` tools and `/api/v1/economic-intents` |
 | A Solana devnet rail | Existed as a design only | Built | x402 on Solana mainnet and devnet are separate rails behind the `Rail` interface (`x402-solana`, `x402-solana-devnet`); devnet is never labelled real |
 | Ecommerce connectors, deals, plugins, scam shield | Reference shopping app | Kept untouched | They become a future execution rail under the same model |
 
@@ -36,7 +36,7 @@ sandbox rail used by tests and local runs.
 INTENT → AUTHORITY → RESERVATION → EXECUTION → OBSERVATION / RECONCILIATION → FINAL STATE
 ```
 
-**Economic intent** (`internal/domain/econ`): one outcome a principal wants.
+**Economic intent** (`backend/internal/domain/econ`): one outcome a principal wants.
 Its identity is deterministic:
 
 ```
@@ -127,7 +127,7 @@ payloads.
 | 5 | x402 exact + Solana USDC rails + a real provider (needs a small funded wallet). Built: the executor, the x402 runner, the sandbox end to end, and the mainnet and devnet rails, verified on a fake cluster and against live read-only calls. No real payment has been made yet; see [EXECUTION.md](EXECUTION.md). |
 | 6 | Reconciliation engine and sweeper |
 | 7 | Intent Receipt v2 |
-| 8 | Telemetry and `cmd/verify-intent` |
+| 8 | Telemetry and `backend/cmd/verify-intent` |
 | 9+ | More providers, MCP and SDK polish, dashboard, external users. Since Phase 0: the router, the catalogs, the spend firewall, payment channels, swaps (below and in [EXECUTION.md](EXECUTION.md)). |
 
 ## Since Phase 0

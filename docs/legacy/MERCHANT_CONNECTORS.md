@@ -1,6 +1,6 @@
 # Merchant Connectors
 
-Every merchant integration implements `internal/domain/merchant.Connector`. Nothing outside a connector talks to a merchant directly — `internal/app`'s discovery/quote/order services only ever call through this interface, via `app.ConnectorRegistry`.
+Every merchant integration implements `backend/internal/domain/merchant.Connector`. Nothing outside a connector talks to a merchant directly — `backend/internal/app`'s discovery/quote/order services only ever call through this interface, via `app.ConnectorRegistry`.
 
 ## Merchant options at a glance
 
@@ -61,17 +61,17 @@ go run ./cmd/merchant-login -merchant swiggy_instamart -alias shipping:home
 
 Unlink with `-unlink`.
 
-What `connectors/remotemcp` guarantees, each covered by a test:
+What `backend/connectors/remotemcp` guarantees, each covered by a test:
 
 - PKCE **S256** required (refuses servers that don't advertise it); `state` compared in constant time; the callback page is static and single-use; the listener binds loopback only.
 - Every scope the resource server advertises is requested up front — Zepto's first 401 challenge asks only for `tools:read`, and a server process can't do interactive step-up later.
 - Sessions are AES-256-GCM encrypted under `ALGEBRA_MASTER_KEY`, with the merchant name as AAD (a session file copied to another merchant's name fails to decrypt), and bound to the endpoint they were issued for.
 - Bearer tokens are refreshed and rotated tokens persisted; a redirect is never followed with a token attached; HTTP 401/403 turns into `ErrSessionExpired`, which switches the connector's capabilities off until the user re-links.
-- Merchant-supplied text that reaches an agent (product names, tool errors, tool names) goes through `connectors/sanitize` — control, zero-width, and bidi characters stripped, length capped. It is still treated as data.
+- Merchant-supplied text that reaches an agent (product names, tool errors, tool names) goes through `backend/connectors/sanitize` — control, zero-width, and bidi characters stripped, length capped. It is still treated as data.
 
 **Scope of this build:** one linked account per merchant — the operator's own. Per-user merchant accounts need a `merchant_sessions` table keyed by user, and connector calls that carry the user through; not built yet.
 
-## Swiggy Instamart (`connectors/swiggyinstamart`)
+## Swiggy Instamart (`backend/connectors/swiggyinstamart`)
 
 Built against Swiggy's published Instamart tool reference. The connector checks the live `tools/list` against the tools and argument names it uses (`swiggyinstamart.Contract`: `get_addresses`, `search_products`, `update_cart`, `clear_cart`, `get_cart`, `get_payment_options`, `checkout`, `get_orders`) at startup and every minute while not ready. Any mismatch turns every capability off.
 
@@ -83,18 +83,18 @@ Built against Swiggy's published Instamart tool reference. The connector checks 
 - **Cancellation** isn't offered by Swiggy's MCP (Swiggy directs it to customer care), so `CancelOrder` is `ErrNotImplemented`.
 - **Production access:** Swiggy lets anyone build against `http://localhost`, but reviews production access (builders@swiggy.in). That's why the connector is opt-in.
 
-## Zepto (`connectors/zepto`)
+## Zepto (`backend/connectors/zepto`)
 
 Verified: `https://mcp.zepto.co.in/mcp` answers unauthenticated requests with a 401 pointing at its protected-resource metadata, which names `https://auth.zepto.co.in` (dynamic registration, PKCE S256, public clients) and scopes `tools:read`, `tools:write`, `dev.ucp.shopping.cart:manage`. Zepto documents that the server searches the live catalog, manages the cart, places real orders (COD, UPI, cards, Zepto Cash) and reads order history — but publishes **no tool names or argument/result schemas**.
 
 So the connector links, connects and lists the live tools, and reports them in its status — but enables nothing. Guessing a wire format for real orders is exactly what mandate §10/§75 forbids. To enable Zepto:
 
 1. Link an account (above) and review `.data/merchant-tools/zepto.json`.
-2. Map the verified tools in `connectors/zepto`, guarded by `remotemcp.CheckTools` like the Swiggy connector, with tests against a fake server returning those exact shapes.
+2. Map the verified tools in `backend/connectors/zepto`, guarded by `remotemcp.CheckTools` like the Swiggy connector, with tests against a fake server returning those exact shapes.
 
 Meanwhile agents get a handoff link to Zepto's search page. (The `dev.ucp.shopping.cart:manage` scope suggests Zepto implements the Universal Commerce Protocol cart capability — `create_cart`/`get_cart`/`update_cart`/`cancel_cart` — which is worth checking against the manifest first.)
 
-## Amazon (`connectors/amazon`)
+## Amazon (`backend/connectors/amazon`)
 
 Uses the **Creators API**, which replaced Product Advertising API 5.0 (retired May 2026): `POST https://creatorsapi.amazon/catalog/v1/searchItems` with `x-marketplace: www.amazon.in`, an OAuth2 client-credentials token, and `Authorization: Bearer <token>` (plus `, Version 2.x` for legacy Cognito credentials). India belongs to the Europe/Middle East/India credential group: version **3.2** (`api.amazon.co.uk`) or **2.2** (Cognito `eu-south-2`).
 
@@ -104,7 +104,7 @@ Uses the **Creators API**, which replaced Product Advertising API 5.0 (retired M
 - **`GetProduct(asin)`** calls `getItems` on the same base URL, auth and resource vocabulary as `searchItems`. Its exact request/response envelope (`itemIds`/`itemIdType`, `itemsResult.items`) is extrapolated from `searchItems`' verified lowerCamelCase convention and PA-API 5's documented `GetItems`, not from a confirmed live Creators API example — same "tested against a fake server, not live" tier as the rest of this connector. Nothing calls it yet (no caller wired).
 - **`CartURL(items)`** builds Amazon's Associates "Add to Cart" link (`https://www.amazon.in/gp/aws/cart/add.html?AssociateTag=…&ASIN.1=…&Quantity.1=…`, up to 10 lines) — a plain HTML form action, not a PA-API REST call, so it predates and should be unaffected by the PA-API 5 retirement. It is a pure URL builder: no network call, same non-custodial shape as `HandoffURL`, just prefilled with items so the user has one link to review and pay on Amazon. **Not confirmed against a live Amazon page** — its old documentation page now redirects to the PA-API 5 deprecation notice, so verify it still loads a populated cart before depending on it. Not wired into any REST/MCP response yet.
 
-## Flipkart (`connectors/flipkart`)
+## Flipkart (`backend/connectors/flipkart`)
 
 Uses the **Affiliate API**: `GET https://affiliate-api.flipkart.net/affiliate/1.0/search.json?query=…&resultCount=…` with `Fk-Affiliate-Id` / `Fk-Affiliate-Token` headers.
 
@@ -121,15 +121,15 @@ Uses the **Affiliate API**: `GET https://affiliate-api.flipkart.net/affiliate/1.
 |---|---|---|
 | Flipkart | Published offers + Deals of the Day (category/brand sales, with start/end times) | Affiliate **Offers API**: `GET https://affiliate-api.flipkart.net/affiliate/offers/v1/all/json` (`allOffersList`) and `/dotd/json` (`dotdList`), same `Fk-Affiliate-*` headers. The feed is global, so it's fetched at most every 15 min and matched to the query on content words (promo filler like "flat"/"off" is ignored, so "flat feet" never matches a bedsheet sale). A failed refresh serves the last feed for up to 2 h. |
 | Amazon | Price drops against Amazon's reference price (M.R.P./list/was) and live time-boxed deals (badge, end time, % claimed, Prime-only) | Creators API `searchItems` with `offersV2.listings.price` (`savings`, `savingBasis`) and `offersV2.listings.dealDetails`. Live, never cached. OffersV2 has **no coupon/promotion data** (Amazon discontinued `Offers.Listings.Promotions`). |
-| Bank/card offers | "10% off with HDFC credit cards, up to ₹1,250, on ₹5,000+, until 2 Oct" | **Operator-curated** — neither store publishes these through an API. `BANK_OFFERS_FILE` points at a JSON file ([example](../bank-offers.example.json)); each offer must have `ends_at` and a `terms_url` on the merchant's own (allowlisted) domain, or it's skipped. Expired offers hide themselves; the file is re-read when it changes, and a broken edit keeps the last good set. Given the item's price, offers above their minimum order are dropped and the rest carry an `estimated_discount_minor_units`; given the user's banks (the agent stores them as the `payment.cards` preference), matching offers are flagged and listed first. |
+| Bank/card offers | "10% off with HDFC credit cards, up to ₹1,250, on ₹5,000+, until 2 Oct" | **Operator-curated** — neither store publishes these through an API. `BANK_OFFERS_FILE` points at a JSON file ([example](../../backend/internal/platform/bankoffers/testdata/bank-offers.example.json)); each offer must have `ends_at` and a `terms_url` on the merchant's own (allowlisted) domain, or it's skipped. Expired offers hide themselves; the file is re-read when it changes, and a broken edit keeps the last good set. Given the item's price, offers above their minimum order are dropped and the rest carry an `estimated_discount_minor_units`; given the user's banks (the agent stores them as the `payment.cards` preference), matching offers are flagged and listed first. |
 
 A merchant that returns nothing comes back with a `notes` entry saying why (e.g. not configured), so an agent never implies "no deal exists" when it simply couldn't look. Unconfigured connectors are skipped without a call, so they never count against the circuit breaker their searches share.
 
-## Blinkit (`connectors/blinkit`)
+## Blinkit (`backend/connectors/blinkit`)
 
 Blinkit publishes no public API, partner catalog API, affiliate API, or MCP server. The community "Blinkit MCP" projects work by driving blinkit.com's consumer site with a headless browser and replaying private endpoints behind Cloudflare/anti-bot protection — mandate §10 forbids exactly that, so none are used or ported. The connector only returns a link to Blinkit's own search page; every capability is false and checkout returns `USER_INTERVENTION_REQUIRED`.
 
-## General web-search fallback (`connectors/websearch`, not a merchant)
+## General web-search fallback (`backend/connectors/websearch`, not a merchant)
 
 `commerce.web_search` (MCP only, like `commerce.search_products`) is the
 last resort when no connected merchant connector finds the product: a
@@ -151,7 +151,7 @@ web-search result can legitimately point at any public domain.
 
 ## Generic browser connector
 
-`connectors/genericbrowser` is a named, empty slot for the `BrowserExecutor`-backed fallback (mandate §13, Phase 6) — constrained, domain-allowlisted, non-CAPTCHA-bypassing automation for merchants with no official API. It is deliberately unimplemented: the mandate is explicit that browser execution comes only after merchant/API flows are stable, and shipping even a minimal version before the domain-allowlist / ephemeral-environment / redaction machinery it needs exists would be an unsafe shortcut.
+`backend/connectors/genericbrowser` is a named, empty slot for the `BrowserExecutor`-backed fallback (mandate §13, Phase 6) — constrained, domain-allowlisted, non-CAPTCHA-bypassing automation for merchants with no official API. It is deliberately unimplemented: the mandate is explicit that browser execution comes only after merchant/API flows are stable, and shipping even a minimal version before the domain-allowlist / ephemeral-environment / redaction machinery it needs exists would be an unsafe shortcut.
 
 ## What the app layer actually calls today
 
@@ -178,9 +178,9 @@ Any `Product.URL` or handoff link a connector returns passes through `AllowedDom
 ## Adding a connector
 
 1. Get official API access, or confirm an MCP tool contract from the merchant's published reference or a reviewed live manifest.
-2. Implement `merchant.Connector` — `Capabilities()` first, honestly — plus `Status()`. For an MCP merchant, build on `connectors/remotemcp` and guard the mapping with `remotemcp.CheckTools`.
+2. Implement `merchant.Connector` — `Capabilities()` first, honestly — plus `Status()`. For an MCP merchant, build on `backend/connectors/remotemcp` and guard the mapping with `remotemcp.CheckTools`.
 3. Test against a fake server that returns the merchant's documented shapes (see the Swiggy, Flipkart and Amazon tests).
-4. Add a factory in `internal/platform/wiring/merchants.go` — the one place both REST and MCP get connectors from — and document its env vars in `.env.example`.
+4. Add a factory in `backend/internal/platform/wiring/merchants.go` — the one place both REST and MCP get connectors from — and document its env vars in `.env.example`.
 
 ## Sources
 

@@ -6,7 +6,7 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "--dir",
-        "web",
+        "frontend",
         "dev"
       ],
       "port": 3000,
@@ -16,6 +16,8 @@
       "name": "api",
       "runtimeExecutable": "go",
       "runtimeArgs": [
+        "-C",
+        "backend",
         "run",
         "./cmd/api"
       ],
@@ -40,7 +42,7 @@
       "runtimeArgs": [
         "-NoProfile",
         "-Command",
-        "$env:HTTP_ADDR=':8090'; $env:PUBLIC_WEB_URL='http://localhost:3210'; go run ./cmd/api"
+        "$env:HTTP_ADDR=':8090'; $env:PUBLIC_WEB_URL='http://localhost:3210'; go -C backend run ./cmd/api"
       ],
       "port": 8090
     },
@@ -50,7 +52,7 @@
       "runtimeArgs": [
         "-NoProfile",
         "-Command",
-        "$env:ALGEBRA_API_URL='http://localhost:8090'; $env:NEXT_DIST_DIR='.next-alt'; pnpm --dir web exec next dev --port 3210"
+        "$env:ALGEBRA_API_URL='http://localhost:8090'; $env:NEXT_DIST_DIR='.next-alt'; pnpm --dir frontend exec next dev --port 3210"
       ],
       "port": 3210
     },
@@ -60,7 +62,7 @@
       "runtimeArgs": [
         "-NoProfile",
         "-Command",
-        "go run ./cmd/mcp -http=:8081"
+        "go -C backend run ./cmd/mcp -http=:8081"
       ],
       "port": 8081
     },
@@ -72,7 +74,7 @@
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$env:ECONOMIC_PROVIDERS = (go run ./cmd/demo-provider -print-config); $env:ALGEBRA_API_ADDR = '127.0.0.1:8085'; $env:SOLANA_ALLOW_MAINNET = 'yes'; if (Test-Path .data/privy-app-id) { $env:PRIVY_APP_ID = (Get-Content .data/privy-app-id -Raw).Trim() }; if (Test-Path .data/privy-verification-key) { $env:PRIVY_VERIFICATION_KEY = Get-Content .data/privy-verification-key -Raw }; $env:PUBLIC_WEB_URL = 'http://localhost:3300'; $env:CORS_ALLOWED_ORIGINS = 'http://localhost:3300,http://localhost:3000'; & ./scripts/dev-native.ps1 api"
+        "$env:ALGEBRA_DATA_DIR = (Join-Path (Get-Location) '.data'); $env:ECONOMIC_PROVIDERS = (go -C backend run ./cmd/demo-provider -print-config); $env:ALGEBRA_API_ADDR = '127.0.0.1:8085'; $env:SOLANA_ALLOW_MAINNET = 'yes'; if (Test-Path .data/privy-app-id) { $env:PRIVY_APP_ID = (Get-Content .data/privy-app-id -Raw).Trim() }; if (Test-Path .data/privy-verification-key) { $env:PRIVY_VERIFICATION_KEY = Get-Content .data/privy-verification-key -Raw }; $env:PUBLIC_WEB_URL = 'http://localhost:3300'; $env:CORS_ALLOWED_ORIGINS = 'http://localhost:3300,http://localhost:3000'; & ./scripts/dev-native.ps1 api"
       ],
       "port": 8085
     },
@@ -82,7 +84,7 @@
       "runtimeArgs": [
         "-NoProfile",
         "-Command",
-        "$env:ALGEBRA_API_URL = 'http://localhost:8085'; $env:NEXT_DIST_DIR = '.next-demo'; pnpm --dir web exec next dev --port 3300"
+        "$env:ALGEBRA_API_URL = 'http://localhost:8085'; $env:NEXT_DIST_DIR = '.next-demo'; pnpm --dir frontend exec next dev --port 3300"
       ],
       "port": 3300
     },
@@ -90,10 +92,12 @@
       "name": "demo-provider",
       "runtimeExecutable": "go",
       "runtimeArgs": [
+        "-C",
+        "backend",
         "run",
         "./cmd/demo-provider",
         "-key",
-        ".data/demo-provider.json"
+        "../.data/demo-provider.json"
       ],
       "port": 8402
     }

@@ -61,7 +61,7 @@ pass can raise.
 ## Connecting an agent
 
 - **MCP** at `/mcp`: send the token as an HTTP header, so it never passes through the model: see [MCP.md](MCP.md). `algebra.spend_pass` reads the pass; `algebra.execute` spends under it.
-- **REST**: `POST /api/v1/execute`; `GET /api/v1/pass` returns the pass's limits and remaining budget. Details: [EXECUTION.md](EXECUTION.md) and [openapi/execution.yaml](../openapi/execution.yaml).
+- **REST**: `POST /api/v1/execute`; `GET /api/v1/pass` returns the pass's limits and remaining budget. Details: [EXECUTION.md](EXECUTION.md) and [backend/openapi/execution.yaml](../backend/openapi/execution.yaml).
 - An agent can read its pass and spend under it. It cannot approve, change a limit, create a pass or touch a wallet: those are human-only and accept only a session cookie.
 
 ## Receipts

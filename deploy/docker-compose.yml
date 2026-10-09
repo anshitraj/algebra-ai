@@ -1,0 +1,85 @@
+# Algebra's parts, started separately (compose profiles).
+#
+#   docker compose -f deploy/docker-compose.yml up -d                 Postgres :5432 and Redis :6379 only
+#   docker compose -f deploy/docker-compose.yml --profile api up -d   + the backend API, :8080
+#   docker compose -f deploy/docker-compose.yml --profile web up -d   + the frontend, :3000
+#   docker compose -f deploy/docker-compose.yml --profile app up -d   all of it
+#
+# Postgres and Redis alone are what `make infra-up` starts for running the
+# backend and frontend from source. The api and web services build the real
+# images (backend/Dockerfile, frontend/Dockerfile) to try the stack together on
+# one machine: APP_ENV=development, plain http, the sandbox providers on, no
+# shopping connectors. A real deployment is documented in docs/PRODUCTION.md and
+# deploy/README.md. These two services have not been run by their author (no
+# Docker engine on the machine that wrote them): run `docker compose config`
+# first.
+#
+# Needed in the environment (or a .env file beside this one):
+#   ALGEBRA_MASTER_KEY   for the api: openssl rand -base64 32
+#   GEMINI_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY   for the web app's agent chat (optional)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: algebra
+      POSTGRES_PASSWORD: algebra
+      POSTGRES_DB: algebra
+    ports:
+      - "5432:5432"
+    volumes:
+      - algebra_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U algebra -d algebra"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    profiles: ["api", "app"]
+    build: ../backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: postgres://algebra:algebra@postgres:5432/algebra?sslmode=disable
+      REDIS_ADDR: redis:6379
+      ALGEBRA_MASTER_KEY: "${ALGEBRA_MASTER_KEY:?set ALGEBRA_MASTER_KEY, for example with: openssl rand -base64 32}"
+      PUBLIC_WEB_URL: http://localhost:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      ENABLED_MERCHANTS: none
+      ECONOMIC_SANDBOX: "on"
+    ports:
+      - "8080:8080"
+
+  web:
+    profiles: ["web", "app"]
+    build:
+      context: ../frontend
+      args:
+        ALGEBRA_API_URL: http://api:8080
+        PUBLIC_WEB_URL: http://localhost:3000
+    environment:
+      ALGEBRA_API_URL: http://api:8080
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "3000:3000"
+
+volumes:
+  algebra_postgres_data:

@@ -8,10 +8,10 @@ is in [EXECUTION.md](EXECUTION.md) (routing, rails, catalogs) and [ECONOMIC_COOR
 
 ```mermaid
 flowchart TD
-    P[Person] -->|console: passes, approvals, kill switch| WEB[Console · web/]
+    P[Person] -->|console: passes, approvals, kill switch| WEB[Console · frontend/]
     AG[AI agent] -->|MCP /mcp · REST /api/v1 · Spend Pass bearer token| API
-    WEB --> API[API · cmd/api]
-    subgraph APP[internal/app: the one place rules live]
+    WEB --> API[API · backend/cmd/api]
+    subgraph APP[backend/internal/app: the one place rules live]
         EXEC[Execution: quote · rank · plan · replay · simulate · web discovery]
         ECON[Economic coordinator: reserve · begin · authorize · complete · reconcile]
         PASS[Spend Pass service: budget · controls · kill switch]
@@ -31,7 +31,7 @@ flowchart TD
 ```
 
 MCP, REST and the console are **thin transports**: they parse a request, resolve who is calling, call one application service and serialize the answer. No rule is duplicated across
-transports (`internal/api/v1`, `internal/mcpserver`, and `web/` which talks only to the REST API). The MCP server is mounted on the API process at `/mcp`, built from the same
+transports (`backend/internal/api/v1`, `backend/internal/mcpserver`, and `frontend/` which talks only to the REST API). The MCP server is mounted on the API process at `/mcp`, built from the same
 `wiring.Bundle` as the REST handlers.
 
 ## 2. One request
@@ -94,20 +94,21 @@ The threat model, with the mitigation for each and what is not yet covered, is [
 ## 5. Module boundaries (Go modular monolith)
 
 ```
-internal/domain     entities and rules, zero I/O: econ (intents, reservations, evidence), routing (candidates, quotes,
-                    ranking, classes, plans, results), spendpass, chain (networks and assets), receipt, account
-internal/app        application services: the one place business rules live
-internal/platform   postgres, redis, solana (RPC, transactions, simulation), safehttp, config, logging, wiring
-internal/api/v1     REST transport (thin)         internal/mcpserver   MCP transport (thin)
-providers/          x402client (runner), solanax402 (rail), paychan (payment channels), jupiter (swaps), catalog, paysh,
-                    bazaar (Circle, PayAI, Coinbase), webdiscovery, sandboxpay
-policy/             a public package: the deterministic rule engine, go-gettable by third parties
-cmd/                api, mcp, demo-provider, solana-wallet, x402-dryrun, verify-intent
-web/                the console and the agent chat (Next.js); talks only to the REST API
+backend/             one Go module: a modular monolith
+  internal/domain      entities and rules, zero I/O: econ (intents, reservations, evidence), routing (candidates, quotes,
+                       ranking, classes, plans, results), spendpass, chain (networks and assets), receipt, account
+  internal/app         application services: the one place business rules live
+  internal/platform    postgres, redis, solana (RPC, transactions, simulation), safehttp, config, logging, wiring
+  internal/api/v1      REST transport (thin)         internal/mcpserver   MCP transport (thin)
+  providers/           x402client (runner), solanax402 (rail), paychan (payment channels), jupiter (swaps), catalog, paysh,
+                       bazaar (Circle, PayAI, Coinbase), webdiscovery, sandboxpay
+  policy/              a public package: the deterministic rule engine, go-gettable by third parties
+  cmd/                 api, mcp, demo-provider, solana-wallet, x402-dryrun, verify-intent
+frontend/            the console and the agent chat (Next.js); talks only to the REST API
 ```
 
-`internal/app` depends on interfaces from `internal/domain` and on small interfaces it defines itself (`StepRunner`, `Rail`, `CatalogSource`, `WebFinder`, `ClassSource`), never on a concrete
-provider: those are injected by `internal/platform/wiring`. That is what makes a new rail, catalog or execution type an addition rather than a change: Jupiter was added as a runner and a
+`backend/internal/app` depends on interfaces from `backend/internal/domain` and on small interfaces it defines itself (`StepRunner`, `Rail`, `CatalogSource`, `WebFinder`, `ClassSource`), never on a concrete
+provider: those are injected by `backend/internal/platform/wiring`. That is what makes a new rail, catalog or execution type an addition rather than a change: Jupiter was added as a runner and a
 rail without touching the coordinator.
 
 ## 6. Deployment shape

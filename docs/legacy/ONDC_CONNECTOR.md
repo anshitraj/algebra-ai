@@ -91,9 +91,9 @@ project once:
 
 - someone has run (or started) BAP registration on ONDC staging, and
 - there's a decision on whether `merchant.Connector` gets an async variant
-  or ONDC gets a bespoke path in `internal/app` alongside it.
+  or ONDC gets a bespoke path in `backend/internal/app` alongside it.
 
-Until then this stays a doc, not a `connectors/ondc` package — registering
+Until then this stays a doc, not a `backend/connectors/ondc` package — registering
 an empty stub (like Zepto's link-and-list pattern) isn't possible here
 because there's no equivalent of "link an account" without first being a
 registered network participant.

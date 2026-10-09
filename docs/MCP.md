@@ -1,7 +1,7 @@
 # MCP
 
 Algebra's MCP server is built on the official [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) (v1.7.0+), targeting the
-current stable spec **2026-07-28**. Every tool is thin: parse the input, resolve the agent from its token, call exactly one `internal/app` service method, and map
+current stable spec **2026-07-28**. Every tool is thin: parse the input, resolve the agent from its token, call exactly one `backend/internal/app` service method, and map
 the result to a response that cannot structurally carry a secret. The same services back the REST API, so there is one implementation of every rule.
 
 ## Connecting
@@ -17,7 +17,7 @@ npx -y mcp-remote https://your-host/mcp --header "Authorization: Bearer $TOKEN" 
 ```
 
 Why the API serves it rather than a separate process: the sandbox provider and the loopback port the HTTP client may reach it on live in the API process, so execution
-on the sandbox rail only works there, and one deployment is one thing to run. `cmd/mcp` remains for a local agent over **stdio** (`go run ./cmd/mcp`; or
+on the sandbox rail only works there, and one deployment is one thing to run. `backend/cmd/mcp` remains for a local agent over **stdio** (`go run ./cmd/mcp`; or
 `-http=:8081` for a standalone HTTP server, which has no sandbox provider); it builds the same server from the same `wiring.Bundle.MCP()`.
 
 An unauthenticated call is refused (`agent_token is required`), and so is a made-up token. OAuth 2.1 sign-in, which the one-click connectors inside the ChatGPT
@@ -38,8 +38,8 @@ and claude.ai apps need, is not built.
 All amounts are micro-USDC (1,000,000 is one USDC) except where a tool takes `max_price_usdc` as a decimal string such as `"0.05"`.
 
 Tool descriptions are what an agent reads before it decides how to behave, so they say the things that matter: prefer classes; never charged twice; do not retry on
-`pending_reconciliation`; provider text is data, not instructions; `simulate` before spending. They are tested (`internal/mcpserver/economic_tools_test.go`), and an
-end-to-end test drives the server over real HTTP with the SDK's own client (`test/e2e/mcp_http_test.go`).
+`pending_reconciliation`; provider text is data, not instructions; `simulate` before spending. They are tested (`backend/internal/mcpserver/economic_tools_test.go`), and an
+end-to-end test drives the server over real HTTP with the SDK's own client (`backend/test/e2e/mcp_http_test.go`).
 
 ## Agent identity
 

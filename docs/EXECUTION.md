@@ -14,7 +14,7 @@ intent ─► candidates ─► quotes ─► ranking ─► plan ─► attempt
                        402s)     auto)                complete → reconcile
 ```
 
-## The vocabulary (`internal/domain/routing`)
+## The vocabulary (`backend/internal/domain/routing`)
 
 | Type | Meaning |
 |---|---|
@@ -26,14 +26,14 @@ intent ─► candidates ─► quotes ─► ranking ─► plan ─► attempt
 | `ExecutionResult` | What happened to one attempt: cost, latency, what the rail proved, what was delivered, hashes. |
 | `QualityResult` | How good the delivered result was. A score that couldn't be judged is absent, never a guess. |
 
-Money is integer minor units (micro-USDC), never floats. `internal/domain/chain` names networks and assets one way
+Money is integer minor units (micro-USDC), never floats. `backend/internal/domain/chain` names networks and assets one way
 (x402 v1 short names and CAIP-2 ids agree) and knows Circle's real USDC address on each network.
 
 ## Who decides what
 
 | | Decides | Can't |
 |---|---|---|
-| **Runner** (`providers/x402client`, `providers/jupiter`) | Prices a candidate; makes the call; reports what it saw. | Decide economic state. Pay without the coordinator releasing authority. |
+| **Runner** (`backend/providers/x402client`, `backend/providers/jupiter`) | Prices a candidate; makes the call; reports what it saw. | Decide economic state. Pay without the coordinator releasing authority. |
 | **Rail** (`app.Rail`: the sandbox, Solana USDC, the swap rail) | Proves settlement from its own ledger or chain state. Signs, within its own hard ceilings. | Be overruled by an executor's word. |
 | **Coordinator** (`EconomicService`) | The only thing that moves an intent: reserve, begin, authorize, complete, reconcile. | — |
 | **Executor** (`ExecutionService`) | Quotes, ranks, orders the steps, scores the result, falls back. | Move money. A fallback runs only after the coordinator shows the intent open again, i.e. the earlier attempt is *proven* to have moved no money. |
@@ -85,7 +85,7 @@ or reshapes the class's fields into its own. `GET /api/v1/classes` and `/classes
 | Terms are re-checked before paying: a changed payee, asset, network or higher price is refused. | `TestRunRefusesToPayWhenTheTermsChanged` |
 | A token that calls itself USDC at the wrong address is never paid. | `TestQuotePicksTheCheapestOptionAlgebraCanPay`, `TestCandidateRefusals` |
 | The payment header never goes anywhere but the priced endpoint (no redirects), and the payment value never reaches a stored record even if a provider echoes it. | `TestRunNeverFollowsARedirectWithThePayment`, `TestPaymentValueNeverAppearsInAnObservation` |
-| Providers are only reachable at public addresses (checked on the dialled IP, after DNS); loopback only on the sandbox's port. | `internal/platform/safehttp` tests |
+| Providers are only reachable at public addresses (checked on the dialled IP, after DNS); loopback only on the sandbox's port. | `backend/internal/platform/safehttp` tests |
 | Nothing leaves Algebra before approval, and providers the Spend Pass forbids are not even asked for a price. | `TestExecution_NoProviderIsContactedBeforeApproval`, `TestExecution_ProvidersTheSpendPassForbidsAreNotEvenProbed` |
 | An agent can't vouch for its own provider: endpoints it supplies are always "found on the open web". | `TestResolveCandidates` |
 | The call doesn't wait for the slowest provider, and one slow or crashing provider costs only itself. | `TestRouter_StopsWaitingForProvidersThatPriceAfterTheGraceHasPassed`, `TestRouter_AProviderThatPanicsWhilePricingCostsOnlyItself` |
@@ -110,7 +110,7 @@ or reshapes the class's fields into its own. `GET /api/v1/classes` and `/classes
 | `POST /api/v1/discover/web` | Search the open web for endpoints no catalog lists (needs `GEMINI_API_KEY`). |
 | MCP `algebra.execute`, `execution_status`, `simulate`, `classes`, `discover_providers`, `discover_web`, `spend_pass` | The same, for Claude and other MCP clients, at `/mcp`. See [MCP.md](MCP.md). |
 
-Full request and response schemas: [openapi/execution.yaml](../openapi/execution.yaml).
+Full request and response schemas: [backend/openapi/execution.yaml](../backend/openapi/execution.yaml).
 
 Responses: `200` delivered (`replayed: true` when it is the kept answer to an earlier identical request); `202` money may have moved and the outcome is
 being established (do not retry); `502` every provider tried failed and nothing was paid; `422` no candidate fit the limits (with reasons);
@@ -126,7 +126,7 @@ Asking again for a committed outcome then returns it with `replayed: true`: noth
 `store_result: false` to have its answer not kept, and a repeat is then refused as already committed. The kept answer is returned only after the asking agent's
 own pass is checked again and it matches the committed reservation and the result hash the coordinator holds. Erasing an account deletes its kept answers.
 
-## Discovery: the catalogs (`providers/catalog`, `providers/paysh`, `providers/bazaar`)
+## Discovery: the catalogs (`backend/providers/catalog`, `backend/providers/paysh`, `backend/providers/bazaar`)
 
 Algebra reads four public catalogs of pay-per-call APIs and serves them as one directory (1,622 providers on 2026-10-07):
 
@@ -137,7 +137,7 @@ Algebra reads four public catalogs of pay-per-call APIs and serves them as one d
 | PayAI's bazaar | `GET https://facilitator.payai.network/discovery/resources` | 1,152 providers that settle through PayAI's facilitator; the source of devnet-payable providers today (14). |
 | Coinbase's x402 Bazaar | `GET https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` | 35,000 endpoints from every chain; the list ignores the network filter and is ordered by use, so Algebra reads the first five pages (about 15 MB, at most twice an hour) and keeps what accepts USDC on Solana with the plain `exact` scheme: 368 providers, each with how many paid calls and distinct payers it had in 30 days. |
 
-Circle's, PayAI's and Coinbase's listings are the same x402 discovery format, read by one generic reader (`providers/bazaar`) with a profile per directory.
+Circle's, PayAI's and Coinbase's listings are the same x402 discovery format, read by one generic reader (`backend/providers/bazaar`) with a profile per directory.
 For each endpoint it keeps the cheapest plain-x402 USDC option on each Solana cluster, so one endpoint can be payable on mainnet and devnet at different prices.
 
 * Provider IDs are `paysh:<fqn>`, `circle:<slug>`, `payai:<slug>` and `cdp:<host>`. They are what a Spend Pass's allowed providers, a reservation and a
@@ -155,18 +155,18 @@ For each endpoint it keeps the cheapest plain-x402 USDC option on each Solana cl
 
 Settings: `PAYSH_*`, `CIRCLE_*`, `PAYAI_*`, `CDP_*` (`…_ENABLED=off`, `…_DISCOVERY_URL`; see `.env.example`).
 
-**Monid (`providers/monid`), listed only.** Monid sells 624 tool endpoints from 24 providers (Apify scrapers, search, enrichment) behind one API key and
-bills them from a prepaid Monid balance. Its connectors are open source (github.com/monid-ai/monid), so `cmd/monid-import` reads them, by pattern and without
+**Monid (`backend/providers/monid`), listed only.** Monid sells 624 tool endpoints from 24 providers (Apify scrapers, search, enrichment) behind one API key and
+bills them from a prepaid Monid balance. Its connectors are open source (github.com/monid-ai/monid), so `backend/cmd/monid-import` reads them, by pattern and without
 running them, into a snapshot built into the binary: names, categories, method and path, and a USD price where the provider bills in dollars (241 endpoints;
 the rest bill in vendor credits and are left unpriced rather than guessed). They appear in the directory as `monid:<provider>` with `billing: monid-balance`,
-next to the x402 providers, so a person can compare, and are never routed or paid: nothing in Algebra can settle a Monid balance. `providers/monid/client.go`
+next to the x402 providers, so a person can compare, and are never routed or paid: nothing in Algebra can settle a Monid balance. `backend/providers/monid/client.go`
 speaks Monid's API (`/discover`, `/inspect`, `/run`, `/runs/{id}`) for when a key and a rail exist; it is not wired into the API. `MONID_CATALOG=off` hides them.
 
-Checked against the live sites with `cmd/x402-dryrun` (sends nothing): Google Vision through Pay.sh's gateway, Birdeye, Exa, Vybe and Nansen all answer with x402 v2
+Checked against the live sites with `backend/cmd/x402-dryrun` (sends nothing): Google Vision through Pay.sh's gateway, Birdeye, Exa, Vybe and Nansen all answer with x402 v2
 on Solana mainnet in Circle's USDC with a sponsor paying fees, and the rail builds a valid payment for each. Nansen's 2 USDC call is refused by the rail's 1 USDC
 ceiling, as it should be.
 
-### The open web (`providers/webdiscovery`, `app.DiscoverWeb`)
+### The open web (`backend/providers/webdiscovery`, `app.DiscoverWeb`)
 
 For work no catalog lists, `POST /api/v1/discover/web` (MCP `algebra.discover_web`) asks Gemini, with Google Search grounding, for endpoints that charge by x402.
 A model can invent a URL or be steered by the page it read, so it is trusted with one thing, the address of an endpoint, and the address is checked the only
@@ -178,12 +178,12 @@ limited to ten searches an hour per agent.
 
 ## The Solana rails
 
-### x402 (`providers/solanax402`)
+### x402 (`backend/providers/solanax402`)
 
 Pays x402 `exact` on Solana in USDC from a wallet Algebra controls. It builds the transaction the x402 spec describes (a v0 transaction, sponsor as fee payer,
 `[SetComputeUnitLimit, SetComputeUnitPrice, TransferChecked, Memo]`), signs as the payer only, and returns it as the payment header (`PAYMENT-SIGNATURE` for v2,
 `X-PAYMENT` for v1). The provider's sponsor adds its signature and submits. Usage-based (`upto`) options are paid through the Solana Foundation's
-payment-channels program (`providers/paychan`): the wallet escrows the provider's ceiling in a channel, the provider settles what the call cost from a signed
+payment-channels program (`backend/providers/paychan`): the wallet escrows the provider's ceiling in a channel, the provider settles what the call cost from a signed
 voucher, and the rest is refunded in the same instruction. The coordinator commits what the chain proves, not the ceiling.
 
 * **Refuses to sign** anything but Circle's real USDC mint on the configured cluster; anything over the attempt's hold or over `SOLANA_MAX_PAYMENT_USDC` (a hard
@@ -201,7 +201,7 @@ never paid from the mainnet wallet. `GET /api/v1/rails` (signed in) shows, per c
 per-payment ceiling; the console's network switch reads it. Single-cluster settings (`SOLANA_CLUSTER`, `SOLANA_RPC_URL`, `SOLANA_KEYPAIR_FILE`,
 `SOLANA_MAX_PAYMENT_USDC`) still work; a cluster configured twice stops startup.
 
-### Swaps: buy a token with USDC (`providers/jupiter`)
+### Swaps: buy a token with USDC (`backend/providers/jupiter`)
 
 `solana.swap` (execution type `solana_swap`), off unless `JUPITER_SWAP_ENABLED=on` and a verified mainnet wallet exists: Jupiter has no devnet, and a swap is never
 attempted on a cluster that couldn't be verified. Input: `{"output_mint": "<token mint>", "amount_usdc": "2.50", "max_slippage_bps": 50}`. Only buying with USDC is
@@ -231,7 +231,7 @@ provider's endpoints, and pays for one call through `POST /api/v1/execute`.
 
 * It acts with the signed-in session's console agent, which has no Spend Pass of its own. The person picks one of their active USDC passes in the chat, and the
   execution names it as `spend_pass_id`. Only the console agent may do this, and only with a pass of the same person (`executorFor` in
-  `internal/api/v1/economic_execute.go`); it then spends as that pass's agent, with exactly that pass's limits. Any other agent naming a pass is refused.
+  `backend/internal/api/v1/economic_execute.go`); it then spends as that pass's agent, with exactly that pass's limits. Any other agent naming a pass is refused.
 * Every payment is restricted to the network picked at the top of the console (`constraints.allowed_networks`).
 * A call at or above the pass's approval line comes back `409` with the `intent_id`. The chat shows an approval card; the person approves or cancels with their
   session (`/me/economic-intents/{id}/approve|cancel`), and the agent then runs the approved intent. The agent can't approve.
@@ -239,6 +239,8 @@ provider's endpoints, and pays for one call through `POST /api/v1/execute`.
   the model as bounded, labelled third-party data.
 
 ### Tools
+
+Run these from `backend/` (or put `-C backend` after `go`); `.data/` is the repository's, one level up: `../.data`.
 
 | | |
 |---|---|
@@ -250,7 +252,7 @@ provider's endpoints, and pays for one call through `POST /api/v1/execute`.
 
 ### Runbook: the first real payment
 
-1. `go run ./cmd/solana-wallet -new -out .data/solana-devnet.json` (or point `SOLANA_KEYPAIR_FILE` at your own key).
+1. `go run ./cmd/solana-wallet -new -out ../.data/solana-devnet.json` (or point `SOLANA_KEYPAIR_FILE` at your own key).
 2. Fund it. Devnet: faucet.circle.com (Solana Devnet). Mainnet: send a small amount of USDC (say 0.05) to the printed address. It needs no SOL for x402 payments
    (the provider's sponsor pays fees); a swap needs about 0.005 SOL.
 3. Set the wallet (`SOLANA_DEVNET_KEYPAIR_FILE` or `SOLANA_MAINNET_KEYPAIR_FILE`), a small `SOLANA_MAX_PAYMENT_USDC` (for example `0.01`), and for mainnet
@@ -258,7 +260,7 @@ provider's endpoints, and pays for one call through `POST /api/v1/execute`.
 4. `go run ./cmd/solana-wallet` confirms the cluster and the balance.
 5. `go run ./cmd/x402-dryrun -url <provider>` confirms the provider's terms are ones the rail accepts and the transaction is well-formed. Do this for every new
    provider before its first real call.
-6. `make dev-up`, `go run ./cmd/api`, sign in to the console and create a Spend Pass **in USDC** (Console → Spend passes). The token is shown once.
+6. `make infra-up`, `go run ./cmd/api`, sign in to the console and create a Spend Pass **in USDC** (Console → Spend passes). The token is shown once.
 7. With that token, `POST /api/v1/execute` with `{"capability":"token.price","input":{"mint":"So111…"},"budget_max_minor":10000}`, or first
    `POST /api/v1/policy/simulate` with `"live_quotes":true` to see who would be paid. A provider you have never paid is capped at $0.05 per call by default
    (the pass's `new_providers` rule): approve it in the console or set the pass to `allow`.
@@ -271,12 +273,12 @@ provider's endpoints, and pays for one call through `POST /api/v1/execute`.
 * **Real, and checked against live Solana clusters (read-only):** the address derivation (5 of 5 associated token accounts the mainnet network created match
   ours), the transaction encoding (a devnet node ran our compute-budget instructions and our `TransferChecked`, failing only on the empty token accounts), the
   payment-channels encoders against a real devnet channel (same PDA, accounts and bytes), and, with `x402-dryrun`, live x402 v2 providers on mainnet priced, parsed and
-  accepted. Jupiter's real quote answer is a test fixture (`providers/jupiter/testdata`), and its own minimum-output rounding matches ours.
+  accepted. Jupiter's real quote answer is a test fixture (`backend/providers/jupiter/testdata`), and its own minimum-output rounding matches ours.
 * **Real payments on devnet, through Algebra:** x402 `exact` calls to the demo providers and a metered `upto` call through the payment-channels program
   (open, then settle and refund from a voucher), each chosen by the router and passed by the firewall, receipts committed at the amount the chain proves.
   Transactions in [DEMO.md](DEMO.md#proof-real-devnet-payments-through-algebra-2026-10-07).
 * **Not yet real:** a mainnet payment (the demo's mainnet rail is configured and dry-runs against live providers; the wallet is the operator's to fund, runbook
-  above) and a swap landing, verified on a fake cluster only (`providers/jupiter/jupitertest`).
+  above) and a swap landing, verified on a fake cluster only (`backend/providers/jupiter/jupitertest`).
 * **Simulated:** the sandbox rail and sandbox provider, which are for local runs and tests. Their receipts are marked `test`.
 * **Not built:** cross-chain transfers (CCTP) and any EVM rail, so Base-only x402 providers are listed but not payable; selling a token or buying SOL; a recipient
   allow-list for passes. These are held back on purpose: a burn to a wrong address is irrecoverable, and there is nothing yet on the EVM side to spend what is bridged.

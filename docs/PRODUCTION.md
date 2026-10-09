@@ -15,7 +15,7 @@ What it takes to run Algebra for real users, what the code already enforces, and
 | Hardening | `APP_ENV=production` refuses to boot with unsafe settings (below); security headers and a CSP on the web app; per-IP limits on sign-in, sign-up and reset; request IDs and structured logs that never contain query strings, bodies, cookies or tokens; `/healthz` liveness and `/readyz` (Postgres and Redis); server timeouts; an hourly purge of dead sessions, reset tokens and expired answers |
 | Abuse and cost | A daily cap on agent messages per person (`AGENT_TURNS_PER_DAY`), web searches for providers limited to ten an hour per agent (each is a model call), per-IP limits trusting only the `X-Forwarded-For` entries our own proxies wrote (`TRUSTED_PROXY_HOPS`) |
 | Receipts | Ed25519 receipts with a public key set at `/.well-known/jwks.json`; the key is derived from the master key, so there is nothing new to store |
-| Packaging | `Dockerfile` (API, distroless, non-root, migrations included) and `web/Dockerfile` (Next standalone, non-root) |
+| Packaging | `Dockerfile` (API, distroless, non-root, migrations included) and `frontend/Dockerfile` (Next standalone, non-root) |
 | CI | Go fmt, vet, build and tests; migrations on a fresh Postgres; web lint, typecheck and production build |
 | Legal | `/terms`, `/privacy` and `/contact`, with the business details from build args (below); nothing is invented when they are unset |
 
@@ -64,7 +64,7 @@ CDP_BAZAAR_ENABLED=on                                # reads about 15 MB from Co
 ALGEBRA_OPERATOR_TOKEN=<openssl rand -hex 32>        # only if you onboard B2B tenants or integrators
 ```
 
-Web (`web/.env.production` or runtime env):
+Web (`frontend/.env.production` or runtime env):
 
 ```
 ALGEBRA_API_URL=http://api.internal:8080   # also passed as a build arg: Next bakes the rewrites in
@@ -90,11 +90,13 @@ its rail out, loudly. Redis being unreachable at boot is fatal in production.
 ## 4. Build and run
 
 ```bash
-docker build -t algebra-api .
+docker build -t algebra-api backend
 docker build -t algebra-web --build-arg ALGEBRA_API_URL=http://api.internal:8080 \
   --build-arg PUBLIC_WEB_URL=https://app.yourdomain.com --build-arg LEGAL_ENTITY_NAME="..." \
-  --build-arg SUPPORT_EMAIL=... --build-arg GRIEVANCE_OFFICER_NAME="..." --build-arg GRIEVANCE_OFFICER_EMAIL=... web
+  --build-arg SUPPORT_EMAIL=... --build-arg GRIEVANCE_OFFICER_NAME="..." --build-arg GRIEVANCE_OFFICER_EMAIL=... frontend
 ```
+
+Each image builds from its own folder, so the backend and the frontend are built, deployed and scaled separately; [deploy/README.md](../deploy/README.md) lists what each one needs.
 
 Topology: put the web container behind your HTTPS load balancer on the public domain; keep the API private (only the web container talks to it: the browser reaches `/api/v1` and `/mcp`
 through the web app's rewrites). Probe the API's `/readyz` for readiness and `/healthz` for liveness. Migrations run when the API starts; run one API instance through a deploy before scaling out.
@@ -107,7 +109,7 @@ The API's write timeout is 90 seconds, which is what bounds a paid call plus its
 - [ ] Resend domain verified; send yourself a reset email
 - [ ] Privy, if used: the production domain under Allowed origins, "Return user data in an identity token" on, Solana wallets and the login methods you want enabled
 - [ ] A dedicated mainnet wallet, funded with a small amount; its key file readable only by the API; `SOLANA_MAX_PAYMENT_USDC` low; your own RPC node
-- [ ] A first real payment made and checked: `go run ./cmd/x402-dryrun` for the provider, a pass with a tiny budget, `cmd/verify-intent` on the receipt, the signature on the explorer
+- [ ] A first real payment made and checked: `go run ./cmd/x402-dryrun` for the provider, a pass with a tiny budget, `backend/cmd/verify-intent` on the receipt, the signature on the explorer
 - [ ] The kill switch tried once, and a revoked pass shown to be refused
 - [ ] An LLM key set on the web app with a spend limit in the provider console
 - [ ] The API not publicly exposed; the web app on HTTPS with the security headers intact (`curl -I`)

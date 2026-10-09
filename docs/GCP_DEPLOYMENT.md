@@ -8,23 +8,23 @@ No GCP project, service account, or credentials are configured in this environme
 
 | Component | GCP service | Notes |
 |---|---|---|
-| `cmd/api` (REST) | Cloud Run | Stateless container; scale-to-zero friendly. |
-| `cmd/mcp` (`-http`) | Cloud Run | Same image, different entrypoint/flag. Streamable HTTP transport is stateless per mandate §5, which is exactly what Cloud Run needs. |
-| Postgres | Cloud SQL for PostgreSQL | Authoritative commerce state — see `migrations/`. |
+| `backend/cmd/api` (REST) | Cloud Run | Stateless container; scale-to-zero friendly. |
+| `backend/cmd/mcp` (`-http`) | Cloud Run | Same image, different entrypoint/flag. Streamable HTTP transport is stateless per mandate §5, which is exactly what Cloud Run needs. |
+| Postgres | Cloud SQL for PostgreSQL | Authoritative commerce state — see `backend/migrations/`. |
 | Redis | Memorystore | Cache / locks / idempotency fast-path only, never authoritative. |
-| Async events | Pub/Sub | Not built in this session (Phase 1 has no async event bus yet — see `internal/app`'s synchronous service calls). Wire up when a workload actually benefits from decoupling, per mandate §36: "Do not introduce Kafka merely because this is a commerce project." |
+| Async events | Pub/Sub | Not built in this session (Phase 1 has no async event bus yet — see `backend/internal/app`'s synchronous service calls). Wire up when a workload actually benefits from decoupling, per mandate §36: "Do not introduce Kafka merely because this is a commerce project." |
 | Secrets (`ALGEBRA_MASTER_KEY`, `RESEND_API_KEY`, OAuth client secrets, LLM keys, vault credentials once real) | Secret Manager | |
-| Envelope-encryption master key | Cloud KMS | Production should unwrap a KMS-protected DEK at process start instead of reading `ALGEBRA_MASTER_KEY` as a static env var (that's the local-dev-only path — see `internal/platform/config`). |
+| Envelope-encryption master key | Cloud KMS | Production should unwrap a KMS-protected DEK at process start instead of reading `ALGEBRA_MASTER_KEY` as a static env var (that's the local-dev-only path — see `backend/internal/platform/config`). |
 | Container images | Artifact Registry | |
-| Logs / traces / metrics | Cloud Logging / Cloud Trace / Cloud Monitoring | `internal/platform/logging` already emits structured JSON with redaction; a Cloud Logging sink is a matter of where stdout goes, not a code change. |
+| Logs / traces / metrics | Cloud Logging / Cloud Trace / Cloud Monitoring | `backend/internal/platform/logging` already emits structured JSON with redaction; a Cloud Logging sink is a matter of where stdout goes, not a code change. |
 | Browser workers (future, Phase 6) | GCE or GKE | Cloud Run's execution model doesn't fit a persistent, isolated browser session — use a compute option built for that instead of forcing it onto Cloud Run (mandate §37). |
 
 ## Illustrative deploy shape
 
 ```bash
 # Build & push (illustrative — no registry configured here)
-gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/algebra/api:latest .      # repo-root Dockerfile
-gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/algebra/web:latest web   # web/Dockerfile (see docs/PRODUCTION.md for the ALGEBRA_API_URL build arg)
+gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/algebra/api:latest backend    # backend/Dockerfile
+gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/algebra/web:latest frontend   # frontend/Dockerfile (see docs/PRODUCTION.md for the ALGEBRA_API_URL build arg)
 
 # Deploy (illustrative)
 gcloud run deploy algebra-api \

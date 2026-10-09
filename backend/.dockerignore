@@ -1,0 +1,12 @@
+# Build context for the backend image (docker build backend).
+.git
+.env
+.env.*
+!.env.example
+.data
+bin
+third_party
+examples
+test
+**/*_test.go
+*.md
