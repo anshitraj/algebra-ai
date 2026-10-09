@@ -18,9 +18,21 @@ import (
 	"github.com/project-algebra/algebra/internal/platform/solana"
 )
 
-// DefaultProgramID is where the program is deployed (devnet; mainnet uses the
-// same address once deployed there).
-const DefaultProgramID = "46gQDUuJCt6VdDMaguGPoD8SKEtFqvpG7ECtpC2F9tdS"
+// The program exists twice, with the same instructions, accounts, layout,
+// errors and events: written on Anchor (solana-program/programs/spend-pass)
+// and rewritten on Pinocchio (solana-program/pinocchio), which is a fifth of
+// the size and so a fifth of the rent. New passes are made on the Pinocchio
+// one; passes made on either keep working.
+const (
+	PinocchioProgramID = "F1Uu8ynQUviLZHUgejHDMkKmFAJJ7ZKDwU3Svc7Xpj21"
+	AnchorProgramID    = "46gQDUuJCt6VdDMaguGPoD8SKEtFqvpG7ECtpC2F9tdS"
+	// DefaultProgramID is where new passes are made.
+	DefaultProgramID = PinocchioProgramID
+)
+
+// KnownProgramIDs are every deployment of this program whose passes Algebra
+// honours.
+var KnownProgramIDs = []string{PinocchioProgramID, AnchorProgramID}
 
 // The program's one-byte discriminators (lib.rs, state.rs).
 const (

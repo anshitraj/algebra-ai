@@ -21,12 +21,24 @@ func program(t *testing.T) Program {
 // solana find-program-derived-address <program> string:pass pubkey:<owner> u64le:7
 func TestPassAddressMatchesTheCLI(t *testing.T) {
 	owner := solana.MustPublicKey("GhpmTWT8ng3viaQtFNDF7T7RyrmemosWvEDetKmBEoPA")
-	got, err := program(t).PassAddress(owner, 7)
-	if err != nil {
-		t.Fatal(err)
+	for _, c := range []struct{ program, want string }{
+		{PinocchioProgramID, "DTBTnjpi58KVYD1mwn1gdNtxVFL87DvJR26w4YhfRBCp"},
+		{AnchorProgramID, "D17Aae2jvbk6aFNDzaFJGeJSrLAbSYV6Y6XegUqxcYHX"},
+	} {
+		p, err := New(c.program)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := p.PassAddress(owner, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.String() != c.want {
+			t.Fatalf("%s: pass address %s", c.program, got)
+		}
 	}
-	if got.String() != "D17Aae2jvbk6aFNDzaFJGeJSrLAbSYV6Y6XegUqxcYHX" {
-		t.Fatalf("pass address %s", got)
+	if program(t).ID.String() != PinocchioProgramID {
+		t.Fatal("new passes are made on the Pinocchio program")
 	}
 }
 

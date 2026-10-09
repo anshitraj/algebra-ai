@@ -101,18 +101,23 @@ func (r *OnchainPassRepo) InsertOnchainPull(ctx context.Context, p *app.OnchainP
 	return nil
 }
 
-func (r *OnchainPassRepo) UpdateOnchainPull(ctx context.Context, p *app.OnchainPull) error {
+// UpdateOnchainPull moves a pull on only if it is still in state from, so
+// two processes can't both act on it (both send a refund, say).
+func (r *OnchainPassRepo) UpdateOnchainPull(ctx context.Context, p *app.OnchainPull, from string) error {
 	var refundSig, refundValid any
 	if p.RefundSignature != "" {
 		refundSig, refundValid = p.RefundSignature, int64(p.RefundValidUntil)
 	}
-	_, err := r.db.Pool.Exec(ctx, `
+	tag, err := r.db.Pool.Exec(ctx, `
 		UPDATE onchain_pulls SET state = $2, used_minor = $3, refund_minor = $4, refund_signature = $5, refund_valid_until = $6,
 		    detail = $7, updated_at = $8
-		WHERE reservation_id = $1`,
-		p.ReservationID, p.State, p.UsedMinor, p.RefundMinor, refundSig, refundValid, p.Detail, p.UpdatedAt.UTC())
+		WHERE reservation_id = $1 AND state = $9`,
+		p.ReservationID, p.State, p.UsedMinor, p.RefundMinor, refundSig, refundValid, p.Detail, p.UpdatedAt.UTC(), from)
 	if err != nil {
 		return fmt.Errorf("postgres: updating pull: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: pull %s is no longer %s", shared.ErrConflict, p.ReservationID, from)
 	}
 	return nil
 }

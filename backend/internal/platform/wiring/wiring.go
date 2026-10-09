@@ -723,6 +723,14 @@ func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgr
 	if err != nil {
 		return nil, err
 	}
+	// Passes made on any deployment of the program keep working: the same
+	// program on Anchor and on Pinocchio, with the same bytes and rules.
+	accepted := []spendpass.Program{program}
+	for _, id := range spendpass.KnownProgramIDs {
+		if p, err := spendpass.New(id); err == nil && p.ID != program.ID {
+			accepted = append(accepted, p)
+		}
+	}
 	var nets []*app.OnchainNetwork
 	anyOwner := map[string]bool{}
 	for _, rail := range rails {
@@ -762,7 +770,7 @@ func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgr
 		}
 		mintStr, _ := chain.AssetAddress(rail.Network(), "USDC")
 		nets = append(nets, &app.OnchainNetwork{
-			Network: rail.Network(), Cluster: cluster, RailName: rail.Name(), Program: program,
+			Network: rail.Network(), Cluster: cluster, RailName: rail.Name(), Program: program, Accepted: accepted,
 			RPC: rpc, Payer: kp, Mint: solana.MustPublicKey(mintStr), Rail: rail,
 			PriorityMicroLamports: cfg.OnchainPasses.PriorityMicroLamports, Required: cfg.OnchainPasses.Required[cluster],
 		})
