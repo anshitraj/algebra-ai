@@ -24,7 +24,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           </Link>
         </p>
       </div>
-      <aside className="relative hidden overflow-hidden border-l border-border bg-primary-tint/60 lg:block">
+      <aside className="auth-brand-panel relative hidden overflow-hidden border-l border-border lg:block">
         <Vignette />
       </aside>
     </div>

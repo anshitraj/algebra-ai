@@ -12,6 +12,7 @@ import {
   IconChevronDown,
   IconGauge,
   IconGrid,
+  IconArrowRight,
   IconLock,
   IconInbox,
   IconList,
@@ -81,8 +82,8 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
   }, [pathname]);
 
   return (
-    <div className="flex h-dvh overflow-hidden print:block print:h-auto print:overflow-visible">
-      <aside className="hidden w-[248px] shrink-0 flex-col border-r border-border bg-surface/60 md:flex print:hidden">
+    <div className="console-frame flex h-dvh overflow-hidden print:block print:h-auto print:overflow-visible">
+      <aside className="console-sidebar hidden shrink-0 flex-col border-r border-border md:flex print:hidden">
         <SidebarContents user={user} pathname={pathname} />
       </aside>
 
@@ -139,8 +140,9 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
             <NetworkSwitch compact />
           </div>
         </header>
-        <div className="hidden h-12 shrink-0 items-center justify-end gap-3 border-b border-border px-6 md:flex print:hidden">
-          <NetworkSwitch />
+        <div className="console-toolbar hidden shrink-0 items-center gap-3 border-b border-border md:flex print:hidden">
+          <div className="console-breadcrumb"><span>Workspace</span><span>/</span><strong>{[...PRIMARY, ...CONTROLS].find((item) => isActive(pathname, item.href))?.label ?? "Settings"}</strong></div>
+          <div className="console-toolbar-actions"><Link href="/console/connect" className="console-status">Connect an agent <IconArrowRight size={13} /></Link><NetworkSwitch /></div>
         </div>
         <main className={`min-h-0 flex-1 ${fullBleed ? "overflow-hidden" : "overflow-y-auto"} print:overflow-visible`}>
           {fullBleed ? children : <div className="px-5 py-8 md:px-10 md:py-10">{children}</div>}
@@ -199,7 +201,7 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
     <>
       <Link href="/" className="flex h-16 shrink-0 items-center gap-2.5 px-5 text-foreground">
         <Logo size={22} />
-        <span className="font-display text-[0.95rem] font-semibold tracking-tight">Algebra</span>
+        <span className="font-display text-[1.4rem] font-semibold tracking-[-0.06em]">algebra</span>
       </Link>
       <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 pb-4" aria-label="Console">
         <div className="flex flex-col gap-0.5">{PRIMARY.map(renderItem)}</div>
@@ -207,9 +209,7 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
           <p className="px-3 pb-1.5 text-xs font-medium text-muted/80">Your agents</p>
           <div className="flex flex-col gap-0.5">{CONTROLS.map(renderItem)}</div>
         </div>
-        <p className="mx-1 mt-auto rounded-xl border border-border px-3.5 py-3 text-xs leading-relaxed text-muted">
-          Payments settle in <span className="text-foreground">USDC on Solana</span> over x402. Providers come from Pay.sh, Circle&apos;s Agent Marketplace, PayAI and Coinbase&apos;s x402 Bazaar, on mainnet and devnet.
-        </p>
+        <div className="mx-1 mt-auto rounded-lg border border-border px-3.5 py-4"><IconShield size={20} className="text-foreground" /><p className="mt-3 text-xs font-medium text-foreground">Your limits. Every request.</p><p className="mt-1.5 text-[0.6875rem] leading-relaxed text-muted">USDC on Solana. Keys stay with Algebra. Authority stays with you.</p><Link href="/console/firewall" className="mt-3 inline-flex items-center gap-2 text-[0.6875rem] font-medium text-foreground">Review your firewall <IconArrowRight size={12} /></Link></div>
       </nav>
       <UserMenu user={user} />
     </>

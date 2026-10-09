@@ -56,7 +56,7 @@ export default function PassesPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Spend passes"
-        description="A pass is an agent's whole authority to spend: a USDC budget, the most one call may cost, when to ask you, and which providers it may pay. The agent gets a token, never a key. Every payment clears the pass first, ends in a signed receipt, and you can revoke the pass at any time."
+        description="Give each agent a budget, a per-call ceiling, and clear boundaries. Your agent gets permission to spend. You keep control."
         actions={
           !creating && !issued ? (
             <Button onClick={() => setCreating(true)}>

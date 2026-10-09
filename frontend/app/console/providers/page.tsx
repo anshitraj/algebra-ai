@@ -69,7 +69,7 @@ export default function ProvidersPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Providers"
-        description={`Paid APIs your agents can call through Algebra, read live from Pay.sh, Circle's Agent Marketplace, PayAI and Coinbase's Bazaar. Showing what can be paid on Solana ${networkLabel(network).toLowerCase()} in USDC. A listing isn't an endorsement and a listed price isn't a quote: Algebra asks the endpoint for its real price before it pays, and your Spend Pass decides whether it may.`}
+        description={`Find your agent's next capability. Explore live catalogs payable in USDC on Solana ${networkLabel(network).toLowerCase()}. Algebra checks the actual quote before a payment.`}
       />
 
       <div className="mt-8 flex flex-col gap-3 md:flex-row md:items-center">

@@ -122,7 +122,7 @@ func isCryptoRail(in Input) bool {
 
 // evaluateCryptoRecipient mirrors EvaluateMerchant for a wallet-address-or-
 // URL recipient — ported from the recipient allow/block-list logic in
-// third_party/omniclaw/src/omniclaw/guards/recipient.py (MIT-licensed;
+// github.com/omnuron/omniclaw (v0.0.8) src/omniclaw/guards/recipient.py (MIT-licensed;
 // simplified to exact address/URL matching, no regex patterns, since
 // nothing in Algebra generates those).
 func (p *LocalProvider) evaluateCryptoRecipient(recipient string) *PolicyDecision {
@@ -136,7 +136,7 @@ func (p *LocalProvider) evaluateCryptoRecipient(recipient string) *PolicyDecisio
 }
 
 // evaluateCryptoAmount enforces the crypto-rail per-transaction cap — ported
-// from third_party/omniclaw/src/omniclaw/guards/single_tx.py's max_amount
+// from github.com/omnuron/omniclaw (v0.0.8) src/omniclaw/guards/single_tx.py's max_amount
 // check (MIT-licensed).
 func (p *LocalProvider) evaluateCryptoAmount(amountUSDC string) (*PolicyDecision, error) {
 	if p.rules.MaxCryptoTxUSDC != "" {
@@ -153,7 +153,7 @@ func (p *LocalProvider) evaluateCryptoAmount(amountUSDC string) (*PolicyDecision
 
 // evaluateCryptoConfirmThreshold requires approval at or above the
 // configured threshold — ported from
-// third_party/omniclaw/src/omniclaw/guards/confirm.py's threshold check
+// github.com/omnuron/omniclaw (v0.0.8) src/omniclaw/guards/confirm.py's threshold check
 // (MIT-licensed): "amount >= threshold" needs confirmation.
 func (p *LocalProvider) evaluateCryptoConfirmThreshold(amountUSDC string) (*PolicyDecision, error) {
 	if p.rules.CryptoConfirmThresholdUSDC != "" {

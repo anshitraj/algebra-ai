@@ -1,18 +1,22 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Manrope, IBM_Plex_Mono, Instrument_Serif } from "next/font/google";
 import "./globals.css";
+import { MotionProvider } from "@/components/motion-provider";
 
-const geist = Geist({
-  variable: "--font-geist",
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
   display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const ibmMono = IBM_Plex_Mono({
+  variable: "--font-ibm-mono",
   subsets: ["latin"],
   display: "swap",
+  weight: ["400", "500"],
 });
+
+const editorial = Instrument_Serif({ variable: "--font-editorial", subsets: ["latin"], weight: "400", style: ["normal", "italic"], display: "swap" });
 
 const description =
   "The router and spend firewall for AI agents that pay for APIs on Solana. An agent asks for an outcome; Algebra routes to the best paid API across Pay.sh, Circle's Agent Marketplace, PayAI and Coinbase's Bazaar, checks the Spend Pass, pays in USDC over x402, verifies the result and signs a receipt, without ever handing the agent a key.";
@@ -34,10 +38,10 @@ export default function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${geist.variable} ${geistMono.variable}`}
+      className={`${manrope.variable} ${ibmMono.variable} ${editorial.variable}`}
     >
       <body className="min-h-screen antialiased selection:bg-primary selection:text-primary-tint">
-        {children}
+        <MotionProvider>{children}</MotionProvider>
       </body>
     </html>
   );

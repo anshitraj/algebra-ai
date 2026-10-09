@@ -36,7 +36,7 @@ export default function RoutingPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Routing"
-        description="Algebra groups every endpoint in Pay.sh, Circle, PayAI and Coinbase's Bazaar by the work it does. An agent asks for the work (token.price), not a provider: the router prices every provider of it live, skips the ones that are down or overcharge, and ranks the rest."
+        description="Ask for a capability. Algebra compares live quotes, filters unhealthy or overpriced providers, and finds the best eligible route."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

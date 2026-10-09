@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
@@ -124,6 +125,7 @@ export function AgentWorkspace() {
   const [running, setRunning] = useState(false);
   const [session, setSession] = useState<SessionTotals>({ spent: 0, calls: 0, steps: 0 });
   const [callsKey, setCallsKey] = useState(0);
+  const [inspector, setInspector] = useState<"pass" | "activity">("pass");
   const [passes, setPasses] = useState<SpendPass[] | null>(null);
   const [passId, setPassId] = useState("");
 
@@ -392,11 +394,7 @@ export function AgentWorkspace() {
   const rail = rails?.find((r) => r.network === network);
 
   return (
-    <div className="grid h-full lg:grid-cols-[272px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)_288px]">
-      <aside className="hidden min-h-0 border-r border-border lg:block">
-        <PassPanel pass={pass} rail={rails === null ? undefined : (rail ?? { network, configured: false })} network={network} session={session} />
-      </aside>
-
+    <div className="agent-workspace grid h-full lg:grid-cols-[minmax(0,1fr)_304px]">
       <section className="flex min-h-0 min-w-0 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border px-5">
           <h1 className="min-w-0 flex-1 truncate text-[0.95rem] font-medium text-foreground">{title}</h1>
@@ -491,7 +489,7 @@ export function AgentWorkspace() {
               disabled={!anyProvider && providers !== null}
               placeholder={
                 anyProvider || providers === null
-                  ? "Ask for something done: the agent finds a paid API, checks your Spend Pass, pays in USDC and brings back the answer…"
+                  ? "Describe a task and a maximum spend…"
                   : "Connect an AI model to start"
               }
               className="block max-h-[200px] w-full resize-none bg-transparent px-4 pt-3.5 text-[0.95rem] leading-relaxed text-foreground placeholder:text-muted/80 focus:outline-none disabled:cursor-not-allowed"
@@ -524,14 +522,14 @@ export function AgentWorkspace() {
             </div>
           </form>
           <p className="mx-auto mt-2 max-w-[720px] text-center text-xs text-muted/80">
-            Paid in USDC on Solana {networkLabel(network).toLowerCase()}, within your Spend Pass, checked on Algebra&apos;s server. Anything above its
-            approval line waits for your tap.
+            USDC on Solana {networkLabel(network).toLowerCase()} · Spend Pass checked on every request · Approvals stay with you
           </p>
         </div>
       </section>
 
-      <aside className="hidden min-h-0 border-l border-border xl:block">
-        <RecentCallsPanel refreshKey={callsKey} />
+      <aside className="agent-inspector hidden min-h-0 flex-col border-l border-border lg:flex">
+        <div className="agent-inspector-tabs" aria-label="Agent details"><button onClick={() => setInspector("pass")} aria-pressed={inspector === "pass"}>Spend pass</button><button onClick={() => setInspector("activity")} aria-pressed={inspector === "activity"}>Recent calls</button></div>
+        <div className="min-h-0 flex-1">{inspector === "pass" ? <PassPanel pass={pass} rail={rails === null ? undefined : (rail ?? { network, configured: false })} network={network} session={session} /> : <RecentCallsPanel refreshKey={callsKey} />}</div>
       </aside>
     </div>
   );
@@ -676,7 +674,9 @@ function EmptyState({
   const suggestions = SUGGESTIONS[network] ?? SUGGESTIONS.solana;
   const where = networkLabel(network).toLowerCase();
   return (
-    <div className="pt-6 sm:pt-14">
+    <div className="agent-welcome pt-6 sm:pt-14">
+      <div className="agent-welcome-mark"><Logo size={32} /></div>
+      <p className="agent-welcome-eyebrow">A LITTLE AUTONOMY. A LOT OF POSSIBILITY.</p>
       <motion.h2
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -707,11 +707,9 @@ function EmptyState({
         <div className="mt-10 rounded-2xl border border-dashed border-border-strong p-6">
           <p className="font-medium text-foreground">Connect an AI model to start</p>
           <p className="mt-2 text-sm leading-relaxed text-muted">
-            The agent needs one LLM provider key on the server. Add <code className="font-mono text-xs">ANTHROPIC_API_KEY</code>,{" "}
-            <code className="font-mono text-xs">OPENAI_API_KEY</code> or <code className="font-mono text-xs">GEMINI_API_KEY</code> to{" "}
-            <code className="font-mono text-xs">web/.env.local</code> and restart the web server. Until then, your own agent can pay through Algebra with
-            a Spend Pass: see Connect an agent.
+            This workspace needs a model provider configured by its administrator. You can also bring your own agent and connect it with a Spend Pass over REST or MCP.
           </p>
+          <Link href="/console/connect" className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-primary">Connect your own agent <IconArrowUp size={13} className="rotate-45" /></Link>
         </div>
       ) : (
         <div className="mt-10 grid gap-2.5 sm:grid-cols-2">

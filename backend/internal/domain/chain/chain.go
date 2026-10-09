@@ -13,18 +13,17 @@ import (
 	"strings"
 )
 
-// Canonical network names.
+// Canonical network names. Algebra pays on Solana. Base and Arc are named
+// because the catalogs it reads (Circle's Agent Marketplace, Coinbase's
+// Bazaar) list endpoints there too; any other chain is just a string.
 const (
 	Solana       = "solana"
 	SolanaDevnet = "solana-devnet"
 	Base         = "base"
 	BaseSepolia  = "base-sepolia"
-	Ethereum     = "ethereum"
-	Sepolia      = "sepolia"
-	Polygon      = "polygon"
-	Arbitrum     = "arbitrum"
-	Optimism     = "optimism"
-	Avalanche    = "avalanche"
+	// Arc is Circle's own chain, where USDC is the native gas token.
+	Arc        = "arc"
+	ArcTestnet = "arc-testnet"
 	// Sandbox is Algebra's simulated network (providers/sandboxpay): no chain.
 	Sandbox = "sandbox"
 )
@@ -35,14 +34,10 @@ const (
 var caip2 = map[string]string{
 	"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": Solana,
 	"solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": SolanaDevnet,
-	"eip155:8453":     Base,
-	"eip155:84532":    BaseSepolia,
-	"eip155:1":        Ethereum,
-	"eip155:11155111": Sepolia,
-	"eip155:137":      Polygon,
-	"eip155:42161":    Arbitrum,
-	"eip155:10":       Optimism,
-	"eip155:43114":    Avalanche,
+	"eip155:8453":    Base,
+	"eip155:84532":   BaseSepolia,
+	"eip155:5042":    Arc,
+	"eip155:5042002": ArcTestnet,
 }
 
 // NormalizeNetwork returns the canonical name for a network as a provider or
@@ -62,7 +57,7 @@ func NormalizeNetwork(raw string) string {
 // as real spend.
 func IsTestNetwork(network string) bool {
 	switch NormalizeNetwork(network) {
-	case SolanaDevnet, BaseSepolia, Sepolia, Sandbox:
+	case SolanaDevnet, BaseSepolia, ArcTestnet, Sandbox:
 		return true
 	}
 	return false
@@ -80,7 +75,10 @@ var usdc = map[string]string{
 	SolanaDevnet: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
 	Base:         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
 	BaseSepolia:  "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-	Ethereum:     "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+	// On Arc, USDC is the native token, exposed as an ERC-20 at a fixed
+	// system address (as Circle's own listings name it).
+	Arc:        "0x3600000000000000000000000000000000000000",
+	ArcTestnet: "0x3600000000000000000000000000000000000000",
 }
 
 // AssetAddress returns the canonical contract or mint address of a

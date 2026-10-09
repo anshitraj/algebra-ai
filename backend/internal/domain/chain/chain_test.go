@@ -8,13 +8,16 @@ func TestNormalizeNetwork(t *testing.T) {
 		" Solana ": Solana,
 		"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": Solana,
 		"solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": SolanaDevnet,
-		"solana-devnet": SolanaDevnet,
-		"eip155:8453":   Base,
-		"BASE":          Base,
-		"eip155:84532":  BaseSepolia,
-		"sandbox":       Sandbox,
-		"SomeNewChain":  "somenewchain",
-		"":              "",
+		"solana-devnet":  SolanaDevnet,
+		"eip155:8453":    Base,
+		"BASE":           Base,
+		"eip155:84532":   BaseSepolia,
+		"eip155:5042":    Arc,
+		"eip155:5042002": ArcTestnet,
+		"eip155:1":       "eip155:1",
+		"sandbox":        Sandbox,
+		"SomeNewChain":   "somenewchain",
+		"":               "",
 	}
 	for in, want := range cases {
 		if got := NormalizeNetwork(in); got != want {
@@ -33,12 +36,12 @@ func TestCAIP2LookalikeIsNotMainnet(t *testing.T) {
 }
 
 func TestIsTestNetwork(t *testing.T) {
-	for _, n := range []string{"solana-devnet", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "base-sepolia", "sepolia", "sandbox"} {
+	for _, n := range []string{"solana-devnet", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "base-sepolia", "arc-testnet", "eip155:5042002", "sandbox"} {
 		if !IsTestNetwork(n) {
 			t.Errorf("%s moves no real money", n)
 		}
 	}
-	for _, n := range []string{"solana", "base", "ethereum", "unknown-chain"} {
+	for _, n := range []string{"solana", "base", "arc", "eip155:5042", "unknown-chain"} {
 		if IsTestNetwork(n) {
 			t.Errorf("%s must not be treated as a test network", n)
 		}
@@ -55,6 +58,12 @@ func TestAssetAddress(t *testing.T) {
 	}
 	if _, ok := AssetAddress("solana", "BONK"); ok {
 		t.Error("only USDC addresses are known")
+	}
+	if a, ok := AssetAddress("eip155:5042", "USDC"); !ok || a != "0x3600000000000000000000000000000000000000" {
+		t.Errorf("Arc USDC = %q, %v", a, ok)
+	}
+	if _, ok := AssetAddress("ethereum", "USDC"); ok {
+		t.Error("Algebra names no chain beyond Solana, Base and Arc")
 	}
 	if _, ok := AssetAddress("somechain", "USDC"); ok {
 		t.Error("an unknown network has no known USDC")

@@ -82,6 +82,9 @@ type EconomicService struct {
 	execTimeout time.Duration
 
 	onResolved ResolutionHook
+	// funder pulls a payment's money from an on-chain Spend Pass just before
+	// the payment is handed over (OnchainPassService).
+	funder     PassFunder
 	executions ExecutionStore
 }
 
@@ -90,6 +93,20 @@ type EconomicService struct {
 // attempt (the executor's own telemetry) can be brought up to date. It runs
 // after the economic state is final and can't change it.
 type ResolutionHook func(ctx context.Context, v *IntentView, reservationID string)
+
+// PassFunder moves a payment's money into the payer just before the payment
+// is handed over: for a pass whose budget lives on chain, a pull the chain
+// itself checks against the owner's limits. A nil pull means nothing was
+// needed.
+type PassFunder interface {
+	Fund(ctx context.Context, passID string, rv *econ.Reservation, amountMinor int64) (*OnchainPull, error)
+	// Check refuses, before anything is reserved, a pass its owner has
+	// frozen, revoked or closed on chain: the on-chain kill switch.
+	Check(ctx context.Context, passID string) error
+}
+
+// SetFunder turns on funding payments from on-chain passes.
+func (s *EconomicService) SetFunder(f PassFunder) { s.funder = f }
 
 // SetResolutionHook registers the hook.
 func (s *EconomicService) SetResolutionHook(h ResolutionHook) { s.onResolved = h }
@@ -215,6 +232,11 @@ func (s *EconomicService) CreateIntentForPass(ctx context.Context, userID, passI
 }
 
 func (s *EconomicService) create(ctx context.Context, p *spendpass.Pass, agentID string, spec econ.Spec) (*IntentView, bool, error) {
+	if s.funder != nil {
+		if err := s.funder.Check(ctx, p.ID); err != nil {
+			return nil, false, err
+		}
+	}
 	now := s.now()
 	if spec.Currency == "" {
 		spec.Currency = p.Currency
@@ -590,11 +612,12 @@ func (s *EconomicService) Begin(ctx context.Context, agentID, intentID, reservat
 func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentID, reservationID string, req PaymentRequest) (*PaymentAuthority, error) {
 	// The last moment before money can move: a pass frozen by the kill switch
 	// (or revoked) since the attempt began releases nothing.
-	if _, err := s.executorPass(ctx, agentID); err != nil {
+	pass, err := s.executorPass(ctx, agentID)
+	if err != nil {
 		return nil, err
 	}
 	var snapshot econ.Reservation
-	err := s.store.Atomically(ctx, intentID, "", func(u EconUnit) error {
+	err = s.store.Atomically(ctx, intentID, "", func(u EconUnit) error {
 		in := u.Intent()
 		r, err := liveFor(u, in, agentID, reservationID)
 		if err != nil {
@@ -623,6 +646,31 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 	if auth.AmountMinor > snapshot.HoldMinor {
 		return nil, fmt.Errorf("%w: the provider asked for %d, more than this attempt's hold of %d", shared.ErrConflict, auth.AmountMinor, snapshot.HoldMinor)
 	}
+	// A pass on chain funds the payment itself, and the chain checks the
+	// owner's limits once more. The signed payment is handed over only after
+	// that pull is confirmed; if it isn't, nothing is.
+	pullSig := ""
+	if s.funder != nil {
+		passID := snapshot.ExecutorPassID
+		if passID == "" {
+			passID = pass.ID
+		}
+		pull, err := s.funder.Fund(ctx, passID, &snapshot, auth.AmountMinor)
+		if err != nil {
+			var denied *AuthorityDenied
+			if errors.As(err, &denied) {
+				_ = s.store.Atomically(ctx, intentID, "", func(u EconUnit) error {
+					return u.AppendEvent(s.newEvent(EconEvent{IntentID: intentID, ReservationID: snapshot.ID, AgentID: agentID, Attempt: snapshot.Attempt, Event: "authority.denied", Data: map[string]any{
+						"reason_codes": denied.ReasonCodes, "at": "onchain_pass_pull",
+					}}))
+				})
+			}
+			return nil, err
+		}
+		if pull != nil {
+			pullSig = pull.PullSignature
+		}
+	}
 	err = s.store.Atomically(ctx, intentID, "", func(u EconUnit) error {
 		r, err := u.Reservation(reservationID)
 		if err != nil {
@@ -642,6 +690,7 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 		return u.AppendEvent(s.newEvent(EconEvent{IntentID: intentID, ReservationID: r.ID, AgentID: agentID, Attempt: r.Attempt, Event: "payment.authorized", Data: map[string]any{
 			"rail": r.Rail, "protocol": ev.Protocol, "scheme": ev.Scheme, "network": ev.Network, "amount_minor": auth.AmountMinor,
 			"payment_identifier": ev.PaymentID, "transaction_signature": ev.Transaction, "pay_to": ev.PayTo,
+			"onchain_pull_signature": pullSig,
 		}}))
 	})
 	if err != nil {

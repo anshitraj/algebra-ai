@@ -92,6 +92,15 @@ func main() {
 			} else if n > 0 {
 				logger.Info("economic sweep", "handled", n)
 			}
+			// Pulls from on-chain passes: settle any whose fate wasn't known,
+			// and refund what ended attempts didn't spend.
+			if bundle.OnchainPasses != nil {
+				if n, err := bundle.OnchainPasses.Reconcile(ctx); err != nil {
+					logger.Warn("on-chain pass reconcile", "error", err)
+				} else if n > 0 {
+					logger.Info("on-chain pass reconcile", "changed", n)
+				}
+			}
 		}
 	}()
 

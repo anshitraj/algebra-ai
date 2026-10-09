@@ -1,152 +1,51 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useState } from "react";
 import { Logo } from "./logo";
 import { IconArrowRight, IconMenu, IconX } from "./icons";
 
 const links = [
-  { href: "/#get-started", label: "Get started" },
+  { href: "/#product", label: "Product" },
   { href: "/#how-it-works", label: "How it works" },
-  { href: "/#security", label: "Security" },
-  { href: "/#providers", label: "Providers" },
+  { href: "/#security", label: "Why Algebra" },
   { href: "/#integrate", label: "Developers" },
 ];
 
 export function Nav() {
   const [open, setOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useEffect(() => {
+    let live = true;
     fetch("/api/v1/auth/session", { credentials: "same-origin", cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { user: null }))
-      .then((d) => setSignedIn(!!d?.user))
-      .catch(() => setSignedIn(false));
+      .then((response) => response.ok ? response.json() : { user: null })
+      .then((data) => { if (live) setSignedIn(Boolean(data?.user)); })
+      .catch(() => {});
+    return () => { live = false; };
   }, []);
 
   useEffect(() => {
-    document.body.style.overflow = open ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
   return (
-    <header className="sticky top-0 z-50 px-3 pt-3 md:px-6">
-      <div
-        className={`mx-auto flex h-14 max-w-6xl items-center justify-between rounded-2xl border px-3 transition-[background-color,border-color,box-shadow] duration-300 md:px-4 ${
-          scrolled
-            ? "border-border bg-background/80 shadow-[0_10px_30px_-18px_rgba(11,16,32,0.35)] backdrop-blur-xl"
-            : "border-transparent bg-transparent"
-        }`}
-      >
-        <Link href="/" className="flex items-center gap-2.5 px-1 text-foreground" onClick={() => setOpen(false)}>
-          <Logo size={24} />
-          <span className="font-display text-[1.05rem] font-semibold tracking-tight">Algebra</span>
-        </Link>
-
-        <nav className="hidden items-center lg:flex" onMouseLeave={() => setHovered(null)} aria-label="Main">
-          {links.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              onMouseEnter={() => setHovered(l.href)}
-              onFocus={() => setHovered(l.href)}
-              className="relative px-3.5 py-2 text-sm text-muted transition-colors hover:text-foreground"
-            >
-              {hovered === l.href && (
-                <motion.span
-                  layoutId="nav-hover"
-                  className="absolute inset-0 rounded-lg bg-primary-tint"
-                  transition={{ type: "spring", stiffness: 500, damping: 38 }}
-                />
-              )}
-              <span className="relative">{l.label}</span>
-            </Link>
-          ))}
+    <header className="landing-nav">
+      <div className="landing-container nav-inner">
+        <Link href="/" className="wordmark" onClick={() => setOpen(false)}><Logo size={32} /><span>algebra</span></Link>
+        <nav className={open ? "landing-links is-open" : "landing-links"} aria-label="Main navigation" id="landing-menu">
+          {links.map((link) => <Link key={link.href} href={link.href} onClick={() => setOpen(false)}>{link.label}</Link>)}
+          <Link href={signedIn ? "/console" : "/login"} className="mobile-signin">{signedIn ? "Open workspace" : "Sign in"}</Link>
         </nav>
-
-        <div className="hidden items-center gap-2 lg:flex">
-          {signedIn ? (
-            <Link
-              href="/console"
-              className="group inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-medium text-primary-tint transition-transform active:scale-[0.98]"
-            >
-              Open console <IconArrowRight size={15} className="transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          ) : (
-            <>
-              <Link href="/login" className="inline-flex h-9 items-center rounded-xl px-3.5 text-sm font-medium text-foreground hover:bg-primary-tint">
-                Sign in
-              </Link>
-              <Link
-                href="/signup"
-                className="group inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-medium text-primary-tint shadow-[0_6px_16px_-8px_color-mix(in_srgb,var(--color-primary)_80%,transparent)] transition-transform active:scale-[0.98]"
-              >
-                Get started <IconArrowRight size={15} className="transition-transform group-hover:translate-x-0.5" />
-              </Link>
-            </>
-          )}
+        <div className="nav-actions">
+          {!signedIn && <Link href="/login" className="nav-signin">Sign in</Link>}
+          <Link href={signedIn ? "/console" : "/signup"} className="button-ink nav-cta">{signedIn ? "Open workspace" : "Get started"}<IconArrowRight size={14} /></Link>
+          <button className="mobile-menu-toggle" onClick={() => setOpen(!open)} aria-label={open ? "Close navigation" : "Open navigation"} aria-controls="landing-menu" aria-expanded={open}>{open ? <IconX size={21} /> : <IconMenu size={21} />}</button>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          aria-label={open ? "Close menu" : "Open menu"}
-          className="flex h-10 w-10 items-center justify-center rounded-xl text-foreground hover:bg-primary-tint lg:hidden"
-        >
-          {open ? <IconX size={20} /> : <IconMenu size={20} />}
-        </button>
       </div>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="mx-auto mt-2 max-w-6xl overflow-hidden rounded-2xl border border-border bg-background/95 p-3 shadow-[0_20px_40px_-20px_rgba(11,16,32,0.4)] backdrop-blur-xl lg:hidden"
-          >
-            <nav className="flex flex-col" aria-label="Mobile">
-              {links.map((l, i) => (
-                <motion.div key={l.href} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.03 * i }}>
-                  <Link href={l.href} onClick={() => setOpen(false)} className="block rounded-xl px-3 py-3 text-[0.95rem] text-foreground hover:bg-primary-tint">
-                    {l.label}
-                  </Link>
-                </motion.div>
-              ))}
-            </nav>
-            <div className="mt-2 grid grid-cols-2 gap-2 border-t border-border pt-3">
-              {signedIn ? (
-                <Link href="/console" className="col-span-2 flex h-11 items-center justify-center rounded-xl bg-primary text-sm font-medium text-primary-tint">
-                  Open console
-                </Link>
-              ) : (
-                <>
-                  <Link href="/login" className="flex h-11 items-center justify-center rounded-xl border border-border-strong text-sm font-medium text-foreground">
-                    Sign in
-                  </Link>
-                  <Link href="/signup" className="flex h-11 items-center justify-center rounded-xl bg-primary text-sm font-medium text-primary-tint">
-                    Get started
-                  </Link>
-                </>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </header>
   );
 }

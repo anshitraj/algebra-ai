@@ -38,7 +38,7 @@ export default function FirewallPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Spend firewall"
-        description="The rules Algebra enforces before any money moves, whatever the agent says: a kill switch, how fast an agent may spend, what it does with a provider you've never paid, and the router's own refusals of dead, overpriced and trap endpoints."
+        description="Your rules, enforced before every payment. Set spending speed, control new providers, or pause every agent at once."
       />
       {error && <ErrorNote>{error}</ErrorNote>}
 

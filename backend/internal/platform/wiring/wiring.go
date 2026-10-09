@@ -42,6 +42,7 @@ import (
 	"github.com/project-algebra/algebra/internal/platform/resilience"
 	"github.com/project-algebra/algebra/internal/platform/safehttp"
 	"github.com/project-algebra/algebra/internal/platform/solana"
+	"github.com/project-algebra/algebra/internal/platform/solana/spendpass"
 	"github.com/project-algebra/algebra/policy"
 	"github.com/project-algebra/algebra/providers/arcium"
 	"github.com/project-algebra/algebra/providers/bazaar"
@@ -123,6 +124,9 @@ type Bundle struct {
 	// SolanaRails are the Solana payment rails running (mainnet, devnet or
 	// both), for the console's wallet status.
 	SolanaRails []*solanax402.Rail
+	// OnchainPasses links Spend Passes to Algebra's program on Solana and
+	// funds payments from them; nil when no Solana rail runs or it is off.
+	OnchainPasses *app.OnchainPassService
 	// Directory is the catalogs of paid APIs agents can browse and name
 	// (Pay.sh, Circle's Agent Marketplace, PayAI, Coinbase's Bazaar), nil
 	// when all are off.
@@ -507,6 +511,15 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		execSvc.SetWebFinder(webdiscovery.New(gemini), limiter)
 	}
 
+	onchainPasses, err := buildOnchainPasses(cfg, solanaRails, db, spendPassSvc, accountRepo, econRepo)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("wiring: %w", err)
+	}
+	if onchainPasses != nil {
+		econSvc.SetFunder(onchainPasses)
+	}
+
 	return &Bundle{
 		DB: db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
 		Users: userSvc, Intents: intentSvc, Discovery: discoverySvc, Quotes: quoteSvc,
@@ -514,7 +527,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Directory: directory, SolanaRails: solanaRails, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders, Privy: privy,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders, Privy: privy,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,
@@ -697,6 +710,73 @@ func (s catalogSource) ForCapability(ctx context.Context, capability string) ([]
 var defaultSolanaRPC = map[string]string{
 	"devnet":  "https://api.devnet.solana.com",
 	"mainnet": "https://api.mainnet-beta.solana.com",
+}
+
+// buildOnchainPasses turns on on-chain Spend Passes for every Solana rail that
+// runs: each rail's own payer is the agent of every pass on its cluster, so a
+// pull lands where the rail pays from.
+func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgres.DB, passes *app.SpendPassService, wallets app.UserWalletStore, reservations app.ReservationReader) (*app.OnchainPassService, error) {
+	if cfg.OnchainPasses.Disabled || len(rails) == 0 {
+		return nil, nil
+	}
+	program, err := spendpass.New(cfg.OnchainPasses.ProgramID)
+	if err != nil {
+		return nil, err
+	}
+	var nets []*app.OnchainNetwork
+	anyOwner := map[string]bool{}
+	for _, rail := range rails {
+		cluster := "mainnet"
+		if rail.Network() == chain.SolanaDevnet {
+			cluster = "devnet"
+		}
+		var sc *config.SolanaConfig
+		for i := range cfg.SolanaRails {
+			c := strings.ToLower(cfg.SolanaRails[i].Cluster)
+			if c == cluster || (cluster == "mainnet" && c == "mainnet-beta") {
+				sc = &cfg.SolanaRails[i]
+			}
+		}
+		if sc == nil {
+			continue
+		}
+		kp, url, err := loadSolanaWallet(*sc)
+		if err != nil {
+			return nil, err
+		}
+		if kp.PublicKey() != rail.Address() {
+			return nil, fmt.Errorf("on-chain passes: the %s wallet doesn't match its rail", cluster)
+		}
+		rpc := solana.NewRPC(url, nil)
+		// Only where the program really is: a pass made against an address
+		// with no program behind it would just fail in the person's wallet.
+		checkCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		acct, err := rpc.GetAccountInfo(checkCtx, program.ID, solana.Confirmed)
+		cancel()
+		if err != nil || acct == nil || !acct.Executable {
+			log.Printf("wiring: on-chain Spend Passes OFF on %s: program %s isn't deployed there (or the node couldn't say: %v)", cluster, program.ID, err)
+			if cfg.OnchainPasses.Required[cluster] {
+				return nil, fmt.Errorf("on-chain passes are required on %s, but program %s isn't deployed there", cluster, program.ID)
+			}
+			continue
+		}
+		mintStr, _ := chain.AssetAddress(rail.Network(), "USDC")
+		nets = append(nets, &app.OnchainNetwork{
+			Network: rail.Network(), Cluster: cluster, RailName: rail.Name(), Program: program,
+			RPC: rpc, Payer: kp, Mint: solana.MustPublicKey(mintStr), Rail: rail,
+			PriorityMicroLamports: cfg.OnchainPasses.PriorityMicroLamports, Required: cfg.OnchainPasses.Required[cluster],
+		})
+		if cfg.OnchainPasses.AnyOwner[cluster] {
+			anyOwner[rail.Network()] = true
+		}
+		log.Printf("wiring: on-chain Spend Passes on %s: program %s, agent %s, required=%v", cluster, program.ID, kp.PublicKey(), cfg.OnchainPasses.Required[cluster])
+	}
+	if len(nets) == 0 {
+		return nil, nil
+	}
+	svc := app.NewOnchainPassService(postgres.NewOnchainPassRepo(db), passes, wallets, reservations, nets)
+	svc.AnyOwnerOn = anyOwner
+	return svc, nil
 }
 
 // loadSolanaWallet reads a cluster's wallet and the node to use for it. The
