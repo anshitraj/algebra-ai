@@ -81,6 +81,12 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/me/passes/{id}/revoke", api.revokeMyPass)
 	mux.HandleFunc("POST /api/v1/me/passes/{id}/freeze", api.freezeMyPass)
 	mux.HandleFunc("PUT /api/v1/me/passes/{id}/controls", api.setMyPassControls)
+	mux.HandleFunc("GET /api/v1/onchain/networks", api.onchainNetworks)
+	mux.HandleFunc("POST /api/v1/me/passes/{id}/onchain/prepare", api.prepareOnchainPass)
+	mux.HandleFunc("POST /api/v1/me/passes/{id}/onchain/link", api.linkOnchainPass)
+	mux.HandleFunc("GET /api/v1/me/passes/{id}/onchain", api.getOnchainPass)
+	mux.HandleFunc("POST /api/v1/me/passes/{id}/onchain/tx", api.onchainPassTx)
+	mux.HandleFunc("DELETE /api/v1/me/passes/{id}/onchain", api.unlinkOnchainPass)
 	mux.HandleFunc("POST /api/v1/policy/simulate", api.simulatePolicy)
 	mux.HandleFunc("GET /api/v1/me/killswitch", api.getKillSwitch)
 	mux.HandleFunc("POST /api/v1/me/killswitch", api.setKillSwitch)
@@ -345,6 +351,8 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	case errors.Is(err, shared.ErrNotImplemented):
 		status = http.StatusNotImplemented
+	case errors.Is(err, app.ErrInvalidRequest):
+		status = http.StatusBadRequest
 	}
 	var limited *app.RateLimited
 	if errors.As(err, &limited) {

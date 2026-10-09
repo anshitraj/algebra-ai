@@ -40,9 +40,10 @@ export default function OverviewPage() {
   const fresh = passes !== null && passes.filter((p) => p.currency === "USDC").length === 0;
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="console-overview mx-auto">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
+          <p className="mb-3 font-mono text-[0.625rem] tracking-[0.15em] text-muted">YOUR AGENT OPERATIONS</p>
           <h1 className="font-display text-[2rem] leading-tight font-semibold tracking-tight text-foreground">
             {greeting()}{firstName(user) ? `, ${firstName(user)}` : ""}
           </h1>
@@ -83,6 +84,11 @@ export default function OverviewPage() {
         <Stat label="Duplicate payments stopped" value={stats ? String(stats.duplicate_commit_attempts_blocked) : null} />
         <Stat label="Active passes" value={passes ? String(active.length) : null} />
       </dl>
+
+      {passes && active.length > 0 && <section className="live-budget-panel" aria-labelledby="budget-heading"><div className="live-budget-heading"><h2 id="budget-heading">Spending authority</h2><span>Live spend pass balances</span></div><div className="live-budget-bars">{active.slice(0, 4).map((pass) => {
+        const used = pass.budget_minor_units > 0 ? Math.min(pass.spent_minor_units / pass.budget_minor_units * 100, 100) : 0;
+        return <div className="live-budget-row" key={pass.id}><div><strong>{pass.label}</strong><span>{formatMoney(pass.spent_minor_units, pass.currency)} / {formatMoney(pass.budget_minor_units, pass.currency)}</span></div><div className="live-budget-track" role="meter" aria-label={`${pass.label} budget used`} aria-valuenow={Math.round(used)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${used}%` }} /></div></div>;
+      })}</div><p>Each agent can spend only within its pass. <Link href="/console/passes" className="font-medium text-foreground underline">Manage spending limits</Link></p></section>}
 
       <div className="mt-8 grid gap-6 md:grid-cols-[1.3fr_1fr]">
         <section aria-labelledby="recent-heading">

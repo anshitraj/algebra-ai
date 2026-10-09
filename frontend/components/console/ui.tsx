@@ -16,7 +16,7 @@ export function Button({
   return (
     <button
       {...props}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-40 ${styles} ${props.className ?? ""}`}
+      className={`console-button inline-flex min-h-10 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-40 ${styles} ${props.className ?? ""}`}
     >
       {children}
     </button>
@@ -96,7 +96,7 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
 
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl border border-border bg-surface p-6 ${className}`}>
+    <div className={`console-panel rounded-lg border border-border bg-surface p-6 ${className}`}>
       {children}
     </div>
   );
@@ -130,8 +130,9 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="console-page-header flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
+        <span className="mb-3 block font-mono text-[0.625rem] tracking-[0.15em] text-muted">ALGEBRA WORKSPACE</span>
         <h1 className="font-display text-[1.75rem] leading-tight font-semibold tracking-tight text-foreground">{title}</h1>
         {description && <p className="mt-1.5 max-w-2xl text-[0.95rem] leading-relaxed text-muted">{description}</p>}
       </div>

@@ -1,40 +1,27 @@
 # Algebra design system
 
-Formal fintech, in the Stripe / Mercury family: cool white and navy grounds, near-black ink, one confident indigo, and a soft indigo → violet → sky light used sparingly. Tokens live in `frontend/app/globals.css`; components use them through Tailwind (`bg-primary`, `text-muted`, …), never raw hex.
+The direction is editorial minimalism: warm paper, ink black, generous space, and expressive word art. The goal is to make controlled agent spending legible before introducing implementation details. Design feasibility score: 14 (impact 5, fit 5, feasibility 5, performance 4, consistency risk 5).
 
-## Color
+## Typography and color
 
-| Token | Light | Dark | Use |
-|---|---|---|---|
-| `background` | `#f7f8fc` | `#0b0f1a` | Page ground |
-| `surface` | `#ffffff` | `#111628` | Cards, panels, composer |
-| `foreground` | `#0b1020` | `#e8eaf3` | Text |
-| `muted` | `#5b6478` | `#98a1b8` | Secondary text |
-| `primary` | `#4f46e5` | `#818cf8` | Actions, links, done states, brand |
-| `primary-tint` | `#eef0ff` | `#1d2142` | Chips, selected rows — and the text color on `primary` buttons |
-| `accent` / `accent-tint` | `#b45309` / `#fef3c7` | `#f59e0b` / `#2a1e0b` | Attention only: "needs your approval", in-progress stage |
-| `danger` / `danger-tint` | `#dc2626` / `#fee2e2` | `#f87171` / `#2b1418` | Blocked, errors, scam warnings |
-| `success` | `#059669` | `#34d399` | Ready / visited indicators |
-| `border`, `border-strong` | ink at 9% / 16% | ink at 11% / 20% | Hairlines |
+Manrope carries headings and interface copy. Instrument Serif adds an italic accent to the landing headlines. IBM Plex Mono distinguishes prices, capabilities, labels and integration examples. All three are self-hosted by Next's font pipeline.
 
-Strategy: Restrained. Neutrals carry the page; indigo marks what you can act on. Amber means "waiting on you", never decoration.
+`app/globals.css` contains the live application's semantic color tokens, with explicit light and dark themes. `app/algebra.css` contains the warm-paper landing tokens and dark product preview tokens. Most space follows an 8px rhythm, with hairline dividers and restrained corner radii.
 
-**Brand light** — `--glow-indigo`, `--glow-violet`, `--glow-sky`. Only two uses:
-- `.brand-glow`: a blurred radial mesh behind the landing hero, never behind body text.
-- `.brand-frame`: a gradient 1px edge and indigo shadow on a product frame (the landing dashboard preview).
+## Brand
 
-No gradient text. Shadows use the ink (`rgb(var(--shadow-ink) / a)`), offset and soft.
+The mark is a pair of interlocking gates: an agent and its spending authority. It appears consistently in the landing page, app shell, authentication pages, and SVG icon. Hover brings the gates together. Provider marks use the existing published-logo/favicon component with a monogram fallback. Provider names do not imply an affiliation or endorsement.
 
-## Type
+## Motion and interaction
 
-Geist for display and UI, Geist Mono for data (IDs, prices in tables, URLs). Headlines semibold with tight tracking; the landing headline's second clause is `text-primary`.
+The hero uses a short entrance sequence and an SVG routing signal. Section reveals use IntersectionObserver and disconnect after the first reveal. The brand mark, provider cards, links and buttons respond to hover. The dashboard includes focusable chart points, period selection, provider search, budget and per-call sliders, pause/resume, request simulation, and request details. The full preview is at `/demo`.
 
-## Provider logos
+CSS effects respect `prefers-reduced-motion`. MotionConfig applies the user's motion preference to existing Motion components. Reveals start visible without JavaScript. The mobile menu, FAQ, code tabs, sliders and request details support keyboard use.
 
-`components/provider-logo.tsx`. A provider's own published logo when its catalog gives one, otherwise the favicon of its brand's domain (Google's favicon service at 64px; some catalogs list a provider at a gateway, so the brand's own domain is named in the component). When neither loads, `components/provider-mark.tsx` draws a letter monogram. Never draw or approximate a provider's logo.
+## Data boundaries
 
-Used on: the landing provider strip and providers section, the console's providers, routing and passes pages, and the agent's step cards.
+Landing and `/demo` use explicitly labeled illustrative data. No payment API is called. The authenticated console continues to use real API data, including its budget meters. Routing, sessions, wallet access, pass creation, approvals and payment authority remain in the existing backend flows.
 
-## Motion
+## Page composition
 
-Waiting shows the work (`components/console/agent/live-activity.tsx`): a small browser walking Google → store sites with the stores' icons on a rail, placeholder rows that pick up each store's icon, guardrail and order checklists, shimmer "Thinking". Status swaps are enter-only CSS that start visible (0.35 opacity), so text never disappears if frames stall. Everything has a `prefers-reduced-motion` path in `globals.css`.
+The homepage moves from the product promise to the interactive workspace, an explorable execution flow, three dark capability panels, integration examples, frequently asked questions, and a clear account-creation action. The oversized closing wordmark and interlocking routing diagram are the visual anchors. The live app uses a shared sidebar, breadcrumb header, concise page descriptions and reusable controls.

@@ -1,87 +1,42 @@
 @import "tailwindcss";
-
+@import "./algebra.css";
 :root {
-  --color-background: #f7f8fc;
+  --color-background: #f7f7f2;
   --color-surface: #ffffff;
-  --color-foreground: #0b1020;
-  --color-muted: #5b6478;
-
-  --color-primary: #4f46e5;
-  --color-primary-soft: #818cf8;
-  --color-primary-tint: #eef0ff;
-
-  --color-accent: #b45309;
-  --color-accent-tint: #fef3c7;
-
-  --color-danger: #dc2626;
-  --color-danger-tint: #fee2e2;
-
-  --color-success: #059669;
-
-  --color-border: color-mix(in srgb, var(--color-foreground) 9%, transparent);
-  --color-border-strong: color-mix(in srgb, var(--color-foreground) 16%, transparent);
-
-  /* Brand gradient stops — indigo into violet into sky. Decorative only. */
-  --glow-indigo: #4f46e5;
-  --glow-violet: #7c3aed;
-  --glow-sky: #0ea5e9;
-  --shadow-ink: 11 16 32;
-}
-
-:root[data-theme="dark"] {
-  --color-background: #0b0f1a;
-  --color-surface: #111628;
-  --color-foreground: #e8eaf3;
-  --color-muted: #98a1b8;
-
-  --color-primary: #818cf8;
-  --color-primary-soft: #6366f1;
-  --color-primary-tint: #1d2142;
-
-  --color-accent: #f59e0b;
-  --color-accent-tint: #2a1e0b;
-
-  --color-danger: #f87171;
-  --color-danger-tint: #2b1418;
-
-  --color-success: #34d399;
-
+  --color-foreground: #1c1d1a;
+  --color-muted: #6a6c63;
+  --color-primary: #252620;
+  --color-primary-soft: #62665a;
+  --color-primary-tint: #eeeee7;
+  --color-accent: #87633a;
+  --color-accent-tint: #f6eedf;
+  --color-danger: #b7473d;
+  --color-danger-tint: #fbedeb;
+  --color-success: #34845d;
   --color-border: color-mix(in srgb, var(--color-foreground) 11%, transparent);
   --color-border-strong: color-mix(in srgb, var(--color-foreground) 20%, transparent);
-
-  --glow-indigo: #6366f1;
-  --glow-violet: #8b5cf6;
-  --glow-sky: #38bdf8;
+  --glow-indigo: #9c9f8f;
+  --glow-violet: #c8c9bd;
+  --glow-sky: #d8dacb;
+  --shadow-ink: 25 26 22;
+}
+:root[data-theme="dark"] {
+  --color-background: #151613;
+  --color-surface: #1e1f1b;
+  --color-foreground: #f2f2e9;
+  --color-muted: #a3a69a;
+  --color-primary: #e3e6d9;
+  --color-primary-soft: #bcc1ae;
+  --color-primary-tint: #292c23;
+  --color-accent: #e1bd83;
+  --color-accent-tint: #332b1e;
+  --color-danger: #f08b7f;
+  --color-danger-tint: #382320;
+  --color-success: #9ad5ab;
+  --color-border: color-mix(in srgb, var(--color-foreground) 10%, transparent);
+  --color-border-strong: color-mix(in srgb, var(--color-foreground) 20%, transparent);
   --shadow-ink: 0 0 0;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-background: #0b0f1a;
-    --color-surface: #111628;
-    --color-foreground: #e8eaf3;
-    --color-muted: #98a1b8;
-
-    --color-primary: #818cf8;
-    --color-primary-soft: #6366f1;
-    --color-primary-tint: #1d2142;
-
-    --color-accent: #f59e0b;
-    --color-accent-tint: #2a1e0b;
-
-    --color-danger: #f87171;
-    --color-danger-tint: #2b1418;
-
-    --color-border: color-mix(in srgb, var(--color-foreground) 11%, transparent);
-    --color-border-strong: color-mix(in srgb, var(--color-foreground) 20%, transparent);
-
-    --glow-indigo: #6366f1;
-    --glow-violet: #8b5cf6;
-    --glow-sky: #38bdf8;
-    --shadow-ink: 0 0 0;
-  }
-}
-
 @theme inline {
   --color-background: var(--color-background);
   --color-surface: var(--color-surface);
@@ -98,9 +53,9 @@
   --color-border: var(--color-border);
   --color-border-strong: var(--color-border-strong);
 
-  --font-display: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-ibm-mono), ui-monospace, monospace;
 }
 
 body {

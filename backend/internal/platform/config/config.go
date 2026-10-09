@@ -118,6 +118,9 @@ type Config struct {
 	// (providers/jupiter); off unless JUPITER_SWAP_ENABLED=on, and it needs the
 	// mainnet wallet.
 	Jupiter JupiterConfig
+	// OnchainPasses configures Spend Passes enforced by Algebra's program on
+	// Solana (solana-program/programs/spend-pass).
+	OnchainPasses OnchainPassConfig
 
 	// Results is how long the answer to a paid call is kept, so asking again
 	// returns it (RESULT_RETENTION, RESULT_MAX_BYTES; see results.go).
@@ -165,6 +168,25 @@ type SolanaConfig struct {
 	// MaxPaymentMinor is the most one payment may be, in micro-USDC: a hard
 	// ceiling in the rail itself, whatever any policy says.
 	MaxPaymentMinor int64
+}
+
+// OnchainPassConfig configures on-chain Spend Passes. They are on wherever a
+// Solana rail runs, unless SPEND_PASS_PROGRAM_ID is "off".
+type OnchainPassConfig struct {
+	// ProgramID is the Spend Pass program's address; empty means the
+	// address Algebra deployed (spendpass.DefaultProgramID).
+	ProgramID string
+	Disabled  bool
+	// Required lists clusters ("devnet", "mainnet") where a pass must be on
+	// chain to pay at all (SPEND_PASS_REQUIRED=mainnet,devnet), so the payer
+	// never spends money that isn't a pass's.
+	Required map[string]bool
+	// AnyOwner lists clusters where an on-chain pass's owner needn't be a
+	// wallet the person signed in with (SPEND_PASS_ANY_OWNER=devnet). Never
+	// mainnet: there it must be their own wallet.
+	AnyOwner map[string]bool
+	// PriorityMicroLamports is the priority fee for pulls and refunds.
+	PriorityMicroLamports uint64
 }
 
 // BillingConfig configures Razorpay billing for Algebra's own plans. Empty
@@ -412,6 +434,9 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	if err := loadResults(&cfg.Results); err != nil {
+		return nil, err
+	}
+	if err := loadOnchainPasses(&cfg.OnchainPasses); err != nil {
 		return nil, err
 	}
 	if err := loadJupiter(&cfg.Jupiter); err != nil {
@@ -737,4 +762,44 @@ func SolanaFromEnv() (SolanaConfig, error) {
 	var c SolanaConfig
 	err := loadSolana(&c)
 	return c, err
+}
+
+// loadOnchainPasses reads the on-chain Spend Pass settings.
+func loadOnchainPasses(c *OnchainPassConfig) error {
+	c.ProgramID = strings.TrimSpace(os.Getenv("SPEND_PASS_PROGRAM_ID"))
+	if strings.EqualFold(c.ProgramID, "off") {
+		c.ProgramID, c.Disabled = "", true
+	}
+	clusters := func(name string) (map[string]bool, error) {
+		out := map[string]bool{}
+		for _, v := range strings.Split(os.Getenv(name), ",") {
+			switch v = strings.ToLower(strings.TrimSpace(v)); v {
+			case "":
+			case "devnet", "mainnet":
+				out[v] = true
+			default:
+				return nil, fmt.Errorf("config: %s lists clusters (devnet, mainnet), not %q", name, v)
+			}
+		}
+		return out, nil
+	}
+	var err error
+	if c.Required, err = clusters("SPEND_PASS_REQUIRED"); err != nil {
+		return err
+	}
+	if c.AnyOwner, err = clusters("SPEND_PASS_ANY_OWNER"); err != nil {
+		return err
+	}
+	if c.AnyOwner["mainnet"] {
+		return errors.New("config: SPEND_PASS_ANY_OWNER can't include mainnet: there a pass's owner must be a wallet the person signed in with")
+	}
+	c.PriorityMicroLamports = 10_000
+	if v := strings.TrimSpace(os.Getenv("SPEND_PASS_PRIORITY_MICROLAMPORTS")); v != "" {
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("config: SPEND_PASS_PRIORITY_MICROLAMPORTS must be a whole number: %v", err)
+		}
+		c.PriorityMicroLamports = n
+	}
+	return nil
 }

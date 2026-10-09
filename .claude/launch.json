@@ -74,7 +74,7 @@
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$env:ALGEBRA_DATA_DIR = (Join-Path (Get-Location) '.data'); $env:ECONOMIC_PROVIDERS = (go -C backend run ./cmd/demo-provider -print-config); $env:ALGEBRA_API_ADDR = '127.0.0.1:8085'; $env:SOLANA_ALLOW_MAINNET = 'yes'; if (Test-Path .data/privy-app-id) { $env:PRIVY_APP_ID = (Get-Content .data/privy-app-id -Raw).Trim() }; if (Test-Path .data/privy-verification-key) { $env:PRIVY_VERIFICATION_KEY = Get-Content .data/privy-verification-key -Raw }; $env:PUBLIC_WEB_URL = 'http://localhost:3300'; $env:CORS_ALLOWED_ORIGINS = 'http://localhost:3300,http://localhost:3000'; & ./scripts/dev-native.ps1 api"
+        "$env:ALGEBRA_DATA_DIR = (Join-Path (Get-Location) '.data'); $env:ECONOMIC_PROVIDERS = (go -C backend run ./cmd/demo-provider -print-config); $env:ALGEBRA_API_ADDR = '127.0.0.1:8085'; $env:SPEND_PASS_ANY_OWNER = 'devnet'; $env:SOLANA_ALLOW_MAINNET = 'yes'; if (Test-Path .data/privy-app-id) { $env:PRIVY_APP_ID = (Get-Content .data/privy-app-id -Raw).Trim() }; if (Test-Path .data/privy-verification-key) { $env:PRIVY_VERIFICATION_KEY = Get-Content .data/privy-verification-key -Raw }; $env:PUBLIC_WEB_URL = 'http://localhost:3300'; $env:CORS_ALLOWED_ORIGINS = 'http://localhost:3300,http://localhost:3000'; & ./scripts/dev-native.ps1 api"
       ],
       "port": 8085
     },
