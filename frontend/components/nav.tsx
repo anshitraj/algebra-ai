@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Logo } from "./logo";
 import { IconArrowRight, IconMenu, IconX } from "./icons";
+import { NetworkToggle } from "./network-toggle";
 
 const links = [
   { href: "/#product", label: "Product" },
@@ -39,8 +40,10 @@ export function Nav() {
         <nav className={open ? "landing-links is-open" : "landing-links"} aria-label="Main navigation" id="landing-menu">
           {links.map((link) => <Link key={link.href} href={link.href} onClick={() => setOpen(false)}>{link.label}</Link>)}
           <Link href={signedIn ? "/console" : "/login"} className="mobile-signin">{signedIn ? "Open workspace" : "Sign in"}</Link>
+          <NetworkToggle className="mobile-network" />
         </nav>
         <div className="nav-actions">
+          <NetworkToggle className="nav-network" />
           {!signedIn && <Link href="/login" className="nav-signin">Sign in</Link>}
           <Link href={signedIn ? "/console" : "/signup"} className="button-ink nav-cta">{signedIn ? "Open workspace" : "Get started"}<IconArrowRight size={14} /></Link>
           <button className="mobile-menu-toggle" onClick={() => setOpen(!open)} aria-label={open ? "Close navigation" : "Open navigation"} aria-controls="landing-menu" aria-expanded={open}>{open ? <IconX size={21} /> : <IconMenu size={21} />}</button>
