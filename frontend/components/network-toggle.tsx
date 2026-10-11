@@ -5,10 +5,10 @@
 // console on devnet, and switching in the console moves this too.
 
 import { useEffect, useState } from "react";
-import { NETWORKS, onNetworkChange, readSavedNetwork, saveNetwork, type Network } from "@/lib/network";
+import { NETWORKS, onNetworkChange, readSavedNetwork, saveNetwork, type Cluster } from "@/lib/network";
 
 export function NetworkToggle({ className = "" }: { className?: string }) {
-  const [network, setNetwork] = useState<Network>("solana");
+  const [network, setNetwork] = useState<Cluster>("solana");
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring the saved choice after mount
@@ -16,7 +16,7 @@ export function NetworkToggle({ className = "" }: { className?: string }) {
     return onNetworkChange(setNetwork);
   }, []);
 
-  function pick(n: Network) {
+  function pick(n: Cluster) {
     setNetwork(n);
     saveNetwork(n);
   }

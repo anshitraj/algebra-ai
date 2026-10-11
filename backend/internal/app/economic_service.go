@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/project-algebra/algebra/internal/domain/account"
+	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 	"github.com/project-algebra/algebra/internal/domain/spendpass"
@@ -86,6 +88,9 @@ type EconomicService struct {
 	// the payment is handed over (OnchainPassService).
 	funder     PassFunder
 	executions ExecutionStore
+	// modes tells demo accounts from live ones (AccountService). Nil leaves
+	// every account on every network, as in tests.
+	modes AccountModes
 }
 
 // ResolutionHook is told when reconciliation settles an ambiguous attempt:
@@ -107,6 +112,9 @@ type PassFunder interface {
 
 // SetFunder turns on funding payments from on-chain passes.
 func (s *EconomicService) SetFunder(f PassFunder) { s.funder = f }
+
+// SetAccountModes keeps demo accounts in the sandbox (see restrictDemo).
+func (s *EconomicService) SetAccountModes(m AccountModes) { s.modes = m }
 
 // SetResolutionHook registers the hook.
 func (s *EconomicService) SetResolutionHook(h ResolutionHook) { s.onResolved = h }
@@ -231,7 +239,48 @@ func (s *EconomicService) CreateIntentForPass(ctx context.Context, userID, passI
 	return s.create(ctx, p, "", spec)
 }
 
+// Denial codes for an intent that asks for a network it may not pay on.
+const (
+	// DenyDemoSandboxOnly: a demo account asked for a real network.
+	DenyDemoSandboxOnly = "DEMO_SANDBOX_ONLY"
+	// DenyNetworkNotAllowed: a payment was about to be signed on a network the
+	// intent's own constraints exclude.
+	DenyNetworkNotAllowed = "NETWORK_NOT_ALLOWED"
+)
+
+// restrictDemo keeps a demo account in the sandbox. A demo sign-in is free and
+// open to anyone, so whatever the caller asks for, it must never reach the
+// wallet behind the real rails: with no network named the intent is limited to
+// the sandbox, and naming any other network is refused. A lookup that fails
+// refuses too, because the other answer would be to treat a demo account as live.
+func (s *EconomicService) restrictDemo(ctx context.Context, userID string, spec *econ.Spec) error {
+	if s.modes == nil {
+		return nil
+	}
+	mode, err := s.modes.UserMode(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("checking the account's mode: %w", err)
+	}
+	if mode != account.ModeDemo {
+		return nil
+	}
+	nets := spec.Constraints.AllowedNetworks
+	if len(nets) == 0 {
+		spec.Constraints.AllowedNetworks = []string{chain.Sandbox}
+		return nil
+	}
+	for _, n := range nets {
+		if chain.NormalizeNetwork(n) != chain.Sandbox {
+			return &AuthorityDenied{ReasonCodes: []string{DenyDemoSandboxOnly}}
+		}
+	}
+	return nil
+}
+
 func (s *EconomicService) create(ctx context.Context, p *spendpass.Pass, agentID string, spec econ.Spec) (*IntentView, bool, error) {
+	if err := s.restrictDemo(ctx, p.UserID, &spec); err != nil {
+		return nil, false, err
+	}
 	if s.funder != nil {
 		if err := s.funder.Check(ctx, p.ID); err != nil {
 			return nil, false, err
@@ -617,6 +666,7 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 		return nil, err
 	}
 	var snapshot econ.Reservation
+	var networks []string
 	err = s.store.Atomically(ctx, intentID, "", func(u EconUnit) error {
 		in := u.Intent()
 		r, err := liveFor(u, in, agentID, reservationID)
@@ -630,6 +680,7 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 			return fmt.Errorf("%w: this attempt already has its payment authority; a second payment needs a new attempt", shared.ErrConflict)
 		}
 		snapshot = *r
+		networks = slices.Clone(in.Constraints.AllowedNetworks)
 		return nil
 	})
 	if err != nil {
@@ -645,6 +696,12 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 	}
 	if auth.AmountMinor > snapshot.HoldMinor {
 		return nil, fmt.Errorf("%w: the provider asked for %d, more than this attempt's hold of %d", shared.ErrConflict, auth.AmountMinor, snapshot.HoldMinor)
+	}
+	// The intent's network limit holds here too, not only when the router picks
+	// a provider: an executor that reserved a rail itself still gets nothing
+	// signed on a network the intent excludes.
+	if len(networks) > 0 && !slices.Contains(networks, chain.NormalizeNetwork(auth.Evidence.Network)) {
+		return nil, &AuthorityDenied{ReasonCodes: []string{DenyNetworkNotAllowed}}
 	}
 	// A pass on chain funds the payment itself, and the chain checks the
 	// owner's limits once more. The signed payment is handed over only after

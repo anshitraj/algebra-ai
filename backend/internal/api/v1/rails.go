@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/project-algebra/algebra/internal/domain/account"
 	"github.com/project-algebra/algebra/internal/domain/chain"
 )
 
@@ -26,13 +27,29 @@ type railView struct {
 // with the wallet's balance read from the chain; and whether the sandbox
 // (simulated money) is on. Never moves money.
 func (a *API) listRails(w http.ResponseWriter, r *http.Request) {
-	if _, err := a.currentUserID(r); err != nil {
-		if _, aerr := a.resolveAgent(r); aerr != nil {
+	userID, err := a.currentUserID(r)
+	if err != nil {
+		ag, aerr := a.resolveAgent(r)
+		if aerr != nil {
 			writeError(w, err)
 			return
 		}
+		userID = ag.UserID
 	}
 	out := []railView{}
+	// A demo account pays in the sandbox: the wallets behind the real rails, their
+	// addresses and balances, are not shown to someone who signed in with one click.
+	if a.b.Accounts != nil && userID != "" {
+		mode, err := a.b.Accounts.UserMode(r.Context(), userID)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if mode == account.ModeDemo {
+			writeJSON(w, http.StatusOK, map[string]any{"rails": out, "sandbox": a.b.SandboxProvider != nil})
+			return
+		}
+	}
 	for _, network := range []string{chain.Solana, chain.SolanaDevnet} {
 		v := railView{Network: network}
 		for _, rail := range a.b.SolanaRails {

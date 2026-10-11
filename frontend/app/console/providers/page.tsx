@@ -15,7 +15,9 @@ const SOURCES = [{ id: "", name: "All catalogs" }, ...CATALOGS.map((c) => ({ id:
 const PAGE = 100;
 
 export default function ProvidersPage() {
-  const { network } = useNetwork();
+  const { network, demo } = useNetwork();
+  // A demo account reads every catalog; it pays in the sandbox, so no cluster narrows the list.
+  const cluster = demo ? undefined : network;
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
@@ -35,7 +37,7 @@ export default function ProvidersPage() {
   useEffect(() => {
     let live = true;
     api
-      .listProviders({ q: query, source, category, network, limit: PAGE })
+      .listProviders({ q: query, source, category, network: cluster, limit: PAGE })
       .then((l) => {
         if (!live) return;
         setListing(l);
@@ -46,7 +48,7 @@ export default function ProvidersPage() {
     return () => {
       live = false;
     };
-  }, [query, source, category, network]);
+  }, [query, source, category, cluster]);
 
   const providers = useMemo(() => [...(listing?.providers ?? []), ...more], [listing, more]);
   const canLoadMore = listing !== null && providers.length < listing.total;
@@ -54,7 +56,7 @@ export default function ProvidersPage() {
   async function loadMore() {
     setLoadingMore(true);
     try {
-      const l = await api.listProviders({ q: query, source, category, network, limit: PAGE, offset: providers.length });
+      const l = await api.listProviders({ q: query, source, category, network: cluster, limit: PAGE, offset: providers.length });
       setMore((m) => [...m, ...l.providers]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't load more");
@@ -69,7 +71,11 @@ export default function ProvidersPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Providers"
-        description={`Find your agent's next capability. Explore live catalogs payable in USDC on Solana ${networkLabel(network).toLowerCase()}. Algebra checks the actual quote before a payment.`}
+        description={
+          demo
+            ? "Find your agent's next capability. Explore the live catalogs; a demo account pays in the sandbox only, so these are for looking. Create an account to pay them."
+            : `Find your agent's next capability. Explore live catalogs payable in USDC on Solana ${networkLabel(network).toLowerCase()}. Algebra checks the actual quote before a payment.`
+        }
       />
 
       <div className="mt-8 flex flex-col gap-3 md:flex-row md:items-center">
@@ -107,7 +113,7 @@ export default function ProvidersPage() {
         </div>
       )}
 
-      <CatalogStatusLine listing={listing} network={network} />
+      <CatalogStatusLine listing={listing} network={cluster} />
 
       <div className="mt-5 space-y-3">
         {error && <ErrorNote>{error}</ErrorNote>}
@@ -149,12 +155,13 @@ function CategoryChip({ on, onClick, children }: { on: boolean; onClick: () => v
   );
 }
 
-function CatalogStatusLine({ listing, network }: { listing: ProviderListing | null; network: string }) {
+function CatalogStatusLine({ listing, network }: { listing: ProviderListing | null; network?: string }) {
   if (!listing?.sources?.length) return null;
   return (
     <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
       <span className="text-foreground">
-        {listing.total} provider{listing.total === 1 ? "" : "s"} on {networkLabel(network).toLowerCase()}
+        {listing.total} provider{listing.total === 1 ? "" : "s"}
+        {network ? ` on ${networkLabel(network).toLowerCase()}` : ""}
       </span>
       {listing.sources.map((s) => (
         <span key={s.name} className="inline-flex items-center gap-1.5">
@@ -233,7 +240,7 @@ function ProviderRow({ provider: p, open, onToggle }: { provider: ProviderSummar
 }
 
 function ProviderEndpoints({ provider }: { provider: ProviderSummary }) {
-  const { network } = useNetwork();
+  const { network, demo } = useNetwork();
   const [detail, setDetail] = useState<ProviderDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
@@ -250,7 +257,7 @@ function ProviderEndpoints({ provider }: { provider: ProviderSummary }) {
     };
   }, [provider.id]);
 
-  const payableHere = (e: ProviderEndpoint) => (e.payments?.length ? e.payments.some((p) => p.network === network) : network === "solana");
+  const payableHere = (e: ProviderEndpoint) => !demo && (e.payments?.length ? e.payments.some((p) => p.network === network) : network === "solana");
   const endpoints = useMemo(() => {
     const f = filter.trim().toLowerCase();
     return (detail?.endpoints ?? []).filter((e) => !f || `${e.method} ${e.path} ${e.description}`.toLowerCase().includes(f));
@@ -269,8 +276,10 @@ function ProviderEndpoints({ provider }: { provider: ProviderSummary }) {
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted">
-              {detail.endpoints.length} endpoint{detail.endpoints.length === 1 ? "" : "s"}, {detail.endpoints.filter((e) => e.callable && payableHere(e)).length} callable on{" "}
-              {networkLabel(network).toLowerCase()} through Algebra today.
+              {detail.endpoints.length} endpoint{detail.endpoints.length === 1 ? "" : "s"},{" "}
+              {demo
+                ? "none payable from a demo account (it pays in the sandbox)."
+                : `${detail.endpoints.filter((e) => e.callable && payableHere(e)).length} callable on ${networkLabel(network).toLowerCase()} through Algebra today.`}
             </p>
             <div className="flex items-center gap-3">
               {detail.endpoints.length > 8 && (
@@ -307,6 +316,7 @@ function MethodBadge({ method }: { method: string }) {
 }
 
 function EndpointRow({ e, here, selected, onPick }: { e: ProviderEndpoint; here: boolean; selected: boolean; onPick: () => void }) {
+  const { demo } = useNetwork();
   const prices = e.payments?.length ? e.payments : [{ network: "solana", price_minor: e.price_minor }];
   return (
     <li className={`flex items-start gap-3 px-3.5 py-2.5 ${selected ? "bg-primary-tint/50" : ""} ${here ? "" : "opacity-60"}`}>
@@ -322,7 +332,9 @@ function EndpointRow({ e, here, selected, onPick }: { e: ProviderEndpoint; here:
           </p>
         )}
         {!e.callable && e.not_callable_reason && <p className="mt-0.5 text-xs text-accent">Listed only: {e.not_callable_reason}.</p>}
-        {e.callable && !here && <p className="mt-0.5 text-xs text-muted">Not payable on this network: switch at the top.</p>}
+        {e.callable && !here && (
+          <p className="mt-0.5 text-xs text-muted">{demo ? "A demo account can't pay this: it pays in the sandbox." : "Not payable on this network: switch at the top."}</p>
+        )}
       </div>
       <span className="shrink-0 text-right font-mono text-xs whitespace-nowrap text-foreground tabular-nums">
         {prices.length === 1

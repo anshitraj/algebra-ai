@@ -377,6 +377,8 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	econRepo := postgres.NewEconRepo(db)
 	spendPassSvc.CountEconomicSpend(econRepo)
 	econSvc := app.NewEconomicService(econRepo, agents, passRepo, passRepo)
+	// Demo sign-ins are free and open to anyone: they pay in the sandbox only.
+	econSvc.SetAccountModes(accountSvc)
 	intentReceiptSvc := app.NewIntentReceiptService(signer, cfg.Auth.PublicWebURL, agents, econRepo)
 	econSvc.SetReceipts(intentReceiptSvc)
 	var sandboxProvider *sandboxpay.Provider

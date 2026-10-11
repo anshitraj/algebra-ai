@@ -44,6 +44,7 @@ export function PassPanel({
   network: string;
   session: { spent: number; calls: number; steps: number };
 }) {
+  const sandbox = network === "sandbox";
   const used = pass ? pass.budget_minor_units - pass.remaining_minor_units : 0;
   const pct = pass && pass.budget_minor_units > 0 ? Math.min(100, (used / pass.budget_minor_units) * 100) : 0;
 
@@ -106,12 +107,14 @@ export function PassPanel({
         </ul>
       )}
 
-      <PanelHeading>Wallet · {networkLabel(network)}</PanelHeading>
+      <PanelHeading>{sandbox ? "Sandbox" : `Wallet · ${networkLabel(network)}`}</PanelHeading>
       <div className="flex gap-3 border-y border-border px-5 py-3">
         <span className="mt-0.5 text-muted">
           <IconWallet size={16} />
         </span>
-        {!rail ? (
+        {sandbox ? (
+          <p className="text-xs leading-relaxed text-muted">Simulated providers and USDC. No wallet is used and nothing is written to a chain.</p>
+        ) : !rail ? (
           <div className="h-8 flex-1 animate-pulse rounded-lg bg-border/60" />
         ) : !rail.configured ? (
           <p className="text-xs leading-relaxed text-muted">

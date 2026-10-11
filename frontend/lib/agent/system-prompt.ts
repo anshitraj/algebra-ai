@@ -1,4 +1,5 @@
 import type { RailStatus, SpendPass } from "../types";
+import type { ChatNetwork } from "./server-client";
 
 const USDC = 1_000_000;
 const usdc = (minor: number) => `${(minor / USDC).toLocaleString("en-US", { maximumFractionDigits: 6 })} USDC`;
@@ -22,7 +23,7 @@ How to work:
 Style: short, plain, precise. Amounts as "0.003 USDC". No tables, no headings, no JSON unless the user asks for raw data. At most one short paragraph plus a few lines; when a response holds a list (holders, prices, results), give the few items that answer the question. Don't paste intent IDs or transaction signatures: the step card shows them.`;
 
 export type PromptContext = {
-  network: "solana" | "solana-devnet";
+  network: ChatNetwork;
   pass: SpendPass | null;
   rail: RailStatus | undefined;
   mode: "live" | "demo";
@@ -36,17 +37,29 @@ export type PromptContext = {
  */
 export function buildSystemPrompt({ network, pass, rail, mode }: PromptContext): string {
   const parts = [BASE_PROMPT];
-  const where = network === "solana" ? "Solana mainnet (real USDC)" : "Solana devnet (test USDC from the faucet; nothing real moves)";
-  const facts = [`This chat pays on ${where}. Only providers payable there are searched and every payment is restricted to it.`];
+  const sandbox = network === "sandbox";
+  const where = sandbox
+    ? "Algebra's sandbox (simulated providers and simulated USDC; no chain, no wallet, nothing real moves)"
+    : network === "solana"
+      ? "Solana mainnet (real USDC)"
+      : "Solana devnet (test USDC from the faucet; nothing real moves)";
+  const facts = [
+    sandbox
+      ? `This chat pays in ${where}. The sandbox serves token prices (token.price) and token risk (solana.token-risk) from providers that misbehave on purpose (slow, down, overcharging), so routing and the spend firewall have something to do: use route_work and check_policy for those. The real catalogs can be searched and read, but a demo account cannot pay them: say so if asked, and that real payments need a signed-in account. Always say that sandbox results are simulated.`
+      : `This chat pays on ${where}. Only providers payable there are searched and every payment is restricted to it.`,
+  ];
 
-  if (!rail?.configured) {
-    facts.push(
-      `This server has no wallet for ${network === "solana" ? "mainnet" : "devnet"}, so calls can be searched and priced but not paid: pay_and_call will fail. Say so if the user asks to pay, and suggest switching networks at the top if the other one has a wallet.`
-    );
-  } else if (rail.error) {
-    facts.push("The wallet is set but the Solana node can't be reached right now, so payments may fail.");
-  } else if (typeof rail.usdc_minor === "number") {
-    facts.push(`The paying wallet holds ${usdc(rail.usdc_minor)}${rail.max_payment_minor ? `; it pays at most ${usdc(rail.max_payment_minor)} per call` : ""}.`);
+  // The sandbox has no wallet, so there is nothing to say about one.
+  if (!sandbox) {
+    if (!rail?.configured) {
+      facts.push(
+        `This server has no wallet for ${network === "solana" ? "mainnet" : "devnet"}, so calls can be searched and priced but not paid: pay_and_call will fail. Say so if the user asks to pay, and suggest switching networks at the top if the other one has a wallet.`
+      );
+    } else if (rail.error) {
+      facts.push("The wallet is set but the Solana node can't be reached right now, so payments may fail.");
+    } else if (typeof rail.usdc_minor === "number") {
+      facts.push(`The paying wallet holds ${usdc(rail.usdc_minor)}${rail.max_payment_minor ? `; it pays at most ${usdc(rail.max_payment_minor)} per call` : ""}.`);
+    }
   }
 
   if (!pass) {

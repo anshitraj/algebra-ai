@@ -134,17 +134,18 @@ function CatalogBrowser({ hint, since }: { hint?: StepHint; since: number }) {
   const tick = useTick(reduce ? 2400 : 900);
   const q = hint?.query ?? "";
   const devnet = hint?.network === "solana-devnet";
+  const sandbox = hint?.network === "sandbox";
   const net = devnet ? "solana-devnet" : "solana";
   const site = CATALOG_SITES[tick % CATALOG_SITES.length];
   const afterPass = [
     q ? `Matching “${q}” across ${CATALOG_SITES.length} catalogs` : "Matching your request",
-    `Keeping what can be paid on ${devnet ? "devnet" : "mainnet"}`,
+    sandbox ? "Reading what the catalogs list" : `Keeping what can be paid on ${devnet ? "devnet" : "mainnet"}`,
     "Reading listed prices in USDC",
   ];
   const line = tick < CATALOG_SITES.length ? `Searching ${site.name}` : afterPass[(tick - CATALOG_SITES.length) % afterPass.length];
 
   return (
-    <Panel line={line} since={since} badge={devnet ? "devnet" : "mainnet"}>
+    <Panel line={line} since={since} badge={sandbox ? "demo" : devnet ? "devnet" : "mainnet"}>
       <div className="flex items-center gap-2.5 px-3 py-2">
         <span className="flex gap-1" aria-hidden="true">
           {[0, 1, 2].map((i) => (
@@ -250,7 +251,7 @@ function payStages(network?: string) {
   return [
     "Asking the endpoint for its real price",
     "Checking it against your Spend Pass",
-    `Paying in USDC on ${network === "solana-devnet" ? "devnet" : "mainnet"}`,
+    network === "sandbox" ? "Paying in simulated USDC (sandbox)" : `Paying in USDC on ${network === "solana-devnet" ? "devnet" : "mainnet"}`,
     "Calling the API with proof of payment",
     "Confirming the payment on-chain",
   ];

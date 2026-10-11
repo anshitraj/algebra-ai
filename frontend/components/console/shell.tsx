@@ -62,7 +62,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <NetworkProvider>
+    <NetworkProvider demo={user.mode === "demo"}>
       <ConsoleDataProvider>
         <ShellFrame user={user}>{children}</ShellFrame>
       </ConsoleDataProvider>
@@ -304,13 +304,13 @@ function UserMenu({ user }: { user: User }) {
   );
 }
 
-// Every screen of a demo account says so: the catalogs are real, the money
-// isn't.
+// Every screen of a demo account says so: it pays in the sandbox, where the
+// providers and the money are simulated. The API enforces it; this says so.
 function DemoBanner() {
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-border bg-accent-tint px-4 py-2 text-center text-xs text-accent print:hidden">
       <span>
-        <strong className="font-semibold">Demo mode</strong> · real provider catalogs, simulated USDC. No money moves.
+        <strong className="font-semibold">Demo mode</strong> · simulated providers and USDC in Algebra&apos;s sandbox. No money moves.
       </span>
       <Link href="/signup" className="font-semibold underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
         Create a real account

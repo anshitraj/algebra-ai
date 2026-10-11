@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveProvider } from "@/lib/agent/models";
 import { buildSystemPrompt } from "@/lib/agent/system-prompt";
-import { consumeAgentTurn, getAgentToken, getPasses, getRails, ServerApiError, type ServerIdentity, type TurnQuota } from "@/lib/agent/server-client";
+import { consumeAgentTurn, getAgentToken, getPasses, getRails, ServerApiError, type ChatNetwork, type ServerIdentity, type TurnQuota } from "@/lib/agent/server-client";
 import { toolsFor } from "@/lib/agent/tools";
 import { trimHistory } from "@/lib/agent/history";
 import type { AgentEvent } from "@/lib/agent/events";
@@ -16,7 +16,7 @@ type ChatRequestBody = {
   history?: unknown[];
   /** The Spend Pass this chat pays under; one of the signed-in person's active USDC passes. */
   spend_pass_id?: string;
-  /** "solana" (mainnet) or "solana-devnet". */
+  /** "solana" (mainnet) or "solana-devnet". A demo account is always put in the sandbox, whatever this says. */
   network?: string;
 };
 
@@ -51,12 +51,11 @@ export async function POST(request: Request) {
   const provider = resolveProvider(body.provider, body.model);
   if (!provider) {
     return NextResponse.json(
-      { error: "No AI provider is configured on this server. Add ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY to web/.env.local." },
+      { error: "No AI provider is configured on this server. Add ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY to frontend/.env.local." },
       { status: 503 }
     );
   }
 
-  const network = body.network === "solana-devnet" ? "solana-devnet" : "solana";
   const cookie = request.headers.get("cookie") ?? "";
   let token;
   try {
@@ -68,6 +67,10 @@ export async function POST(request: Request) {
       { status: status === 401 ? 401 : 502 }
     );
   }
+
+  // A demo account pays in the sandbox whatever the browser asks for: the API
+  // refuses it anything else, and this keeps the chat from trying.
+  const network: ChatNetwork = token.mode === "demo" ? "sandbox" : body.network === "solana-devnet" ? "solana-devnet" : "solana";
 
   // Rebuilt every turn: a pass revoked or spent down in another tab takes
   // effect on the very next message. The API checks the pass again on every
@@ -148,6 +151,9 @@ function quotaMessage(q: Extract<TurnQuota, { ok: false }>) {
 }
 
 function friendlyProviderError(detail: string) {
+  if (/402|credits?.*(depleted|exhausted)|insufficient.*(credit|funds|balance)|billing|payment required/i.test(detail)) {
+    return "The AI provider says this server's account is out of credit, so it can't answer right now. Try another model in the model menu, or come back later.";
+  }
   if (/401|invalid.*api.?key|authentication/i.test(detail)) return "The AI provider rejected this server's API key.";
   if (/429|rate.?limit|quota/i.test(detail)) return "The AI provider is rate-limiting us. Wait a few seconds and try again.";
   if (/model.*(not found|does not exist)/i.test(detail)) return "That model isn't available on this API key. Pick another in the model menu.";

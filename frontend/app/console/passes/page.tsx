@@ -5,6 +5,7 @@ import * as api from "@/lib/api-client";
 import type { AgentKind, BudgetPeriod, IssuedPass, PassConnect, ProviderSummary, SpendPass } from "@/lib/types";
 import { formatMoney } from "@/lib/money";
 import { catalogName } from "@/lib/paysh";
+import { useNetwork } from "@/lib/network";
 import { IconCheck, IconPlus, IconShield, IconX, Spinner } from "@/components/icons";
 import { Button, ErrorNote, Field, Input, PageHeader, Panel, Skeleton } from "@/components/console/ui";
 import { Copy, Snippet } from "@/components/console/snippet";
@@ -427,6 +428,7 @@ function IssuedCard({ pass, connect, onDone }: { pass: IssuedPass; connect: Pass
 }
 
 function PassCard({ pass: p, onRevoked }: { pass: SpendPass; onRevoked: () => void }) {
+  const { demo } = useNetwork();
   const [busy, setBusy] = useState(false);
   // The server says whether the pass can still spend (not revoked, not expired).
   const status = p.revoked_at ? "Revoked" : p.active ? "Active" : "Expired";
@@ -490,7 +492,7 @@ function PassCard({ pass: p, onRevoked }: { pass: SpendPass; onRevoked: () => vo
           <div className={`h-full rounded-full ${used >= 0.9 ? "bg-danger" : "bg-primary"}`} style={{ width: `${used * 100}%` }} />
         </div>
       </div>
-      {p.currency === "USDC" && <OnchainPassPanel passId={p.id} active={status === "Active"} />}
+      {p.currency === "USDC" && !demo && <OnchainPassPanel passId={p.id} active={status === "Active"} />}
     </Panel>
   );
 }

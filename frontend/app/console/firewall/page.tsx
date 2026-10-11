@@ -327,6 +327,8 @@ const REASON_TEXT: Record<string, string> = {
   PASS_PER_PURCHASE_LIMIT: "over the pass's per-call limit",
   PASS_APPROVAL_REQUIRED: "at or above your ask-me line",
   PASS_MERCHANT_NOT_ALLOWED: "the pass doesn't allow this provider",
+  DEMO_SANDBOX_ONLY: "a demo account pays in the sandbox only",
+  NETWORK_NOT_ALLOWED: "the call isn't allowed on that network",
   no_provider_passes: "no provider passed every check",
 };
 

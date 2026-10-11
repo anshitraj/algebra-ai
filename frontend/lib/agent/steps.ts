@@ -26,6 +26,8 @@ const REASONS: Record<string, string> = {
   CATEGORY_BLOCKED: "Category is blocked",
   quote_over_budget: "The endpoint asked for more than the limit",
   provider_not_allowed: "Provider isn't on the pass's list",
+  DEMO_SANDBOX_ONLY: "A demo account pays in the sandbox only",
+  NETWORK_NOT_ALLOWED: "The call isn't allowed on that network",
   authority_denied: "The Spend Pass doesn't allow it",
   already_committed: "Already paid for once; a repeat is blocked",
   frozen_unknown_outcome: "A payment's outcome is still being confirmed",
@@ -181,8 +183,10 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
       return {
         status: "done",
         summary: providers.length
-          ? `${total} provider${total === 1 ? "" : "s"} on ${networkWord(data.network)}${total > providers.length ? `, showing ${providers.length}` : ""}`
-          : `Nothing payable on ${networkWord(data.network)} matches`,
+          ? `${total} provider${total === 1 ? "" : "s"}${data.network === "sandbox" ? "" : ` on ${networkWord(data.network)}`}${total > providers.length ? `, showing ${providers.length}` : ""}`
+          : data.network === "sandbox"
+            ? "Nothing in the catalogs matches"
+            : `Nothing payable on ${networkWord(data.network)} matches`,
         detail: providers.length ? { providers, note: "Listed prices, not quotes: Algebra asks for the real price before it pays." } : undefined,
       };
     }
@@ -191,7 +195,7 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
       const callable = eps.filter((e) => e.callable).length;
       return {
         status: "done",
-        summary: `${data.endpoint_count ?? eps.length} endpoint${data.endpoint_count === 1 ? "" : "s"}, ${callable} of those shown callable on ${networkWord(data.network)}`,
+        summary: `${data.endpoint_count ?? eps.length} endpoint${data.endpoint_count === 1 ? "" : "s"}, ${callable} of those shown callable on ${networkWord(data.network)}${data.network === "sandbox" ? " (a demo account can read them, not pay them)" : ""}`,
         detail: eps.length
           ? {
               endpoints: eps.slice(0, 12).map((e) => ({

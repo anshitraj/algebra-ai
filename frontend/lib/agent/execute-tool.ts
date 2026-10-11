@@ -131,7 +131,8 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       case "search_providers": {
         const l = await client.searchProviders({
           query: str(input, "query"),
-          network: identity.network,
+          // The sandbox is no catalog's network: a demo account reads them all.
+          network: identity.network === "sandbox" ? "" : identity.network,
           category: typeof input.category === "string" ? input.category : undefined,
           limit: 8,
         });

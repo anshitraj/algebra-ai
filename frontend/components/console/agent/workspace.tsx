@@ -48,6 +48,13 @@ const SUGGESTIONS: Record<string, string[]> = {
     "Find a devnet API for token prices and call it",
     "Show me what a paid call returns, with its receipt",
   ],
+  // A demo account: the sandbox serves token prices and token risk, from providers that misbehave like real ones.
+  sandbox: [
+    "What does SOL cost right now? Use the best provider",
+    "Check whether a Solana token looks risky before I buy it",
+    "Which provider would you pick for a token price, and why?",
+    "Would a 0.50 USDC call pass my Spend Pass?",
+  ],
 };
 
 // Catalog searches answer from cache in milliseconds. Their discovery panel
@@ -522,7 +529,7 @@ export function AgentWorkspace() {
             </div>
           </form>
           <p className="mx-auto mt-2 max-w-[720px] text-center text-xs text-muted/80">
-            USDC on Solana {networkLabel(network).toLowerCase()} · Spend Pass checked on every request · Approvals stay with you
+            {network === "sandbox" ? "Simulated USDC in the sandbox" : `USDC on Solana ${networkLabel(network).toLowerCase()}`} · Spend Pass checked on every request · Approvals stay with you
           </p>
         </div>
       </section>
@@ -697,7 +704,7 @@ function EmptyState({
             ? "Every paid call runs through your Spend Pass first."
             : pass === null
               ? "No Spend Pass picked: I can find APIs and read their prices, and I'll pay once you pick a pass below."
-              : `I pay from “${pass.label}” on Solana ${where}: ${formatUSDC(pass.remaining_minor_units)} left${
+              : `I pay from “${pass.label}” ${network === "sandbox" ? "in the sandbox, with simulated USDC" : `on Solana ${where}`}: ${formatUSDC(pass.remaining_minor_units)} left${
                   pass.approve_above_minor_units ? `, and I'll ask you from ${formatUSDC(pass.approve_above_minor_units)} a call` : ""
                 }.`}
         </span>

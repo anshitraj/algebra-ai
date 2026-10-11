@@ -9,7 +9,8 @@ import type { EconIntent, ProviderDetail, ProviderListing, RailStatus, SpendPass
 
 const API_URL = process.env.ALGEBRA_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
-export type ChatNetwork = "solana" | "solana-devnet";
+/** A cluster, or Algebra's sandbox, which is where a demo account pays. */
+export type ChatNetwork = "solana" | "solana-devnet" | "sandbox";
 
 export type ServerIdentity = {
   agentToken: string;
@@ -17,7 +18,7 @@ export type ServerIdentity = {
   mode: "live" | "demo";
   /** The Spend Pass this chat pays under, picked in the console. Without one the agent can look, not pay. */
   passId?: string;
-  /** The Solana cluster every payment in this chat is restricted to. */
+  /** The network every payment in this chat is restricted to. */
   network: ChatNetwork;
 };
 
