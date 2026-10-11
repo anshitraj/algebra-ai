@@ -8,15 +8,16 @@ What it takes to run Algebra for real users, what the code already enforces, and
 |---|---|
 | Accounts | Privy (an email code or a Solana wallet; an embedded Solana wallet for anyone without one; its ES256 identity token verified against the app's key), email and password (argon2id), password reset through Resend, HttpOnly / SameSite=Lax / Secure session cookies, per-device sign-out |
 | Authorization | Human-only endpoints (approvals, passes and their controls, the kill switch, `/me`) accept only a session; agents get scoped, revocable tokens; every intent-scoped call checks the intent belongs to the caller |
+| Demo accounts | "Try the demo" is free and open to anyone, so a demo account pays in the sandbox only (simulated providers and USDC). It is enforced where an intent is created, and again before a payment is signed, so neither the console chat nor an agent holding a demo pass reaches a real wallet; the wallets behind the rails are not even listed to it. It needs `ECONOMIC_SANDBOX=on` |
 | Spend firewall | Per-pass budget, per-call cap, approval line, provider allow-list, velocity limits, a rule for new providers, a kill switch, all re-checked right before a wallet signs ([SPEND_PASSES.md](SPEND_PASSES.md)) |
 | Money safety | At most one live attempt and one commitment per outcome, enforced by Postgres; an ambiguous outcome freezes and is settled from chain evidence ([ECONOMIC_COORDINATION.md](ECONOMIC_COORDINATION.md)); each rail has hard per-payment ceilings of its own |
 | Outbound HTTP | Providers, catalogs and Jupiter are reached through one client that only connects to public addresses (checked on the dialled IP), never follows a redirect with a payment, and bounds every body |
 | Data | Kept answers sealed at rest and deleted after 24 hours by default; request inputs scrubbed and kept answers deleted on account erasure; data export includes passes and requests |
-| Hardening | `APP_ENV=production` refuses to boot with unsafe settings (below); security headers and a CSP on the web app; per-IP limits on sign-in, sign-up and reset; request IDs and structured logs that never contain query strings, bodies, cookies or tokens; `/healthz` liveness and `/readyz` (Postgres and Redis); server timeouts; an hourly purge of dead sessions, reset tokens and expired answers |
+| Hardening | Request bodies capped at 1 MiB (413 beyond it); `APP_ENV=production` refuses to boot with unsafe settings (below); security headers and a CSP on the web app; per-IP limits on sign-in, sign-up and reset; request IDs and structured logs that never contain query strings, bodies, cookies or tokens; `/healthz` liveness and `/readyz` (Postgres and Redis); server timeouts; an hourly purge of dead sessions, reset tokens and expired answers |
 | Abuse and cost | A daily cap on agent messages per person (`AGENT_TURNS_PER_DAY`), web searches for providers limited to ten an hour per agent (each is a model call), per-IP limits trusting only the `X-Forwarded-For` entries our own proxies wrote (`TRUSTED_PROXY_HOPS`) |
 | Receipts | Ed25519 receipts with a public key set at `/.well-known/jwks.json`; the key is derived from the master key, so there is nothing new to store |
 | Packaging | `Dockerfile` (API, distroless, non-root, migrations included) and `frontend/Dockerfile` (Next standalone, non-root) |
-| CI | Go fmt, vet, build and tests; migrations on a fresh Postgres; web lint, typecheck and production build |
+| CI | Go fmt, vet, build and tests; migrations on a fresh Postgres; web lint, typecheck and production build; the Spend Pass program's unit tests; both Docker images |
 | Legal | `/terms`, `/privacy` and `/contact`, with the business details from build args (below); nothing is invented when they are unset |
 
 ## 2. What is not done, and what unblocks it
@@ -24,6 +25,7 @@ What it takes to run Algebra for real users, what the code already enforces, and
 | Gap | Why | What unblocks it |
 |---|---|---|
 | A real payment has never been made | It needs a funded wallet, which is the operator's to provide | Fund a wallet and follow the runbook in [EXECUTION.md](EXECUTION.md) (devnet first) |
+| The Spend Pass program is on devnet only | It has run on devnet, not on mainnet, and has not been audited | Deploy it (about 2.7 SOL in the deploying wallet, 1.331 SOL of it kept as rent), move its upgrade authority to a multisig, have it reviewed, then set `SPEND_PASS_REQUIRED=mainnet`; see [SPEND_PASS_PROGRAM.md](SPEND_PASS_PROGRAM.md#mainnet) |
 | The wallet is a key in a file | `SOLANA_*_KEYPAIR_FILE` is the simplest thing that works | A KMS or HSM-backed signer behind the same interface; until then a dedicated, small hot wallet, with `SOLANA_MAX_PAYMENT_USDC` and `JUPITER_MAX_SWAP_USDC` kept low |
 | Master key in an environment variable | Static `ALGEBRA_MASTER_KEY` | Unwrap a KMS-protected key at start (see [GCP_DEPLOYMENT.md](GCP_DEPLOYMENT.md)) |
 | Hosted funding model | Passes are limits on a wallet the instance controls; there is no deposit, balance or top-up flow | A product decision: bring-your-own wallet per person, or a funded pool with accounting |
@@ -55,6 +57,11 @@ SOLANA_MAINNET_KEYPAIR_FILE=/run/secrets/algebra-mainnet.json
 SOLANA_MAINNET_RPC_URL=https://...                   # your own node: the public one is rate limited
 SOLANA_ALLOW_MAINNET=yes
 SOLANA_MAX_PAYMENT_USDC=0.50                         # a hard ceiling in the rail, whatever any pass says
+
+# Demo accounts ("Try the demo") pay in the sandbox: simulated providers and USDC. Off in production unless set.
+ECONOMIC_SANDBOX=on
+# Once the Spend Pass program is deployed on mainnet: every mainnet payment must come from an on-chain pass.
+# SPEND_PASS_REQUIRED=mainnet
 
 # Optional
 GEMINI_API_KEY=...                                   # web discovery of providers (and the console chat)
@@ -111,6 +118,7 @@ The API's write timeout is 90 seconds, which is what bounds a paid call plus its
 - [ ] A dedicated mainnet wallet, funded with a small amount; its key file readable only by the API; `SOLANA_MAX_PAYMENT_USDC` low; your own RPC node
 - [ ] A first real payment made and checked: `go run ./cmd/x402-dryrun` for the provider, a pass with a tiny budget, `backend/cmd/verify-intent` on the receipt, the signature on the explorer
 - [ ] The kill switch tried once, and a revoked pass shown to be refused
+- [ ] If "Try the demo" is on: `ECONOMIC_SANDBOX=on`, and a demo account tried once (its chat answers from the sandbox and the Providers page shows nothing payable)
 - [ ] An LLM key set on the web app with a spend limit in the provider console
 - [ ] The API not publicly exposed; the web app on HTTPS with the security headers intact (`curl -I`)
 - [ ] A log sink and an alert on the 5xx rate, `/readyz` failures and a rail that failed to start

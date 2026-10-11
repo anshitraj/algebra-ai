@@ -145,6 +145,19 @@ jobs:
           ALGEBRA_API_URL: http://localhost:8080
           NEXT_TELEMETRY_DISABLED: "1"
 
+  program:
+    name: Spend Pass program (Rust) unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: solana-program
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Every limit the program enforces, on the host. The LiteSVM tests run the
+      # built program and need `cargo build-sbf` first (docs/SPEND_PASS_PROGRAM.md).
+      - run: cargo test --locked --lib
+
   docker:
     name: Docker images build (backend API, frontend)
     runs-on: ubuntu-latest
