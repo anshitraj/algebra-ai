@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import * as api from "./api-client";
+import { clearSavedChats } from "./agent/chat-store";
 import type { User } from "./types";
 
 type SessionStatus = "loading" | "authenticated" | "unauthenticated";
@@ -83,6 +84,8 @@ export function SessionProvider({
     try {
       await api.signOut();
     } finally {
+      // A conversation stays with the account that had it, not the browser.
+      clearSavedChats();
       setUserState(null);
       setStatus("unauthenticated");
       router.replace("/login");

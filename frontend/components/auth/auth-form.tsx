@@ -25,8 +25,14 @@ type Mode = "login" | "signup";
 /** Which way in: a one-click demo account, or a real (production) account. */
 type Entry = "demo" | "production";
 
-function safeNext(next: string | null): string | null {
-  if (!next || !next.startsWith("/") || next.startsWith("//")) return null;
+/**
+ * A path on this site, or null. Browsers read a backslash as a slash and drop
+ * tabs and newlines, so "/\host" and "/\t/host" both become "//host", another
+ * site: only one leading slash followed by a plain character is accepted, and
+ * no backslash or control character anywhere.
+ */
+export function safeNext(next: string | null): string | null {
+  if (!next || !/^\/(?![/\\])/.test(next) || /[\\\u0000-\u001f\u007f]/.test(next)) return null;
   return next;
 }
 

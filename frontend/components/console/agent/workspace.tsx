@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import type { AgentEvent, AskedQuestion } from "@/lib/agent/events";
+import { chatKey } from "@/lib/agent/chat-store";
 import { firstName, useSession } from "@/lib/session";
 import * as api from "@/lib/api-client";
 import type { SpendPass } from "@/lib/types";
@@ -64,8 +65,6 @@ const MIN_VISIBLE_MS: Record<string, number> = { search_providers: 3000, get_pro
 
 const MODEL_KEY = "algebra:agent-model";
 const PASS_KEY = "algebra:agent-pass";
-// v2: the Solana chat. Chats saved by the earlier shopping agent aren't restored.
-const CHAT_KEY = "algebra:agent-chat:v2";
 // Provider history carries every tool result, so a long chat can get big.
 // Keep the newest turns that fit; the conversation matters more than its tail.
 const CHAT_MAX_BYTES = 400_000;
@@ -75,9 +74,9 @@ type SessionTotals = { spent: number; calls: number; steps: number };
 type SavedChat = { turns: Turn[]; history: unknown[]; lockedProvider: string | null; session: SessionTotals };
 
 /** Restores the chat a reload would otherwise throw away. */
-function loadChat(): SavedChat | null {
+function loadChat(key: string): SavedChat | null {
   try {
-    const raw = window.localStorage.getItem(CHAT_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as SavedChat;
     if (!Array.isArray(parsed.turns) || parsed.turns.length === 0) return null;
@@ -93,7 +92,7 @@ function loadChat(): SavedChat | null {
   }
 }
 
-function saveChat(chat: SavedChat) {
+function saveChat(key: string, chat: SavedChat) {
   try {
     let payload = JSON.stringify(chat);
     let turns = chat.turns;
@@ -103,10 +102,10 @@ function saveChat(chat: SavedChat) {
       payload = JSON.stringify({ ...chat, turns, history: chat.history });
     }
     if (payload.length > CHAT_MAX_BYTES) {
-      window.localStorage.removeItem(CHAT_KEY);
+      window.localStorage.removeItem(key);
       return;
     }
-    window.localStorage.setItem(CHAT_KEY, payload);
+    window.localStorage.setItem(key, payload);
   } catch {
     // private mode or quota — the chat still works for this page load
   }
@@ -185,9 +184,13 @@ export function AgentWorkspace() {
     if (callsKey > 0) refreshRails();
   }, [callsKey, refreshRails]);
 
+  // Each person's chat is kept apart: the slot is named for the signed-in account.
+  const userId = user?.id ?? "";
+
   useEffect(() => {
+    if (!userId) return;
     // localStorage is unavailable during SSR, so restore after mount.
-    const saved = loadChat();
+    const saved = loadChat(chatKey(userId));
     if (saved) {
       setTurns(saved.turns);
       setHistory(saved.history ?? []);
@@ -196,21 +199,21 @@ export function AgentWorkspace() {
     }
     setRestored(true);
     inputRef.current?.focus();
-  }, []);
+  }, [userId]);
 
   // Persist after every change, so a reload mid-chat loses nothing.
   useEffect(() => {
-    if (!restored) return;
+    if (!restored || !userId) return;
     if (turns.length === 0) {
       try {
-        window.localStorage.removeItem(CHAT_KEY);
+        window.localStorage.removeItem(chatKey(userId));
       } catch {
         // nothing to clean up if storage was never writable
       }
       return;
     }
-    saveChat({ turns, history, lockedProvider, session });
-  }, [restored, turns, history, lockedProvider, session]);
+    saveChat(chatKey(userId), { turns, history, lockedProvider, session });
+  }, [restored, userId, turns, history, lockedProvider, session]);
 
   // Keep the newest content in view unless the user scrolled up to read.
   useEffect(() => {
