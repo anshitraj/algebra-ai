@@ -84,6 +84,30 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// maxRequestBody caps every request body. The biggest legitimate ones (a
+// webhook, a paid call with candidate endpoints) are far below it; without a cap
+// a handler that decodes JSON reads whatever a client cares to send into
+// memory. Handlers that need less set a lower limit of their own.
+const maxRequestBody = 1 << 20
+
+// bodyLimit refuses a request that declares a body over maxRequestBody with 413
+// before any handler runs, and cuts off a body that turns out to be longer than
+// it declared (or was sent chunked): the handler's read then fails, which every
+// JSON handler already answers with a 400.
+func bodyLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > maxRequestBody {
+			w.Header().Set("Connection", "close")
+			writeJSON(w, http.StatusRequestEntityTooLarge, errorBody{Error: "request body too large"})
+			return
+		}
+		if r.Body != nil && r.Body != http.NoBody {
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Sign-in endpoints get a much tighter per-IP budget than the general API
 // limit: they're the credential-stuffing and email-bombing surface.
 const (

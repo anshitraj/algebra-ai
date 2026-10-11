@@ -215,7 +215,7 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("GET /readyz", api.readyz)
 
-	return requestLog(slog.Default(), securityHeaders(corsMiddleware(allowedOrigins, api.rateLimitMiddleware(api.csrfGuard(api.withSession(mux))))))
+	return requestLog(slog.Default(), securityHeaders(corsMiddleware(allowedOrigins, bodyLimit(api.rateLimitMiddleware(api.csrfGuard(api.withSession(mux)))))))
 }
 
 // corsMiddleware is the outermost layer: an OPTIONS preflight is answered

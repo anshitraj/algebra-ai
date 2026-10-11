@@ -2,6 +2,8 @@ package v1
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +57,70 @@ func TestSecurityHeaders(t *testing.T) {
 			t.Errorf("%s = %q, want %q", k, rec.Header().Get(k), v)
 		}
 	}
+}
+
+// zeroes is an endless body of unknown length, like a chunked upload.
+type zeroes struct{}
+
+func (zeroes) Read(p []byte) (int, error) { return len(p), nil }
+
+func TestBodyLimit(t *testing.T) {
+	called := false
+	var readErr error
+	var got int64
+	h := bodyLimit(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		got, readErr = io.Copy(io.Discard, r.Body)
+		if readErr != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	run := func(req *http.Request) *httptest.ResponseRecorder {
+		called, readErr, got = false, nil, 0
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("a body within the limit is read whole", func(t *testing.T) {
+		rec := run(httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"name":"x"}`)))
+		if rec.Code != http.StatusOK || !called || readErr != nil || got != int64(len(`{"name":"x"}`)) {
+			t.Errorf("code=%d called=%v err=%v read=%d", rec.Code, called, readErr, got)
+		}
+	})
+	t.Run("a declared length over the limit is refused with 413 before the handler runs", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader("x"))
+		req.ContentLength = maxRequestBody + 1
+		rec := run(req)
+		if rec.Code != http.StatusRequestEntityTooLarge || called {
+			t.Errorf("code=%d called=%v, want 413 and no handler", rec.Code, called)
+		}
+		if !strings.Contains(rec.Body.String(), "too large") {
+			t.Errorf("body = %q", rec.Body.String())
+		}
+	})
+	t.Run("a body of unknown length is cut off at the limit", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", io.NopCloser(zeroes{}))
+		if req.ContentLength != -1 {
+			t.Fatalf("test setup: ContentLength = %d, want -1", req.ContentLength)
+		}
+		rec := run(req)
+		var tooLarge *http.MaxBytesError
+		if !called || !errors.As(readErr, &tooLarge) || rec.Code != http.StatusBadRequest {
+			t.Errorf("code=%d called=%v err=%v", rec.Code, called, readErr)
+		}
+		if got > maxRequestBody {
+			t.Errorf("handler read %d bytes, over the %d limit", got, maxRequestBody)
+		}
+	})
+	t.Run("a request without a body passes", func(t *testing.T) {
+		rec := run(httptest.NewRequest(http.MethodGet, "/api/v1/me", nil))
+		if rec.Code != http.StatusOK || !called {
+			t.Errorf("code=%d called=%v", rec.Code, called)
+		}
+	})
 }
 
 func TestAuthEndpointsGetTheTightLimit(t *testing.T) {
