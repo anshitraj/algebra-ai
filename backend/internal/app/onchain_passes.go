@@ -91,7 +91,9 @@ type OnchainPassStore interface {
 	DeleteOnchainBinding(ctx context.Context, passID string) error
 	OnchainPull(ctx context.Context, reservationID string) (*OnchainPull, error) // shared.ErrNotFound if none
 	InsertOnchainPull(ctx context.Context, p *OnchainPull) error
-	UpdateOnchainPull(ctx context.Context, p *OnchainPull) error
+	// UpdateOnchainPull saves p only if it is still in state from
+	// (shared.ErrConflict otherwise), so two processes never both act on it.
+	UpdateOnchainPull(ctx context.Context, p *OnchainPull, from string) error
 	OpenOnchainPulls(ctx context.Context, limit int) ([]OnchainPull, error)
 	OnchainPullsForPass(ctx context.Context, passID string, limit int) ([]OnchainPull, error)
 }
@@ -684,11 +686,11 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 		// payment is released on a pull that isn't confirmed.
 		p.Detail = trunc(sendErr.Error(), 300)
 		p.UpdatedAt = s.now().UTC()
-		_ = s.store.UpdateOnchainPull(ctx, p)
+		_ = s.store.UpdateOnchainPull(ctx, p, PullSending)
 		return nil, fmt.Errorf("funding the payment from the on-chain pass didn't confirm; nothing was paid and the pull will be reconciled: %w", sendErr)
 	}
 	p.UpdatedAt = s.now().UTC()
-	if err := s.store.UpdateOnchainPull(ctx, p); err != nil {
+	if err := s.store.UpdateOnchainPull(ctx, p, PullSending); err != nil {
 		s.log.Error("onchain pass: recording a pull failed", "reservation_id", rv.ID, "signature", p.PullSignature, "state", p.State, "err", err)
 	}
 	if p.State == PullVoid {
@@ -736,7 +738,15 @@ func (s *OnchainPassService) Reconcile(ctx context.Context) (int, error) {
 }
 
 func (s *OnchainPassService) step(ctx context.Context, n *OnchainNetwork, p *OnchainPull) error {
-	save := func() error { p.UpdatedAt = s.now().UTC(); return s.store.UpdateOnchainPull(ctx, p) }
+	from := p.State
+	save := func() error {
+		p.UpdatedAt = s.now().UTC()
+		err := s.store.UpdateOnchainPull(ctx, p, from)
+		if err == nil {
+			from = p.State
+		}
+		return err
+	}
 	switch p.State {
 	case PullSending:
 		fate, err := spendpass.StatusOf(ctx, n.RPC, p.PullSignature, p.PullValidUntil)
