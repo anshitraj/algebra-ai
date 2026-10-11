@@ -36,17 +36,29 @@ func TestExecutionToolsAreListedWithTheRightInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var execute, status *gomcp.Tool
+	var execute, status, simulate *gomcp.Tool
 	for _, tool := range list.Tools {
 		switch tool.Name {
 		case "algebra.execute":
 			execute = tool
 		case "algebra.execution_status":
 			status = tool
+		case "algebra.simulate":
+			simulate = tool
 		}
 	}
-	if execute == nil || status == nil {
+	if execute == nil || status == nil || simulate == nil {
 		t.Fatalf("both tools must be listed, got %d tools", len(list.Tools))
+	}
+	for _, tool := range []*gomcp.Tool{execute, simulate} {
+		schema, ok := tool.InputSchema.(map[string]any)
+		if !ok {
+			t.Fatalf("%s schema: %T", tool.Name, tool.InputSchema)
+		}
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok || properties["allowed_networks"] == nil {
+			t.Errorf("%s must expose allowed_networks so agents can restrict the payment network", tool.Name)
+		}
 	}
 	for _, want := range []string{"capability", "max_price_usdc"} {
 		if !slices.Contains(requiredOf(t, execute), want) {

@@ -17,15 +17,16 @@ import (
 )
 
 type executeToolInput struct {
-	AgentToken  string               `json:"agent_token,omitempty" jsonschema:"bearer token identifying the calling agent; omit when the connection sends Authorization: Bearer"`
-	Capability  string               `json:"capability" jsonschema:"what you want done. Prefer a class from algebra.classes, such as token.price or solana.token-risk: Algebra then prices every provider of that work and pays the best one. A single provider's capability from algebra.discover_providers pins the call to that provider. Where the server offers it, solana.swap buys a token with USDC: input {\"output_mint\":\"<token mint>\",\"amount_usdc\":\"2.50\"}"`
-	Input       map[string]any       `json:"input,omitempty" jsonschema:"the request's parameters, exactly as the provider expects them, e.g. {\"mint\":\"So1111...\"}"`
-	MaxPrice    string               `json:"max_price_usdc" jsonschema:"the most you are willing to pay, in USDC, as a decimal string such as \"0.05\""`
-	Strategy    string               `json:"strategy,omitempty" jsonschema:"how to choose a provider: auto (default), cheapest or fastest"`
-	Window      string               `json:"window,omitempty" jsonschema:"what makes this request the same one as an earlier one. Default \"once\". To buy the same thing again later, pass a new window, such as today's date"`
-	Providers   []string             `json:"providers,omitempty" jsonschema:"providers to use: ones configured on this Algebra server, or catalog providers by id such as paysh:birdeye.data or circle:birdeye (find them with algebra.discover_providers). Leave empty to let Algebra use every configured provider for this capability, or the catalog provider a catalog capability belongs to"`
-	Candidates  []app.CandidateInput `json:"candidates,omitempty" jsonschema:"x402 endpoints you found yourself. They are treated as unverified, and the person's Spend Pass decides whether they may be paid"`
-	StoreResult *bool                `json:"store_result,omitempty" jsonschema:"whether Algebra may keep the provider's answer for a while (sealed, 24 hours by default) so that asking again returns it instead of 'already_committed'. Default true; pass false to have it not kept"`
+	AgentToken      string               `json:"agent_token,omitempty" jsonschema:"bearer token identifying the calling agent; omit when the connection sends Authorization: Bearer"`
+	Capability      string               `json:"capability" jsonschema:"what you want done. Prefer a class from algebra.classes, such as token.price or solana.token-risk: Algebra then prices every provider of that work and pays the best one. A single provider's capability from algebra.discover_providers pins the call to that provider. Where the server offers it, solana.swap buys a token with USDC: input {\"output_mint\":\"<token mint>\",\"amount_usdc\":\"2.50\"}"`
+	Input           map[string]any       `json:"input,omitempty" jsonschema:"the request's parameters, exactly as the provider expects them, e.g. {\"mint\":\"So1111...\"}"`
+	MaxPrice        string               `json:"max_price_usdc" jsonschema:"the most you are willing to pay, in USDC, as a decimal string such as \"0.05\""`
+	Strategy        string               `json:"strategy,omitempty" jsonschema:"how to choose a provider: auto (default), cheapest or fastest"`
+	Window          string               `json:"window,omitempty" jsonschema:"what makes this request the same one as an earlier one. Default \"once\". To buy the same thing again later, pass a new window, such as today's date"`
+	Providers       []string             `json:"providers,omitempty" jsonschema:"providers to use: ones configured on this Algebra server, or catalog providers by id such as paysh:birdeye.data or circle:birdeye (find them with algebra.discover_providers). Leave empty to let Algebra use every configured provider for this capability, or the catalog provider a catalog capability belongs to"`
+	Candidates      []app.CandidateInput `json:"candidates,omitempty" jsonschema:"x402 endpoints you found yourself. They are treated as unverified, and the person's Spend Pass decides whether they may be paid"`
+	StoreResult     *bool                `json:"store_result,omitempty" jsonschema:"whether Algebra may keep the provider's answer for a while (sealed, 24 hours by default) so that asking again returns it instead of 'already_committed'. Default true; pass false to have it not kept"`
+	AllowedNetworks []string             `json:"allowed_networks,omitempty" jsonschema:"payment networks allowed for this request, such as [\"solana-devnet\"] for test USDC or [\"solana\"] for real USDC. Other networks are refused before payment"`
 }
 
 type executionStatusInput struct {
@@ -77,6 +78,7 @@ func (srv *Server) registerEconomicTools(s *gomcp.Server) {
 			Spec: econ.Spec{
 				Capability: capability, Input: raw, Window: in.Window, Currency: "USDC", BudgetMaxMinor: budget,
 				ProviderPolicy: econ.ProviderPolicy{Strategy: in.Strategy},
+				Constraints:    econ.Constraints{AllowedNetworks: in.AllowedNetworks},
 			},
 			Candidates:    candidates,
 			DiscardResult: in.StoreResult != nil && !*in.StoreResult,
@@ -142,14 +144,15 @@ func (srv *Server) registerEconomicTools(s *gomcp.Server) {
 }
 
 type simulateToolInput struct {
-	AgentToken string               `json:"agent_token,omitempty" jsonschema:"bearer token identifying the calling agent; omit when the connection sends Authorization: Bearer"`
-	Capability string               `json:"capability" jsonschema:"what you want done, exactly as you would pass it to algebra.execute"`
-	Input      map[string]any       `json:"input,omitempty" jsonschema:"the request's parameters, exactly as you would pass them to algebra.execute"`
-	MaxPrice   string               `json:"max_price_usdc" jsonschema:"the most you would be willing to pay, in USDC, as a decimal string such as \"0.05\""`
-	Strategy   string               `json:"strategy,omitempty" jsonschema:"how to choose a provider: auto (default), cheapest or fastest"`
-	Providers  []string             `json:"providers,omitempty" jsonschema:"providers to consider, as for algebra.execute"`
-	Candidates []app.CandidateInput `json:"candidates,omitempty" jsonschema:"x402 endpoints you found yourself, as for algebra.execute"`
-	LiveQuotes bool                 `json:"live_quotes,omitempty" jsonschema:"ask each provider for its real price with a free unpaid request. Without it nothing leaves Algebra and the catalogs' listed prices stand in"`
+	AgentToken      string               `json:"agent_token,omitempty" jsonschema:"bearer token identifying the calling agent; omit when the connection sends Authorization: Bearer"`
+	Capability      string               `json:"capability" jsonschema:"what you want done, exactly as you would pass it to algebra.execute"`
+	Input           map[string]any       `json:"input,omitempty" jsonschema:"the request's parameters, exactly as you would pass them to algebra.execute"`
+	MaxPrice        string               `json:"max_price_usdc" jsonschema:"the most you would be willing to pay, in USDC, as a decimal string such as \"0.05\""`
+	Strategy        string               `json:"strategy,omitempty" jsonschema:"how to choose a provider: auto (default), cheapest or fastest"`
+	Providers       []string             `json:"providers,omitempty" jsonschema:"providers to consider, as for algebra.execute"`
+	Candidates      []app.CandidateInput `json:"candidates,omitempty" jsonschema:"x402 endpoints you found yourself, as for algebra.execute"`
+	LiveQuotes      bool                 `json:"live_quotes,omitempty" jsonschema:"ask each provider for its real price with a free unpaid request. Without it nothing leaves Algebra and the catalogs' listed prices stand in"`
+	AllowedNetworks []string             `json:"allowed_networks,omitempty" jsonschema:"payment networks allowed for this request, as for algebra.execute"`
 }
 
 func (srv *Server) registerSimulateTool(s *gomcp.Server) {
@@ -191,6 +194,7 @@ func (srv *Server) registerSimulateTool(s *gomcp.Server) {
 			Spec: econ.Spec{
 				Capability: capability, Input: raw, Window: "simulate", Currency: "USDC", BudgetMaxMinor: budget,
 				ProviderPolicy: econ.ProviderPolicy{Strategy: in.Strategy},
+				Constraints:    econ.Constraints{AllowedNetworks: in.AllowedNetworks},
 			},
 			Candidates: candidates, LiveQuotes: in.LiveQuotes,
 		})
