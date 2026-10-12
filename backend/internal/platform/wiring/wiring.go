@@ -450,6 +450,9 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	execSvc.SetHealth(health)
 	onboardingSvc := app.NewOnboardingService(accountSvc, commerceProfileSvc, privacyResolver)
 	demoSvc := app.NewDemoService(accountSvc, onboardingSvc)
+	// A demo account starts with a pass for the sandbox sellers, so its first
+	// request works; it pays only in the sandbox (EconomicService.restrictDemo).
+	demoSvc.SetPasses(spendPassSvc)
 	oauthProviders := map[string]identity.Provider{}
 	if cfg.Auth.GoogleClientID != "" && cfg.Auth.GoogleClientSecret != "" {
 		oauthProviders["google"] = identity.NewGoogle(cfg.Auth.GoogleClientID, cfg.Auth.GoogleClientSecret)

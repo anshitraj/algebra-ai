@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import * as api from "@/lib/api-client";
 import type { ProviderDetail, ProviderEndpoint, ProviderListing, ProviderSummary } from "@/lib/types";
@@ -287,6 +288,9 @@ function ProviderEndpoints({ provider }: { provider: ProviderSummary }) {
                   <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter endpoints" />
                 </div>
               )}
+              <Link href={`/console/providers/${encodeURIComponent(provider.id)}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                Full details
+              </Link>
               <a href={detail.page_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
                 {catalogName(detail.source)} <IconExternal size={12} />
               </a>

@@ -126,6 +126,8 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	if b.SandboxPersonas != nil {
 		// SANDBOX providers of token.price: alpha, beta, flaky, greedy, trap.
 		mux.HandleFunc("POST /api/v1/sandbox/x402/prices/{name}", b.SandboxPersonas.Serve)
+		// What sandbox (and demo) accounts can buy: every simulated seller.
+		mux.HandleFunc("GET /api/v1/sandbox/sellers", api.sandboxSellers)
 	}
 
 	mux.HandleFunc("GET /api/v1/billing", api.getBilling)
