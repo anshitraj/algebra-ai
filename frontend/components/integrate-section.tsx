@@ -33,7 +33,7 @@ export function IntegrateSection() {
               the agent its token, and it asks for outcomes: <code className="font-mono text-sm text-foreground">algebra.execute</code>{" "}
               over MCP, or <code className="font-mono text-sm text-foreground">POST /api/v1/execute</code> over REST.
               It can browse what is on offer with{" "}
-              <code className="font-mono text-sm text-foreground">algebra.discover_providers</code>.
+              <code className="font-mono text-sm text-foreground">algebra.discover</code>.
             </p>
             <p className="mt-4 text-sm leading-relaxed text-muted">
               The pass is the agent&rsquo;s whole authority. It never receives a key, a card or a payment value, and every
