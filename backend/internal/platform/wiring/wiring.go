@@ -466,6 +466,9 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	}
 	intelSvc := app.NewIntelService(postgres.NewIntelRepo(db), intelSources...)
 	execSvc.SetTrust(intelSvc)
+	// The sandbox sellers are served by this process: list them now, so a
+	// seller whose payee changed is refused from the first request.
+	intelSvc.SeedLocal(ctx)
 	// The free health probe: unpaid 402 requests, never a payment. Its
 	// findings keep dead and overcharging endpoints out of the router.
 	health := app.NewHealthService(execSvc, postgres.NewHealthRepo(db), candidates)
@@ -731,6 +734,8 @@ type personaRegistry struct {
 }
 
 func (p personaRegistry) Name() string { return "sandbox" }
+
+func (p personaRegistry) Local() bool { return true }
 
 func (p personaRegistry) Snapshot(context.Context) ([]intel.Listed, bool, error) {
 	return p.s.Listings(p.base), false, nil

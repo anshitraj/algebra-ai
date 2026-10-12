@@ -1,6 +1,7 @@
 package intel
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,6 +121,18 @@ func TestEndpoint_DeliveryVerifiesOnlyAtThePinnedPayee(t *testing.T) {
 	}
 	if _, err := e.SetTrust("trusted", "", "user_1", t0); err == nil {
 		t.Fatal("unknown trust state accepted")
+	}
+}
+
+func TestCheck_PayeesThatAbbreviateAlikeAreShownInFull(t *testing.T) {
+	save, _ := Merge(nil, []Listed{listing(1000, "sandbox-provider-shifty")}, t0)
+	_, detail := save[0].Check("sandbox-attacker-shifty")
+	if !strings.Contains(detail, "sandbox-attacker-shifty") || !strings.Contains(detail, "sandbox-provider-shifty") {
+		t.Fatalf("detail: %q", detail)
+	}
+	save, _ = Merge(nil, []Listed{listing(1000, "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU")}, t0)
+	if _, detail := save[0].Check("9kEVg2noE8uubD6e1jMtEwumULEyNLgr7uYCXDVL4CLW"); !strings.Contains(detail, "9kEV…4CLW") || !strings.Contains(detail, "7xKX…gAsU") {
+		t.Fatalf("detail: %q", detail)
 	}
 }
 

@@ -34,6 +34,14 @@ type IntelSource interface {
 	Snapshot(ctx context.Context) (listed []intel.Listed, stale bool, err error)
 }
 
+// LocalIntelSource is a catalog this process serves itself (the sandbox
+// sellers). It is read when the registry starts, so its payees are pinned
+// before the first request rather than at the first scheduled refresh.
+type LocalIntelSource interface {
+	IntelSource
+	Local() bool
+}
+
 // IntelFilter narrows the registry for the dashboard.
 type IntelFilter struct {
 	Source     string
@@ -194,6 +202,41 @@ func (s *IntelService) Sources() []string {
 		out[i] = src.Name()
 	}
 	return out
+}
+
+// SeedLocal reads every LocalIntelSource into the registry now. It takes no
+// lease: a local listing is the same in every instance, and Merge applied
+// twice changes nothing the second time.
+func (s *IntelService) SeedLocal(ctx context.Context) *SyncRun {
+	run := &SyncRun{ID: newID("sync"), Trigger: "startup", Status: "running", StartedAt: s.now().UTC()}
+	for _, src := range s.sources {
+		if l, ok := src.(LocalIntelSource); !ok || !l.Local() {
+			continue
+		}
+		if len(run.Sources) == 0 {
+			if err := s.store.SaveRun(ctx, *run); err != nil {
+				s.log.Warn("provider intelligence: recording the run failed", "err", err)
+			}
+		}
+		sr := s.syncSource(ctx, src, run.ID)
+		run.Sources = append(run.Sources, sr)
+		run.Seen, run.Added, run.Changed, run.Removed = run.Seen+sr.Seen, run.Added+sr.Added, run.Changed+sr.Changed, run.Removed+sr.Removed
+		if !sr.OK {
+			run.Status, run.Error = "partial", sr.Error
+		}
+	}
+	if len(run.Sources) == 0 {
+		return nil
+	}
+	if run.Status == "running" {
+		run.Status = "ok"
+	}
+	end := s.now().UTC()
+	run.FinishedAt = &end
+	if err := s.store.SaveRun(context.WithoutCancel(ctx), *run); err != nil {
+		s.log.Warn("provider intelligence: recording the run failed", "err", err)
+	}
+	return run
 }
 
 // Run looks every Tick whether the refresh is due and runs it when this

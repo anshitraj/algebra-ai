@@ -301,7 +301,11 @@ func (e Endpoint) Check(payTo string) (string, string) {
 		return ReasonBlocked, why
 	}
 	if e.PinnedPayTo != "" && payTo != "" && payTo != e.PinnedPayTo {
-		return ReasonPayeeChanged, fmt.Sprintf("it asks to be paid at %s, not at %s, the payee pinned for it", Short(payTo), Short(e.PinnedPayTo))
+		asked, pinned := Short(payTo), Short(e.PinnedPayTo)
+		if asked == pinned {
+			asked, pinned = payTo, e.PinnedPayTo
+		}
+		return ReasonPayeeChanged, fmt.Sprintf("it asks to be paid at %s, not at %s, the payee pinned for it", asked, pinned)
 	}
 	return "", ""
 }
