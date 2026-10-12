@@ -69,6 +69,9 @@ Evidence comes in four kinds, and they are not interchangeable:
 | Trust decisions are a signed-in person's, never a key's | HTTP test `TestProviderRegistryOverHTTP_OpenToReadDecidedByAPerson` |
 | Price changes, removals and restores are recorded; an unchanged listing records nothing | Unit tests `TestMerge_PriceRemovalAndRestore`, `TestMerge_UnchangedListingRecordsNoChange` |
 | The refresh is due at 00:00, 06:00, 12:00 and 18:00 UTC | Unit test `TestNextRun_SixHourSlotsUTC` |
+| A refresh detects a new endpoint, a re-priced one (suspicious when it more than doubles) and a re-payee'd one (blocked); a blocked endpoint is refused at its new payee and at its old one; a listing never verifies itself | Postgres test `TestIntelRefresh_NewChangedAndRemovedEndpointsAndTheirTrust` (`internal/platform/postgres`), on a stand-in catalog |
+| A catalog that fails, or answers with nothing, keeps its last good copy; a dropped endpoint is marked removed and keeps its history and its block | the same test |
+| With several instances exactly one runs the refresh; a held lease is not taken, even on demand; only its owner releases it; an expired lease can be taken over | Postgres test `TestScheduledJob_ExactlyOneInstanceTakesTheLease` (sixteen concurrent claimers) |
 | The refresh ran against the four live catalogs and filled the registry (6,131 endpoints, 1,725 providers on 2026-10-12) | Browser 2026-10-12, Provider intelligence page |
 
 ### Never twice, and receipts
@@ -123,5 +126,4 @@ Evidence comes in four kinds, and they are not interchangeable:
 - OAuth 2.1 for hosted MCP connectors
 - Parallel as an optional discovery source
 - Asynchronous jobs and batch orchestration
-- Demo E as a scripted run against stand-in catalogs, and a two-instance job-lease test
 - Base, CCTP, cards, cross-chain balances, enterprise SSO

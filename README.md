@@ -132,7 +132,7 @@ Wallet and rail details, mainnet, the first-payment runbook and `x402-dryrun` (p
 | **B** | A devnet payment from an on-chain Spend Pass, with explorer links and a signed receipt | Works on devnet; three finalized transactions. The seller is Algebra's own demo provider |
 | **C** | A provider that changes its payee is refused, then blocked, with the reason in the UI | Works; tested over HTTP |
 | **D** | The same request twice pays once | Works; tested over HTTP and shown on devnet |
-| **E** | The registry refresh detects new, re-priced and re-payee'd endpoints | The rules are unit-tested and the refresh runs against the live catalogs; a scripted end-to-end run on stand-in catalogs is not written |
+| **E** | The registry refresh detects new, re-priced and re-payee'd endpoints | Works; tested on Postgres against a stand-in catalog, including sixteen instances racing for the job; runs against the four live catalogs |
 | **F** | A Jupiter swap: quote, policy, simulate before sign | Tested on a fake cluster only. No swap has landed on a chain |
 
 How to run each, and the evidence: [docs/DEMO.md](docs/DEMO.md#the-six-demonstrations). Scripts for a video: [docs/HACKATHON_CHECKLIST.md](docs/HACKATHON_CHECKLIST.md).
@@ -208,7 +208,7 @@ cargo build-sbf --manifest-path solana-program/Cargo.toml && cargo test --manife
 pnpm --dir frontend lint && pnpm --dir frontend build                                                               # the web app
 ```
 
-Last full run, 2026-10-12 (Go 1.26, cargo 1.92, Node 24): 63 Go packages pass without a database and again against Postgres (57 more tests run with it); `go vet` is clean; the program builds and its 13 unit and 11 LiteSVM tests pass; the web app lints, typechecks and builds.
+Last full run, 2026-10-12 (Go 1.26, cargo 1.92, Node 24): 63 Go packages pass without a database and again against Postgres (59 more tests run with it); `go vet` is clean; the program builds and its 13 unit and 11 LiteSVM tests pass; the web app lints, typechecks and builds.
 
 Tests that need Postgres skip themselves when `DATABASE_URL` and `ALGEBRA_MASTER_KEY` aren't set. The end-to-end tests are hermetic: they turn every provider catalog off and use the sandbox, a fake Solana node and a fake Jupiter, so nothing leaves the machine.
 

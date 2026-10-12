@@ -135,7 +135,10 @@ quote, a quote is not a test and a test is not verification:
 (`MAINNET_EXECUTION`), and the page says so.
 
 Tests: `backend/internal/domain/intel/intel_test.go` (merge, pinning, payee
-change, price change, removal and restore, six-hour slots, stable IDs) and
+change, price change, removal and restore, six-hour slots, stable IDs),
+`backend/internal/platform/postgres/intel_refresh_test.go` (a whole refresh
+against a stand-in catalog on Postgres, and sixteen instances racing for the
+job's lease) and
 `backend/test/e2e/provider_trust_http_test.go` (a sandbox seller that changes
 its payee is refused with `PAYEE_CHANGED`, then blocked, over real HTTP).
 
