@@ -165,3 +165,7 @@ make test-integration   # real Postgres, and the end-to-end flows over HTTP and 
 Tests that need Postgres skip themselves when `DATABASE_URL` and `ALGEBRA_MASTER_KEY` aren't set. The end-to-end tests are hermetic: they turn every provider catalog off and use the sandbox, a fake Solana node and a fake Jupiter, so nothing leaves the machine.
 
 > Core principle: give agents **permission to spend**, not **access to money**.
+
+## Program tests
+<img width="861" height="684" alt="image" src="https://github.com/user-attachments/assets/1101b5fe-8352-487d-9fa7-f1927af14cb9" />
+
