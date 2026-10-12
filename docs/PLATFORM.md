@@ -105,42 +105,84 @@ verified. Changes go to `provider_changes` and are never deleted: `added`,
 `removed`, `restored`, `price_changed`, `payee_changed`, `callable_changed`,
 `unreachable`, `trust_changed`. A removed endpoint keeps its row and history.
 
-### Trust
+### Trust: three facts, kept apart
 
-Trust comes from evidence Algebra collected, never from what a catalog or a
-provider says about itself.
+A business buying security needs to know which of these it is being told.
+None implies the next.
 
-| State | Means |
+| Fact | Means | Who decides |
+|---|---|---|
+| **Payment tested** | Algebra paid the endpoint and it delivered. One transaction worked. It says nothing about who the seller is: anyone can stand up an endpoint, charge a tenth of a cent and return plausible data. | recorded automatically (`tested_at`) |
+| **Identity verified** | Every check of the verification standard passed, and a person reviewed evidence of who runs the endpoint and wrote it down. This is the only thing the check mark means. | a signed-in person, never code |
+| **Execution approved** | One request passed the Spend Pass and the router's guards at the moment it was made. | decided per request; never stored on an endpoint |
+
+Nothing automatic verifies an endpoint: not a listing, not a quote, not a
+paid delivery, not a search result. (Until migration 0024 a delivery to the
+pinned payee did; every endpoint verified that way was returned to
+`unverified`, with the reason on its history, and kept its `tested_at`.)
+
+**The verification standard**
+([`backend/internal/domain/intel/verification.go`](../backend/internal/domain/intel/verification.go)).
+All six must pass before a person may verify, and the API returns the list
+with every endpoint (`verification`), so the console shows what is missing:
+
+| Check | Passes when |
 |---|---|
-| `unverified` | Listed. Nothing more is known. Every new listing starts here. |
-| `verified` | Algebra paid it, it delivered, and it asked to be paid at the payee pinned for it (`PAID_DELIVERY_MATCHED`), or a person marked it. A fact about past calls, not a guarantee. |
-| `blocked` | It named a different payee than the pinned one (`PAYEE_CHANGED`), or a person blocked it. Nothing is paid to it until a person unblocks it. |
+| `listed` | its catalog lists it now |
+| `host` | it is served over HTTPS from a named domain (not an IP address or localhost). Sandbox sellers are this server's own and are exempt |
+| `quoted` | an unpaid request returned payment terms |
+| `payee` | a payee is pinned, and it is the one the endpoint names |
+| `tested` | a paid call delivered |
+| `not_blocked` | it is not blocked |
+
+Then the person must give the evidence they reviewed, in at least 20
+characters: who runs the endpoint and how they know. It is stored on the
+decision (`trust_changed`, reason `IDENTITY_REVIEWED`) with who made it.
+Verifying without it, or with a check unmet, is refused with the reason.
+
+What the standard does **not** establish: the seller's legal identity beyond
+what the reviewer recorded, its reputation, or its future behaviour. That is
+why every payment is still checked against the pass and the guards, whatever
+an endpoint's trust.
+
+| Trust state | Means |
+|---|---|
+| `unverified` | The default, and where an endpoint stays until a person verifies it. It may still be quoted and payment tested. |
+| `verified` | Identity verified, as above. |
+| `blocked` | It named a different payee than the pinned one (`PAYEE_CHANGED`), or a person blocked it. Nothing is paid to it, at any payee, until a person unblocks it. |
 
 The payee is pinned the first time Algebra sees one. A different payee later,
 in a listing or in a live quote, is refused at payment time and blocks the
-endpoint; its earlier verification is void. A listed price that more than
-doubles is marked suspicious for a person to look at (the live price is still
-checked against the listing on every call). Trust decisions by a person need a
-signed-in session (never an API key or an agent token; in production the
-operator token as well) and are written to the change history with who decided.
+endpoint; its verification is void. When a person unblocks it the new payee
+is accepted and the endpoint is untested again: a new payee is a new
+counterparty. A listed price that more than doubles is marked suspicious for a
+person to look at (the live price is still checked against the listing on
+every call). Trust decisions need a signed-in session (never an API key or an
+agent token; in production the operator token as well).
 
-The console shows five separate facts per endpoint, because a listing is not a
-quote, a quote is not a test and a test is not verification:
+The registry covers what the catalogs list and the sandbox sellers. A provider
+the operator configures directly (`ECONOMIC_PROVIDERS`, such as the devnet demo
+provider) is the operator's own choice and is not in it.
+
+The console shows five separate facts per endpoint:
 
 | Listed | Quoted | Tested | Verified | Executable |
 |---|---|---|---|---|
-| a catalog lists it now | an unpaid request returned payment terms | Algebra paid it and it delivered | tested, to the pinned payee, not blocked since | the router can pay and call it today |
+| a catalog lists it now | an unpaid request returned payment terms | payment tested | identity verified | the router can pay and call it today |
 
 "Executable" counts mainnet endpoints too. Mainnet payments are off by default
 (`MAINNET_EXECUTION`), and the page says so.
 
 Tests: `backend/internal/domain/intel/intel_test.go` (merge, pinning, payee
-change, price change, removal and restore, six-hour slots, stable IDs),
+change, price change, removal and restore, six-hour slots, stable IDs; that no
+number of deliveries verifies; each check failing on its own; that a payee
+change voids testing and verification),
 `backend/internal/platform/postgres/intel_refresh_test.go` (a whole refresh
 against a stand-in catalog on Postgres, and sixteen instances racing for the
-job's lease) and
-`backend/test/e2e/provider_trust_http_test.go` (a sandbox seller that changes
-its payee is refused with `PAYEE_CHANGED`, then blocked, over real HTTP).
+job's lease) and `backend/test/e2e/provider_trust_http_test.go` (a sandbox
+seller that changes its payee is refused with `PAYEE_CHANGED`, then blocked; a
+paid delivery leaves a seller tested and unverified, and verifying it needs
+the evidence), over real HTTP.
 
 | Route | |
 |---|---|
@@ -149,7 +191,7 @@ its payee is refused with `PAYEE_CHANGED`, then blocked, over real HTTP).
 | `GET /api/v1/intel/endpoints/{id}` | one endpoint and its history |
 | `GET /api/v1/intel/changes` | what changed, newest first: `kind`, `suspicious`, `endpoint` |
 | `POST /api/v1/intel/refresh` | refresh now (a person) |
-| `PUT /api/v1/intel/endpoints/{id}/trust` | `{"trust","note"}` (a person) |
+| `PUT /api/v1/intel/endpoints/{id}/trust` | `{"trust","note"}` (a person). `verified` needs every check passed and the evidence in `note` |
 
 ### Parallel (optional discovery): not built
 

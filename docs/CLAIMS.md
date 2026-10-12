@@ -57,6 +57,9 @@ Evidence comes in four kinds, and they are not interchangeable:
 | A looping agent is stopped by the per-minute cap | HTTP test `TestVelocityOverHTTP_ALoopingAgentIsStopped` |
 | An agent can never approve its own spending | `internal/app/authz_test.go`, `internal/app/policy_controls_test.go` |
 | No mainnet payment is signed unless `MAINNET_EXECUTION=on` | Unit test `TestEconomic_NoMainnetPaymentIsSignedUnlessEnabled` |
+| `MAINNET_EXECUTION=on` is refused at startup unless `SPEND_PASS_REQUIRED` includes mainnet | Unit test `TestMainnetExecutionNeedsOnChainPassesRequired` |
+| The server reads the program's upgrade authority from the cluster; with mainnet execution on it refuses to start if that authority is its own payer key or cannot be read | Unit tests `TestProgramAccountsNameTheirUpgradeAuthority`, `TestMainnetReadiness_EveryBlockingGateIsNeededToPay`; seen live on devnet 2026-10-12 (startup warning naming the key) |
+| `GET /api/v1/mainnet/readiness` reports every gate, whether it passes and why not; no configuration makes an unreviewed program "ready for customer funds" | Unit tests `TestMainnetReadiness_*`; HTTP test `TestMainnetReadinessOverHTTP_AServerWithNoMainnetSetUpSaysWhyItCannotPay` |
 | Demo accounts pay in the sandbox only | HTTP test `TestDemoAccountOverHTTP_PaysInTheSandboxOnly` |
 
 ### Provider trust
@@ -65,7 +68,9 @@ Evidence comes in four kinds, and they are not interchangeable:
 |---|---|
 | A new listing is unverified, with its payee pinned | Unit test `TestMerge_NewEndpointIsUnverifiedWithItsPayeePinned` |
 | A provider that changes its payee is refused at payment time with `PAYEE_CHANGED`, then blocked | HTTP test `TestProviderTrustOverHTTP_APayeeChangeIsRefusedThenBlocked`; unit test `TestMerge_ListingPayeeChangeBlocks`; Browser 2026-10-12 (reason shown in Quickstart and Provider intelligence) |
-| Verification is earned only by a paid delivery to the pinned payee | Unit test `TestEndpoint_DeliveryVerifiesOnlyAtThePinnedPayee` |
+| A paid delivery makes an endpoint payment tested and never verifies it, however many times it delivers | Unit test `TestEndpoint_ADeliveryTestsItAndNeverVerifiesIt`; HTTP test `TestProviderTrustOverHTTP_APaidDeliveryTestsASellerAndOnlyAReviewVerifiesIt` |
+| Verifying needs all six checks of the standard (listed, HTTPS named host, quoted, payee pinned and consistent, payment tested, not blocked) and a person's written evidence; each check failing on its own refuses it | Unit test `TestSetTrust_VerifyingNeedsEveryCheckAndTheEvidenceReviewed`; the HTTP test above; Postgres test `TestIntelRefresh_*` |
+| A payee change voids verification and testing: after an unblock both must be earned again | Unit test `TestEndpoint_APayeeChangeVoidsVerificationAndTesting` |
 | Trust decisions are a signed-in person's, never a key's | HTTP test `TestProviderRegistryOverHTTP_OpenToReadDecidedByAPerson` |
 | Price changes, removals and restores are recorded; an unchanged listing records nothing | Unit tests `TestMerge_PriceRemovalAndRestore`, `TestMerge_UnchangedListingRecordsNoChange` |
 | The refresh is due at 00:00, 06:00, 12:00 and 18:00 UTC | Unit test `TestNextRun_SixHourSlotsUTC` |
@@ -91,6 +96,7 @@ Evidence comes in four kinds, and they are not interchangeable:
 | The program enforces per-call cap, budget, window, expiry, freeze, revoke, signer and destination | `solana-program/programs/spend-pass/src/state.rs` unit tests; `solana-program/programs/spend-pass/tests/mod.rs` LiteSVM tests against the built program |
 | A paid request through the API was funded by an on-chain pull, refused by an on-chain freeze, and refunded from chain proof | Chain: SPEND_PASS_PROGRAM.md (2026-10-09) |
 | A project's devnet API key paid from an on-chain pass vault | Chain: DEMO.md (2026-10-12), three finalized transactions |
+| After the trust and mainnet-gate changes a project's devnet API key still pays on devnet, a repeat pays nothing, the receipt verifies, and the same key is refused on mainnet (`ENVIRONMENT_NETWORK_MISMATCH`) | Chain: DEMO.md (2026-10-12, second run), one finalized transaction |
 | x402 `exact` and `upto` (payment channel) payments settle on devnet | Chain: DEMO.md (2026-10-07) |
 | A pull's state moves only by compare-and-set, so two processes cannot both refund it | Unit test `TestPullStateMovesOnlyFromWhereItWas` |
 
@@ -107,6 +113,8 @@ Evidence comes in four kinds, and they are not interchangeable:
 | "Works on mainnet" / "live on mainnet" | No mainnet payment has been made. The program is not deployed on mainnet. See [MAINNET_READINESS.md](MAINNET_READINESS.md) |
 | "Jupiter swaps executed" | No swap has landed on any chain. Tested against a fake cluster only |
 | "Audited" | Neither the program nor the server has had an independent review |
+| "Verified provider" as a statement about the seller's legal identity, reputation or future safety | The check mark means the six checks passed and a person recorded the evidence they reviewed. On 2026-10-12 no catalog endpoint is verified |
+| "Verified" for an endpoint that has only been paid | That is *payment tested*. It proves one transaction worked |
 | "Paid a third-party provider on devnet" | The devnet sellers are Algebra's own demo provider. Third-party providers were priced and their payments simulated on mainnet, never paid |
 | "Subscriptions" / "billing" for the five plans | No payment processor is connected to them. (Razorpay code exists for the original product's two plans; it is not wired to these) |
 | "Works with ChatGPT / Claude / Cursor" as a certified integration | The MCP server is tested with the official Go SDK client. We have no recorded run of each named client against this build |

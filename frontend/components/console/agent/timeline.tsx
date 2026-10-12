@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { ProviderCard, StepDetail, StepHint, StepStatus } from "@/lib/agent/events";
-import { IconBan, IconCheck, IconChevronDown, IconClock, IconExternal, IconX } from "@/components/icons";
+import Link from "next/link";
+import { IconArrowRight, IconBan, IconCheck, IconChevronDown, IconClock, IconExternal, IconShield, IconX } from "@/components/icons";
+import type { PolicyReport } from "@/lib/policy-check";
 import { LiveActivity, Pulse, ThinkingLine } from "./live-activity";
 import { ProviderLogo } from "@/components/provider-logo";
 import { networkLabel } from "@/lib/network";
@@ -190,6 +192,44 @@ function Detail({ detail, onAsk }: { detail: StepDetail; onAsk?: Ask }) {
             </div>
           ))}
         </dl>
+      )}
+      {detail.policy && <PolicySection report={detail.policy} />}
+    </div>
+  );
+}
+
+/** What the Spend Pass's rules said about this payment, including the rules that aren't set. */
+function PolicySection({ report }: { report: PolicyReport }) {
+  const bare = !report.custom && !report.checks.some((c) => c.state === "asked");
+  return (
+    <div className={`border-t border-border px-3.5 py-3 ${bare ? "bg-accent-tint/40" : ""}`}>
+      <p className="flex items-start gap-2 text-[0.82rem] font-medium text-foreground">
+        <IconShield size={15} className={`mt-0.5 shrink-0 ${bare ? "text-accent" : "text-primary"}`} />
+        <span>{report.headline}</span>
+      </p>
+      <ul className="mt-2 space-y-1 pl-[1.4rem]">
+        {report.checks.map((c) => (
+          <li key={c.label} className="flex items-start gap-2 text-xs">
+            <span
+              aria-hidden
+              className={`mt-[0.2rem] grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full ${
+                c.state === "open" ? "border border-dashed border-muted/70" : "bg-primary text-primary-tint"
+              }`}
+            >
+              {c.state !== "open" && <IconCheck size={9} strokeWidth={3} />}
+            </span>
+            <span className="min-w-0">
+              <span className="text-muted">{c.label}: </span>
+              <span className={c.state === "open" ? "text-muted italic" : "text-foreground"}>{c.result}</span>
+              <span className="sr-only">{c.state === "open" ? " (no rule set)" : " (met)"}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {bare && (
+        <Link href="/console/firewall" className="mt-2.5 ml-[1.4rem] inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+          Set your own rules for this pass <IconArrowRight size={12} />
+        </Link>
       )}
     </div>
   );

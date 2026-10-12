@@ -18,6 +18,8 @@ type ChatRequestBody = {
   spend_pass_id?: string;
   /** "solana" (mainnet) or "solana-devnet". A demo account is always put in the sandbox, whatever this says. */
   network?: string;
+  /** "Ask me before every payment". On unless this is false. */
+  ask_first?: boolean;
 };
 
 const MAX_MESSAGE_CHARS = 4000;
@@ -87,8 +89,10 @@ export async function POST(request: Request) {
   // itself can't be reached, don't block the person.
   const quota = await consumeAgentTurn(cookie).catch((): TurnQuota => ({ ok: true }));
   if (!quota.ok) return NextResponse.json({ error: quotaMessage(quota) }, { status: 429 });
-  const identity: ServerIdentity = { ...token, passId: pass?.id, network };
-  const systemPrompt = buildSystemPrompt({ network, pass, rail: rails.find((r) => r.network === network), mode: token.mode });
+  // "Ask me before every payment" is on unless the person turned it off.
+  const askFirst = body.ask_first !== false;
+  const identity: ServerIdentity = { ...token, passId: pass?.id, pass: pass ?? undefined, network, askFirst };
+  const systemPrompt = buildSystemPrompt({ network, pass, rail: rails.find((r) => r.network === network), mode: token.mode, askFirst });
   const tools = toolsFor();
   const history = trimHistory(Array.isArray(body.history) ? body.history : []);
 

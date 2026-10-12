@@ -218,3 +218,33 @@ func TestLeadsOverHTTP_AnEnquiryIsStoredAndOnlyTheOperatorReadsIt(t *testing.T) 
 		t.Fatalf("exactly the one real enquiry is stored, not the refused ones or the bot's: %d", found)
 	}
 }
+
+func TestMainnetReadinessOverHTTP_AServerWithNoMainnetSetUpSaysWhyItCannotPay(t *testing.T) {
+	_, base := serve(t)
+	if status, _, _ := browserCall(t, "GET", base+"/api/v1/mainnet/readiness", nil, nil); status != 401 {
+		t.Fatalf("readiness is for a signed-in person: %d", status)
+	}
+	alice := signUp(t, base, "Alice")
+	status, _, out := browserCall(t, "GET", base+"/api/v1/mainnet/readiness", alice, nil)
+	if status != 200 || out["can_pay"] != false || out["ready_for_customer_funds"] != false {
+		t.Fatalf("readiness: %d %v", status, out)
+	}
+	if works, _ := out["works_today"].([]any); len(works) == 0 {
+		t.Fatalf("mainnet is read-only, not absent: %v", out)
+	}
+	failing := map[string]bool{}
+	for _, g := range out["gates"].([]any) {
+		gate := g.(map[string]any)
+		if gate["passed"] != true {
+			if gate["detail"] == nil || gate["detail"] == "" {
+				t.Errorf("a failing gate says why: %v", gate)
+			}
+			failing[gate["id"].(string)] = true
+		}
+	}
+	for _, id := range []string{"rail", "program", "passes_required", "upgrade_authority", "execution", "review", "signer"} {
+		if !failing[id] {
+			t.Errorf("gate %q should fail on a server with no mainnet set-up", id)
+		}
+	}
+}

@@ -20,6 +20,10 @@ export type ServerIdentity = {
   passId?: string;
   /** The network every payment in this chat is restricted to. */
   network: ChatNetwork;
+  /** The pass itself, as read this turn: its rules are reported with each payment. */
+  pass?: SpendPass;
+  /** The person wants to say yes to every payment, whatever the pass allows. */
+  askFirst?: boolean;
 };
 
 export class ServerApiError extends Error {
@@ -178,6 +182,8 @@ export async function execute(identity: ServerIdentity, b: ExecuteBody): Promise
       currency: "USDC",
       constraints: { allowed_networks: [identity.network] },
       spend_pass_id: identity.passId,
+      // Only ever adds a step: the person's yes, before anything is paid.
+      require_approval: identity.askFirst || undefined,
     },
   });
   return answer(res);

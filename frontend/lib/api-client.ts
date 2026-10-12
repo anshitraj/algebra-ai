@@ -19,6 +19,7 @@ import type {
   SessionInfo,
   SpendPass,
   User,
+  WalletsView,
 } from "./types";
 import type {
   APIKey,
@@ -204,6 +205,11 @@ export function getProvider(id: string) {
   return apiFetch<ProviderDetail>(`/api/v1/providers/${id.split("/").map(encodeURIComponent).join("/")}`);
 }
 
+/** The signed-in person's own wallets and what each holds on a cluster. force skips the server's few-second cache. */
+export function myWallets(network: string, force = false) {
+  return apiFetch<WalletsView>(`/api/v1/me/wallets?network=${encodeURIComponent(network)}${force ? "&refresh=1" : ""}`);
+}
+
 /** Mainnet and devnet: whether Algebra can pay on each, from which wallet, with what balance. */
 export function listRails() {
   return apiFetch<{ rails: RailStatus[]; sandbox: boolean }>("/api/v1/rails");
@@ -274,6 +280,11 @@ export function freezePass(id: string, frozen: boolean) {
 
 export function setPassControls(id: string, c: PassControls) {
   return apiFetch<SpendPass>(`/api/v1/me/passes/${encodeURIComponent(id)}/controls`, { method: "PUT", body: c });
+}
+
+/** A pass's own rules: per-call cap, ask-me-above amount (0 asks every time), provider allow-list. null clears a limit. */
+export function setPassRules(id: string, r: { max_per_purchase_minor_units: number | null; approve_above_minor_units: number | null; allowed_merchants: string[] }) {
+  return apiFetch<SpendPass>(`/api/v1/me/passes/${encodeURIComponent(id)}/rules`, { method: "PUT", body: r });
 }
 
 /** "Would this be allowed, and who would do it?" Nothing is reserved or paid. */

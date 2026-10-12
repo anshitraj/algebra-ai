@@ -118,6 +118,43 @@ type PassControlStore interface {
 	SetFrozen(ctx context.Context, id string, at *time.Time) error
 	SetFrozenAll(ctx context.Context, userID string, at *time.Time) (int, error)
 	SetControls(ctx context.Context, id string, c spendpass.Controls) error
+	// SetRules replaces a pass's per-call cap, its ask-me-above amount and
+	// its provider allow-list (nil clears a limit; an empty list allows any).
+	SetRules(ctx context.Context, id string, maxPerCall, approveAbove *int64, providers []string) error
+}
+
+// PassRules are the rules a person sets on a pass after making it.
+type PassRules struct {
+	MaxPerCallMinor   *int64   `json:"max_per_purchase_minor_units"`
+	ApproveAboveMinor *int64   `json:"approve_above_minor_units"`
+	AllowedProviders  []string `json:"allowed_merchants"`
+}
+
+// UpdateRules changes a live pass's per-call cap, approval amount and
+// provider allow-list. The pass is checked again as a whole, so a rule can't
+// make it invalid (a cap above the budget, a negative amount).
+func (s *SpendPassService) UpdateRules(ctx context.Context, userID, passID string, r PassRules) (*spendpass.Pass, error) {
+	cs, err := s.controlStore()
+	if err != nil {
+		return nil, err
+	}
+	p, err := s.store.Get(ctx, passID)
+	if err != nil {
+		return nil, err
+	}
+	if p.UserID != userID || p.RevokedAt != nil {
+		return nil, fmt.Errorf("%w: pass %s", shared.ErrNotFound, passID)
+	}
+	next := *p
+	next.MaxPerPurchaseMinorUnits, next.ApproveAboveMinorUnits, next.AllowedMerchants = r.MaxPerCallMinor, r.ApproveAboveMinor, r.AllowedProviders
+	checked, err := next.Normalize(time.Now(), p.AllowedCategories)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidRequest, err)
+	}
+	if err := cs.SetRules(ctx, passID, checked.MaxPerPurchaseMinorUnits, checked.ApproveAboveMinorUnits, checked.AllowedMerchants); err != nil {
+		return nil, err
+	}
+	return s.store.Get(ctx, passID)
 }
 
 func (s *SpendPassService) controlStore() (PassControlStore, error) {

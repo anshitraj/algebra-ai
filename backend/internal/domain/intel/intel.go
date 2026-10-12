@@ -5,9 +5,12 @@
 // Trust is earned from evidence Algebra collected itself, never from what a
 // catalog or a provider says about itself:
 //
-//   - unverified: listed, nothing more is known. The default.
-//   - verified: Algebra paid it, it delivered, and the payee it asked for was
-//     the payee pinned for it. A fact about past calls, not an endorsement.
+//   - unverified: the default, and where every endpoint stays until a person
+//     verifies it. An unverified endpoint may still have been quoted and
+//     payment tested: those are separate facts (see Levels).
+//   - verified: every check of the verification standard passed and a person
+//     reviewed evidence of who runs it (verification.go). Never automatic: a
+//     paid delivery proves a transaction worked, not who the seller is.
 //   - blocked: it asked to be paid somewhere other than its pinned payee, or
 //     a person blocked it. Nothing is paid to it until a person unblocks it.
 //
@@ -71,8 +74,9 @@ const (
 	ReasonPayeeChanged = "PAYEE_CHANGED"
 	// ReasonBlocked: the endpoint is blocked; nothing is paid to it.
 	ReasonBlocked = "PROVIDER_BLOCKED"
-	// ReasonPaidDelivery: a paid call delivered, to the pinned payee.
-	ReasonPaidDelivery = "PAID_DELIVERY_MATCHED"
+	// ReasonIdentityReviewed: every automatic check passed and a person
+	// reviewed evidence of who runs the endpoint.
+	ReasonIdentityReviewed = "IDENTITY_REVIEWED"
 	// ReasonManual: a person decided.
 	ReasonManual = "MANUAL"
 )
@@ -124,9 +128,11 @@ type Levels struct {
 	Listed bool `json:"listed"`
 	// Quoted: an unpaid request returned payment terms.
 	Quoted bool `json:"quoted"`
-	// Tested: Algebra paid it and it delivered.
+	// Tested: Algebra paid it and it delivered. One transaction worked;
+	// nothing about who the seller is.
 	Tested bool `json:"tested"`
-	// Verified: tested, to the pinned payee, and never since blocked.
+	// Verified: identity verified. Every check of the standard passed and a
+	// person reviewed evidence of who runs it.
 	Verified bool `json:"verified"`
 	// Executable: Algebra's router can pay and call it today.
 	Executable bool `json:"executable"`
@@ -365,9 +371,9 @@ func (e *Endpoint) Flag(payTo string, now time.Time) []Change {
 	return out
 }
 
-// Delivered records a paid call that delivered, paid to payTo, in latencyMS.
-// The first payee seen is pinned; a delivery to the pinned payee verifies an
-// unverified endpoint.
+// Delivered records a paid call that delivered, paid to payTo, in latencyMS:
+// the endpoint is now payment tested. The first payee seen is pinned. It
+// never changes trust: a delivery proves a transaction, not an identity.
 func (e *Endpoint) Delivered(payTo string, latencyMS int, now time.Time) []Change {
 	var out []Change
 	e.TestedAt, e.UpdatedAt = &now, now
@@ -378,32 +384,46 @@ func (e *Endpoint) Delivered(payTo string, latencyMS int, now time.Time) []Chang
 		e.PinnedPayTo, e.PayTo = payTo, payTo
 		out = append(out, e.change(ChangePayeeChanged, false, nil, map[string]any{"pay_to": payTo, "pinned": true}, "system", now))
 	}
-	if e.Trust == TrustUnverified && payTo != "" && payTo == e.PinnedPayTo {
-		e.Trust, e.TrustReason, e.VerifiedAt = TrustVerified, ReasonPaidDelivery, &now
-		out = append(out, e.change(ChangeTrust, false, map[string]any{"trust": TrustUnverified}, map[string]any{"trust": TrustVerified, "reason": ReasonPaidDelivery}, "system", now))
-	}
 	return out
 }
 
 // SetTrust is a person's decision. Unblocking an endpoint blocked for a new
-// payee accepts that payee: it becomes the pinned one.
+// payee accepts that payee: it becomes the pinned one, and the endpoint is
+// untested again. Verifying needs every check of the standard to pass and
+// the evidence the person reviewed, in note.
 func (e *Endpoint) SetTrust(t Trust, note, actor string, now time.Time) (Change, error) {
 	if !t.Valid() {
 		return Change{}, fmt.Errorf("trust must be verified, unverified or blocked, not %q", t)
 	}
+	note = strings.TrimSpace(note)
+	reason := ReasonManual
+	if t == TrustVerified {
+		if unmet := e.Unmet(); len(unmet) > 0 {
+			var why []string
+			for _, c := range unmet {
+				why = append(why, c.Detail)
+			}
+			return Change{}, fmt.Errorf("it cannot be verified yet: %s", strings.Join(why, "; "))
+		}
+		if len([]rune(note)) < MinEvidence {
+			return Change{}, fmt.Errorf("verifying needs the evidence you reviewed, in at least %d characters: who runs this endpoint, and how you know", MinEvidence)
+		}
+		reason = ReasonIdentityReviewed
+	}
 	before := map[string]any{"trust": e.Trust, "reason": e.TrustReason, "pinned_pay_to": e.PinnedPayTo}
 	if e.Trust == TrustBlocked && t != TrustBlocked && e.TrustReason == ReasonPayeeChanged && e.PayTo != "" {
-		e.PinnedPayTo = e.PayTo
+		// A new payee is a new counterparty: what was tested was the old one.
+		e.PinnedPayTo, e.TestedAt = e.PayTo, nil
 	}
-	e.Trust, e.TrustReason, e.UpdatedAt = t, ReasonManual, now
+	e.Trust, e.TrustReason, e.UpdatedAt = t, reason, now
 	e.VerifiedAt = nil
 	if t == TrustVerified {
 		e.VerifiedAt = &now
 	}
-	after := map[string]any{"trust": t, "reason": ReasonManual, "pinned_pay_to": e.PinnedPayTo}
-	if note = strings.TrimSpace(note); note != "" {
-		if len(note) > 300 {
-			note = note[:300]
+	after := map[string]any{"trust": t, "reason": reason, "pinned_pay_to": e.PinnedPayTo}
+	if note != "" {
+		if r := []rune(note); len(r) > 1000 {
+			note = string(r[:1000])
 		}
 		after["note"] = note
 	}

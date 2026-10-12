@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import * as api from "./api-client";
-import type { RailStatus } from "./types";
+import type { RailStatus, WalletsView } from "./types";
 
 /** A Solana cluster the console can work on. */
 export type Cluster = "solana" | "solana-devnet";
@@ -27,7 +27,7 @@ const KEY = "algebra:network";
 /** Fired in this tab when the choice changes (other tabs get "storage"). */
 const CHANGED = "algebra:network-changed";
 
-/** The saved choice, or mainnet when there is none (or storage is blocked). */
+/** The saved choice, or devnet when there is none (or storage is blocked): mainnet is read-only today, and is picked on purpose. */
 export function readSavedNetwork(): Cluster {
   try {
     const saved = window.localStorage.getItem(KEY);
@@ -35,7 +35,7 @@ export function readSavedNetwork(): Cluster {
   } catch {
     // storage blocked
   }
-  return "solana";
+  return "solana-devnet";
 }
 
 /** Saves the choice for this browser and tells every switch on the page. */
@@ -71,9 +71,21 @@ type NetworkState = {
   rails: RailStatus[] | null;
   /** Reads the wallets again, after a payment moved a balance. */
   refreshRails: () => void;
+  /** What the person's own wallets hold on the chosen cluster. Null until read, or when it couldn't be. */
+  wallets: WalletsView | null;
+  /** Reads them again; force skips the server's short cache (after sending funds, say). */
+  refreshWallets: (force?: boolean) => void;
 };
 
-const Ctx = createContext<NetworkState>({ network: "solana", demo: false, setNetwork: () => {}, rails: null, refreshRails: () => {} });
+const Ctx = createContext<NetworkState>({
+  network: "solana-devnet",
+  demo: false,
+  setNetwork: () => {},
+  rails: null,
+  refreshRails: () => {},
+  wallets: null,
+  refreshWallets: () => {},
+});
 
 /**
  * Which cluster the console shows and pays on. It filters the providers to
@@ -82,9 +94,11 @@ const Ctx = createContext<NetworkState>({ network: "solana", demo: false, setNet
  * browser. A demo account has no choice: it works in the sandbox.
  */
 export function NetworkProvider({ children, demo = false }: { children: React.ReactNode; demo?: boolean }) {
-  const [cluster, setCluster] = useState<Cluster>("solana");
+  const [cluster, setCluster] = useState<Cluster>("solana-devnet");
   const [rails, setRails] = useState<RailStatus[] | null>(null);
   const [railsKey, setRailsKey] = useState(0);
+  const [wallets, setWallets] = useState<WalletsView | null>(null);
+  const [walletsRead, setWalletsRead] = useState({ n: 0, force: false });
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring a saved choice after mount
@@ -105,13 +119,35 @@ export function NetworkProvider({ children, demo = false }: { children: React.Re
 
   const refreshRails = useCallback(() => setRailsKey((k) => k + 1), []);
 
+  // The person's own wallets on the chosen cluster, for the wallet menu and the
+  // on-chain pass panel. A demo account has none, and a person with none gets none.
+  useEffect(() => {
+    if (demo) return;
+    let live = true;
+    api
+      .myWallets(cluster, walletsRead.force)
+      .then((v) => live && setWallets(v))
+      .catch(() => live && setWallets(null));
+    return () => {
+      live = false;
+    };
+  }, [cluster, demo, walletsRead]);
+
+  const refreshWallets = useCallback((force = false) => setWalletsRead((r) => ({ n: r.n + 1, force })), []);
+
   const setNetwork = useCallback((n: Cluster) => {
     setCluster(n);
     saveNetwork(n);
   }, []);
 
   const network: Network = demo ? "sandbox" : cluster;
-  return <Ctx.Provider value={{ network, demo, setNetwork, rails: demo ? [] : rails, refreshRails }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider
+      value={{ network, demo, setNetwork, rails: demo ? [] : rails, refreshRails, wallets: demo || wallets?.network !== cluster ? null : wallets, refreshWallets }}
+    >
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export function useNetwork() {

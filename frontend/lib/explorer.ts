@@ -14,6 +14,16 @@ export function explorerTx(signature: string, network: string | undefined): stri
   return `https://explorer.solana.com/tx/${encodeURIComponent(signature)}${network === "solana-devnet" ? "?cluster=devnet" : ""}`;
 }
 
+/** A transaction on Solscan, on its own cluster. */
+export function solscanTx(signature: string, network: string | undefined): string {
+  return `https://solscan.io/tx/${encodeURIComponent(signature)}${network === "solana-devnet" ? "?cluster=devnet" : ""}`;
+}
+
+/** An address on Solscan, on its own cluster. */
+export function solscanAddress(address: string, network: string | undefined): string {
+  return `https://solscan.io/account/${encodeURIComponent(address)}${network === "solana-devnet" ? "?cluster=devnet" : ""}`;
+}
+
 /** An address on Solana Explorer, on its own cluster. */
 export function explorerAddress(address: string, network: string | undefined): string {
   return `https://explorer.solana.com/address/${encodeURIComponent(address)}${network === "solana-devnet" ? "?cluster=devnet" : ""}`;

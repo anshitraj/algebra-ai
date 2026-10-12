@@ -1,0 +1,15 @@
+[Unit]
+Description=Algebra web app
+After=network-online.target algebra-api.service
+
+[Service]
+User=algebra
+WorkingDirectory=/opt/algebra/frontend/.next/standalone
+EnvironmentFile=/etc/algebra/web.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

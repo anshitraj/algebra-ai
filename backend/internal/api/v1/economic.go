@@ -39,13 +39,16 @@ type economicSpecRequest struct {
 	// PassID is used only by the session route (a person creating an
 	// intent for one of their passes).
 	PassID string `json:"spend_pass_id"`
+	// RequireApproval asks for the person's yes before paying, whatever the
+	// pass allows (the console's chat sets it when "ask me first" is on).
+	RequireApproval bool `json:"require_approval"`
 }
 
 func (req economicSpecRequest) spec() econ.Spec {
 	return econ.Spec{
 		Capability: req.Capability, Input: req.Input, Quantity: req.Quantity, Window: req.Window, Currency: req.Currency,
 		BudgetMaxMinor: req.BudgetMaxMinor, Constraints: req.Constraints, ProviderPolicy: req.ProviderPolicy,
-		TTL: time.Duration(req.TTLSeconds) * time.Second,
+		TTL: time.Duration(req.TTLSeconds) * time.Second, AskFirst: req.RequireApproval,
 	}
 }
 

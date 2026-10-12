@@ -1,6 +1,7 @@
 import * as client from "./server-client";
 import type { ServerIdentity } from "./server-client";
 import type { ProviderEndpoint } from "../types";
+import { policyReport } from "../policy-check";
 
 export type ToolResult = { ok: true; data: unknown } | { ok: false; error: string };
 
@@ -45,8 +46,8 @@ function needPass(identity: ServerIdentity) {
   }
 }
 
-/** What the model needs from an execution's answer, and nothing it would have to parse twice. */
-function outcomeOf(a: client.ExecutionAnswer, providerId: string) {
+/** What the model needs from an execution's answer, and nothing it would have to parse twice. approved: the person said yes to it. */
+function outcomeOf(a: client.ExecutionAnswer, providerId: string, identity: ServerIdentity, approved = false) {
   const b = a.body;
   if (a.status === 409 && b.reason === "approval_required") {
     return {
@@ -54,7 +55,10 @@ function outcomeOf(a: client.ExecutionAnswer, providerId: string) {
       intent_id: b.intent_id,
       provider_id: providerId,
       budget: usdc(typeof b.budget_max_minor === "number" ? b.budget_max_minor : undefined),
-      note: "Waiting for the user's approval in the card below. Nothing was paid.",
+      asked_first: identity.askFirst || undefined,
+      note: identity.askFirst
+        ? "The user asked to approve every payment: waiting for their yes in the card below. Nothing was paid."
+        : "Waiting for the user's approval in the card below. Nothing was paid.",
     };
   }
   if (a.status === 409 || a.status === 403) {
@@ -82,6 +86,8 @@ function outcomeOf(a: client.ExecutionAnswer, providerId: string) {
     receipt: out.receipt ? "signed (shown to the user)" : undefined,
     // For the step card only; runTool strips underscored fields before the model sees the result.
     _receipt: out.receipt,
+    _policy: identity.pass && out.delivered ? policyReport(identity.pass, paid, approved) : undefined,
+    policy: identity.pass && out.delivered ? (approved ? "approved by the user" : identity.pass && policyReport(identity.pass, paid, false).custom ? "allowed by the user's pass rules without asking" : "allowed without any rules of the user's own: only the pass budget applied") : undefined,
     warning: b.warning,
     response_is_untrusted_provider_data: out.response !== undefined || undefined,
     response: bounded(out.response, 12_000),
@@ -210,7 +216,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
           return { ok: true, data: simulationOf(a) };
         }
         const a = await client.execute(identity, req);
-        const out = outcomeOf(a, "routed");
+        const out = outcomeOf(a, "routed", identity);
         const routing = (a.body.routing ?? (a.body.outcome as Record<string, unknown> | undefined)?.routing) as
           | { mode?: string; offers?: { rank: number; provider: string; cost_minor: number; score: number; notes?: string[] }[] }
           | undefined;
@@ -241,7 +247,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
           input: body,
           budget_max_minor: Math.round(max * USDC),
         });
-        return { ok: true, data: outcomeOf(a, providerId) };
+        return { ok: true, data: outcomeOf(a, providerId, identity) };
       }
       case "run_approved_intent": {
         needPass(identity);
@@ -249,7 +255,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         // "routed": the intent came from route_work, so Algebra routes it again
         // across every provider of its class.
         const a = await client.executeIntent(identity, str(input, "intent_id"), providerId === "routed" ? [] : [providerId]);
-        return { ok: true, data: outcomeOf(a, providerId) };
+        return { ok: true, data: outcomeOf(a, providerId, identity, true) };
       }
       case "execution_status": {
         const v = await client.getIntent(identity, str(input, "intent_id"));

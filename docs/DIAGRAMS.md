@@ -135,7 +135,7 @@ sequenceDiagram
 flowchart TD
   IN["Request under a Spend Pass"] --> KS{"Kill switch on,<br/>or pass frozen / revoked / expired?"}
   KS -- yes --> BLOCK["BLOCK"]
-  KS -- no --> ENV{"Network belongs to the pass's<br/>environment? Mainnet enabled?"}
+  KS -- no --> ENV{"Network belongs to the pass's<br/>environment? Mainnet gates pass?"}
   ENV -- no --> BLOCK
   ENV -- yes --> PROVIDER{"Provider allowed by the pass?"}
   PROVIDER -- no --> BLOCK
@@ -164,12 +164,32 @@ pass, the coordinator and the program decide.
 stateDiagram-v2
   [*] --> Unverified: listed by a catalog (payee pinned if the listing names one)
   Unverified --> Unverified: quoted (unpaid 402 returned terms)
-  Unverified --> Verified: paid call delivered to the pinned payee
+  Unverified --> Unverified: payment tested (a paid call delivered). Trust does not change
+  Unverified --> Verified: every check passes AND a person records the identity evidence reviewed
   Unverified --> Blocked: listing or quote names a different payee
   Verified --> Blocked: payee changed, or a person blocks it
   Unverified --> Blocked: a person blocks it
-  Blocked --> Unverified: a person unblocks it (verification must be earned again)
+  Blocked --> Unverified: a person unblocks it (untested again: tested and verified must be re-earned)
   Verified --> Unverified: a person removes verification
+```
+
+Three facts are kept apart: **payment tested** (automatic, one transaction
+worked), **identity verified** (a person's review, the only meaning of the
+check mark), **execution approved** (decided for each request by the pass and
+the guards, never stored on the endpoint).
+
+```mermaid
+flowchart LR
+  A["listed"] --> G{"All six checks pass?"}
+  B["served over HTTPS from a named host"] --> G
+  C["quoted"] --> G
+  D["payee pinned, and the one it names"] --> G
+  E["payment tested"] --> G
+  F["not blocked"] --> G
+  G -- no --> R["Cannot be verified: the unmet checks are returned"]
+  G -- yes --> P{"A signed-in person gives the evidence reviewed<br/>(who runs it, how they know)?"}
+  P -- no --> R2["Refused: evidence required"]
+  P -- yes --> V["Verified (IDENTITY_REVIEWED), recorded with who and the evidence"]
 ```
 
 ```mermaid

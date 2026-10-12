@@ -193,7 +193,12 @@ function IntentDetail({ id }: { id: string }) {
         <div>
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-muted">Signed receipt</p>
-            <Copy text={d.receipt} label="Copy receipt" />
+            <span className="flex items-center gap-3">
+              <Link href={`/console/executions/${encodeURIComponent(d.id)}/invoice`} className="text-xs font-medium text-primary hover:underline">
+                Open the invoice
+              </Link>
+              <Copy text={d.receipt} label="Copy receipt" />
+            </span>
           </div>
           <p className="mt-1 truncate rounded-lg border border-border bg-background px-3 py-2 font-mono text-[0.6875rem] text-foreground">{d.receipt}</p>
           <p className="mt-1 text-xs text-muted">

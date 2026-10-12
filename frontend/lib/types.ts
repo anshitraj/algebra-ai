@@ -308,6 +308,21 @@ export type UserWallet = {
   source: string;
 };
 
+/** One of the person's own wallets and what it holds on a cluster. ok is false when the node couldn't be read: then the amounts are unknown, not zero. */
+export type WalletBalance = {
+  address: string;
+  kind: "embedded" | "external";
+  sol_lamports: number;
+  usdc_minor: number;
+  ok: boolean;
+};
+
+export type WalletsView = {
+  network: "solana" | "solana-devnet";
+  usdc_mint: string;
+  wallets: WalletBalance[];
+};
+
 export type AuthProviders = {
   password: boolean;
   google: boolean;

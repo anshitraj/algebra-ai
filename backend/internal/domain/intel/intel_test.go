@@ -95,16 +95,121 @@ func TestMerge_UnchangedListingRecordsNoChange(t *testing.T) {
 	}
 }
 
-func TestEndpoint_DeliveryVerifiesOnlyAtThePinnedPayee(t *testing.T) {
+const evidence = "acme.example is Acme Data Ltd's own domain; payee confirmed by their support on 2026-10-12"
+
+func TestEndpoint_ADeliveryTestsItAndNeverVerifiesIt(t *testing.T) {
 	save, _ := Merge(nil, []Listed{listing(1000, "")}, t0)
 	e := save[0]
-	// Nothing listed a payee: the first paid call pins it and verifies.
+	// Nothing listed a payee: the first paid call pins it. One change, and
+	// it is the pin: a delivery is not a trust decision.
 	changes := e.Delivered("PAYEE_A", 120, t0)
-	if e.PinnedPayTo != "PAYEE_A" || e.Trust != TrustVerified || len(changes) != 2 || e.LatencyMS != 120 {
+	if e.PinnedPayTo != "PAYEE_A" || e.LatencyMS != 120 || len(changes) != 1 || changes[0].Kind != ChangePayeeChanged {
 		t.Fatalf("first delivery: %+v %v", e, changes)
 	}
-	if l := e.Levels(); !l.Tested || !l.Verified {
-		t.Fatalf("levels: %+v", l)
+	if e.Trust != TrustUnverified || e.VerifiedAt != nil {
+		t.Fatalf("a paid delivery proves a transaction, not who the seller is: %+v", e)
+	}
+	if l := e.Levels(); !l.Tested || l.Verified {
+		t.Fatalf("payment tested and identity verified are separate facts: %+v", l)
+	}
+	// However many times it delivers.
+	for i := 0; i < 50; i++ {
+		e.Delivered("PAYEE_A", 100, t0.Add(time.Duration(i)*time.Minute))
+	}
+	if e.Trust != TrustUnverified {
+		t.Fatalf("no number of deliveries verifies: %+v", e)
+	}
+}
+
+func TestSetTrust_VerifyingNeedsEveryCheckAndTheEvidenceReviewed(t *testing.T) {
+	fresh := func() Endpoint {
+		save, _ := Merge(nil, []Listed{listing(1000, "PAYEE_A")}, t0)
+		return save[0]
+	}
+	ready := func() Endpoint {
+		e := fresh()
+		e.Quoted(t0)
+		e.Delivered("PAYEE_A", 120, t0)
+		return e
+	}
+	unmet := func(e Endpoint) string {
+		var ids []string
+		for _, c := range e.Unmet() {
+			ids = append(ids, c.ID)
+		}
+		return strings.Join(ids, ",")
+	}
+
+	// Listed only: neither quoted nor tested.
+	e := fresh()
+	if got := unmet(e); got != "quoted,tested" {
+		t.Fatalf("a bare listing is missing %q", got)
+	}
+	if _, err := e.SetTrust(TrustVerified, evidence, "user_1", t0); err == nil || e.Trust != TrustUnverified {
+		t.Fatalf("a listing can't be verified on a person's word alone: %v", err)
+	}
+	// Quoted, not tested.
+	e.Quoted(t0)
+	if _, err := e.SetTrust(TrustVerified, evidence, "user_1", t0); err == nil || !strings.Contains(err.Error(), "no paid call has delivered") {
+		t.Fatalf("untested: %v", err)
+	}
+
+	// Every check passes: now the evidence is what is missing.
+	e = ready()
+	if got := unmet(e); got != "" {
+		t.Fatalf("a quoted, tested, pinned HTTPS endpoint meets every automatic check, not %q", got)
+	}
+	for _, note := range []string{"", "   ", "looks fine"} {
+		if _, err := e.SetTrust(TrustVerified, note, "user_1", t0); err == nil || e.Trust != TrustUnverified {
+			t.Fatalf("verifying without the evidence reviewed (%q) must be refused: %v", note, err)
+		}
+	}
+	c, err := e.SetTrust(TrustVerified, evidence, "user_1", t0.Add(time.Hour))
+	if err != nil || e.Trust != TrustVerified || e.TrustReason != ReasonIdentityReviewed || e.VerifiedAt == nil {
+		t.Fatalf("verified by a person with evidence: %v %+v", err, e)
+	}
+	if c.Actor != "user_1" || c.After["note"] != evidence || c.After["reason"] != ReasonIdentityReviewed {
+		t.Fatalf("the decision records who and on what evidence: %+v", c)
+	}
+
+	// Each automatic check, failing on its own.
+	for name, breakIt := range map[string]func(*Endpoint){
+		"listed":      func(e *Endpoint) { e.Status = StatusRemoved },
+		"host":        func(e *Endpoint) { e.URL = "http://acme.example/price" },
+		"payee":       func(e *Endpoint) { e.PayTo = "SOMEONE_ELSE" },
+		"not_blocked": func(e *Endpoint) { e.Trust, e.TrustReason = TrustBlocked, ReasonManual },
+	} {
+		e := ready()
+		breakIt(&e)
+		if got := unmet(e); got != name {
+			t.Errorf("%s: unmet = %q", name, got)
+		}
+		if _, err := e.SetTrust(TrustVerified, evidence, "user_1", t0); err == nil {
+			t.Errorf("%s: verified although the check fails", name)
+		}
+	}
+	// An address is not a domain someone answers for; the sandbox has no host to check.
+	for url, want := range map[string]bool{"https://203.0.113.7/price": false, "https://localhost/price": false, "https://api.acme.example/v1": true} {
+		e := ready()
+		e.URL = url
+		if got := unmet(e) == ""; got != want {
+			t.Errorf("%s: meets the host check = %v, want %v", url, got, want)
+		}
+	}
+	e = ready()
+	e.URL, e.Network = "http://127.0.0.1:8085/api/v1/sandbox/x402/prices/beta", "sandbox"
+	if got := unmet(e); got != "" {
+		t.Errorf("a sandbox seller is this server's own: %q", got)
+	}
+}
+
+func TestEndpoint_APayeeChangeVoidsVerificationAndTesting(t *testing.T) {
+	save, _ := Merge(nil, []Listed{listing(1000, "PAYEE_A")}, t0)
+	e := save[0]
+	e.Quoted(t0)
+	e.Delivered("PAYEE_A", 120, t0)
+	if _, err := e.SetTrust(TrustVerified, evidence, "user_1", t0); err != nil {
+		t.Fatal(err)
 	}
 	// A quote to another payee is refused, and the refusal blocks it.
 	if code, _ := e.Check("ATTACKER"); code != ReasonPayeeChanged {
@@ -112,12 +217,23 @@ func TestEndpoint_DeliveryVerifiesOnlyAtThePinnedPayee(t *testing.T) {
 	}
 	e.Flag("ATTACKER", t0.Add(time.Minute))
 	if e.Trust != TrustBlocked || e.VerifiedAt != nil {
-		t.Fatalf("flagged: %+v", e)
+		t.Fatalf("a new payee voids verification: %+v", e)
 	}
-	// A person unblocks it: the new payee is accepted and pinned.
+	// Blocked can't jump to verified.
+	if _, err := e.SetTrust(TrustVerified, evidence, "user_1", t0.Add(2*time.Minute)); err == nil {
+		t.Fatal("a blocked endpoint was verified")
+	}
+	// A person unblocks it: the new payee is accepted and pinned, and what
+	// was tested was the old counterparty, so it is untested again.
 	c, err := e.SetTrust(TrustUnverified, "rotated wallet, confirmed with the provider", "user_1", t0.Add(time.Hour))
 	if err != nil || e.PinnedPayTo != "ATTACKER" || c.Actor != "user_1" || c.After["note"] == nil {
 		t.Fatalf("unblock: %v %+v %+v", err, e, c)
+	}
+	if l := e.Levels(); l.Tested || l.Verified {
+		t.Fatalf("after a payee change it must earn tested and verified again: %+v", l)
+	}
+	if _, err := e.SetTrust(TrustVerified, evidence, "user_1", t0.Add(2*time.Hour)); err == nil {
+		t.Fatal("verified without a delivery to the new payee")
 	}
 	if _, err := e.SetTrust("trusted", "", "user_1", t0); err == nil {
 		t.Fatal("unknown trust state accepted")

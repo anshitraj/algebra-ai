@@ -18,11 +18,14 @@ export type ApprovalOutcome = "approved" | "rejected";
 export function ApprovalCard({
   intentId,
   provider,
+  askedFirst,
   resolved,
   onResolved,
 }: {
   intentId: string;
   provider?: string;
+  /** The person asked to approve every payment (the chat's "Ask before paying"). */
+  askedFirst?: boolean;
   resolved?: ApprovalOutcome;
   onResolved: (o: ApprovalOutcome) => void;
 }) {
@@ -74,20 +77,23 @@ export function ApprovalCard({
                 ? "You cancelled this call"
                 : closed
                   ? "This call no longer needs you"
-                  : "Approve this paid call?"}
+                  : "Pay for this call?"}
           </p>
           {intent ? (
             <p className="mt-0.5 text-sm text-muted">
               <span className="font-mono text-xs text-foreground">{intent.capability}</span>
-              {provider && <> · {provider}</>} · up to <span className="font-mono text-foreground tabular-nums">{formatUSDC(intent.budget_max_minor)}</span>
+              {provider && provider !== "routed" ? <> · {provider}</> : <> · the best provider, picked live</>} · up to{" "}
+              <span className="font-mono text-foreground tabular-nums">{formatUSDC(intent.budget_max_minor)}</span>
             </p>
           ) : !error ? (
             <p className="mt-0.5 text-sm text-muted">Loading the exact terms…</p>
           ) : null}
           {intent && !resolved && !closed && (
             <p className="mt-2 text-xs text-muted">
-              Your Spend Pass asks you to approve calls at this price. Algebra still checks the endpoint&apos;s real price against this ceiling before
-              it pays, and pays once at most.
+              {askedFirst
+                ? "You asked to approve every payment. Nothing has been paid yet."
+                : "Your Spend Pass asks you to approve calls at this price. Nothing has been paid yet."}{" "}
+              Algebra checks the real price against this ceiling before it pays, and pays once at most.
             </p>
           )}
         </div>
@@ -101,7 +107,7 @@ export function ApprovalCard({
             onClick={() => decide("approved")}
             className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-tint transition-[opacity,transform] hover:opacity-95 active:scale-[0.98] disabled:opacity-45"
           >
-            {busy === "approved" && <Spinner size={14} />} Approve up to {formatUSDC(intent.budget_max_minor)}
+            {busy === "approved" && <Spinner size={14} />} Yes, pay up to {formatUSDC(intent.budget_max_minor)}
           </button>
           <button
             type="button"
@@ -109,7 +115,7 @@ export function ApprovalCard({
             onClick={() => decide("rejected")}
             className="inline-flex h-10 items-center gap-2 rounded-xl border border-border-strong px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface disabled:opacity-45"
           >
-            {busy === "rejected" && <Spinner size={14} />} Cancel the call
+            {busy === "rejected" && <Spinner size={14} />} No, don&apos;t pay
           </button>
         </div>
       )}

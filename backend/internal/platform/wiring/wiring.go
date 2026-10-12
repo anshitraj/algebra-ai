@@ -141,6 +141,11 @@ type Bundle struct {
 	// when all are off.
 	Directory *catalog.Multi
 
+	// Mainnet is what the server knows about its own mainnet set-up, for the
+	// readiness report (app.AssessMainnet).
+	Mainnet app.MainnetFacts
+	// WalletBalances reads what the signed-in person's own wallets hold.
+	WalletBalances *app.WalletBalanceService
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
 	// MCPLegacyTools: see config.Config.MCPLegacyTools.
@@ -556,9 +561,36 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	if onchainPasses != nil {
 		econSvc.SetFunder(onchainPasses)
 	}
+	mainnet := app.MainnetFacts{ExecutionEnabled: cfg.MainnetExecution, PassesRequired: cfg.OnchainPasses.Required["mainnet"]}
+	for _, r := range solanaRails {
+		if r.Network() == chain.Solana {
+			mainnet.RailConfigured, mainnet.Payer = true, r.Address().String()
+		}
+	}
+	if st := onchainPasses.ProgramStatus(chain.Solana); st != nil {
+		mainnet.ProgramDeployed, mainnet.ProgramID = true, st.ProgramID
+		mainnet.AuthorityKnown, mainnet.Immutable, mainnet.UpgradeAuthority = st.AuthorityKnown, st.Immutable, st.UpgradeAuthority
+	}
+
+	walletRPCs := map[string]app.WalletRPC{}
+	for _, c := range []struct{ cluster, network string }{{"devnet", chain.SolanaDevnet}, {"mainnet", chain.Solana}} {
+		url := defaultSolanaRPC[c.cluster]
+		for _, sc := range cfg.SolanaRails {
+			cl := strings.ToLower(sc.Cluster)
+			if cl == "mainnet-beta" {
+				cl = "mainnet"
+			}
+			if cl == c.cluster && sc.RPCURL != "" {
+				url = sc.RPCURL
+			}
+		}
+		walletRPCs[c.network] = solana.NewRPC(url, nil)
+	}
 
 	return &Bundle{
-		DB: db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
+		Mainnet:        mainnet,
+		WalletBalances: app.NewWalletBalanceService(accountSvc, walletRPCs),
+		DB:             db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
 		Users: userSvc, Intents: intentSvc, Discovery: discoverySvc, Quotes: quoteSvc,
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
@@ -812,12 +844,31 @@ func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgr
 			}
 			continue
 		}
+		// Who can replace the program matters as much as its code.
+		authCtx, cancelAuth := context.WithTimeout(context.Background(), 15*time.Second)
+		authority, authErr := rpc.UpgradeAuthority(authCtx, program.ID, solana.Confirmed)
+		cancelAuth()
+		authorityIsPayer := authErr == nil && authority != nil && *authority == kp.PublicKey()
+		switch {
+		case authErr != nil:
+			log.Printf("wiring: on %s the Spend Pass program's upgrade authority couldn't be read: %v", cluster, authErr)
+		case authorityIsPayer:
+			log.Printf("wiring: WARNING: on %s the Spend Pass program's upgrade authority is this server's own payer key (%s). Fine for a demo on devnet; never for real funds", cluster, kp.PublicKey())
+		}
+		if cluster == "mainnet" && cfg.MainnetExecution && (authErr != nil || authorityIsPayer) {
+			return nil, fmt.Errorf("MAINNET_EXECUTION=on, but the Spend Pass program's upgrade authority on mainnet is this server's own key or couldn't be read: move it to a multisig, or make the program immutable, before paying with real money")
+		}
 		mintStr, _ := chain.AssetAddress(rail.Network(), "USDC")
-		nets = append(nets, &app.OnchainNetwork{
+		net := &app.OnchainNetwork{
 			Network: rail.Network(), Cluster: cluster, RailName: rail.Name(), Program: program,
 			RPC: rpc, Payer: kp, Mint: solana.MustPublicKey(mintStr), Rail: rail,
 			PriorityMicroLamports: cfg.OnchainPasses.PriorityMicroLamports, Required: cfg.OnchainPasses.Required[cluster],
-		})
+			AuthorityKnown: authErr == nil, Immutable: authErr == nil && authority == nil,
+		}
+		if authority != nil {
+			net.UpgradeAuthority = authority.String()
+		}
+		nets = append(nets, net)
 		if cfg.OnchainPasses.AnyOwner[cluster] {
 			anyOwner[rail.Network()] = true
 		}

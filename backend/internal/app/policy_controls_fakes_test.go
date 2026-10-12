@@ -87,6 +87,17 @@ func (f *fakePassStore) SetControls(_ context.Context, id string, c spendpass.Co
 	return nil
 }
 
+func (f *fakePassStore) SetRules(_ context.Context, id string, maxPerCall, approveAbove *int64, providers []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.passes[id]
+	if !ok || p.RevokedAt != nil {
+		return shared.ErrNotFound
+	}
+	p.MaxPerPurchaseMinorUnits, p.ApproveAboveMinorUnits, p.AllowedMerchants = maxPerCall, approveAbove, providers
+	return nil
+}
+
 // The memory store as a PolicyReader, for the dry run.
 
 func (m *memEconStore) PassSpend(_ context.Context, passID string, since time.Time) (int64, error) {

@@ -501,8 +501,11 @@ func (s *IntelService) Endpoints(ctx context.Context, f IntelFilter) ([]intel.En
 // EndpointDetail is one endpoint with its history.
 type EndpointDetail struct {
 	intel.Endpoint
-	Levels  intel.Levels   `json:"levels"`
-	Changes []intel.Change `json:"changes"`
+	Levels intel.Levels `json:"levels"`
+	// Verification is the standard's checklist for this endpoint: what
+	// still stands between it and a person being able to verify it.
+	Verification []intel.Check  `json:"verification"`
+	Changes      []intel.Change `json:"changes"`
 }
 
 // Endpoint returns one endpoint and its history.
@@ -515,7 +518,7 @@ func (s *IntelService) Endpoint(ctx context.Context, id string) (*EndpointDetail
 	if err != nil {
 		return nil, err
 	}
-	return &EndpointDetail{Endpoint: *e, Levels: e.Levels(), Changes: changes}, nil
+	return &EndpointDetail{Endpoint: *e, Levels: e.Levels(), Verification: e.VerificationChecks(), Changes: changes}, nil
 }
 
 // Changes lists what changed, newest first.
@@ -648,8 +651,8 @@ func (s *IntelService) ObserveQuote(ctx context.Context, c routing.Candidate, qu
 	}
 }
 
-// ObserveDelivery records a paid call that delivered: tested, its payee
-// pinned if none was, and verified when it was paid at the pinned payee.
+// ObserveDelivery records a paid call that delivered: payment tested, its
+// payee pinned if none was. It never verifies: that is a person's review.
 func (s *IntelService) ObserveDelivery(ctx context.Context, q routing.Quote, latencyMS int) {
 	if s == nil {
 		return

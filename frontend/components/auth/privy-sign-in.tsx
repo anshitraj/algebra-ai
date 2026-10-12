@@ -52,6 +52,32 @@ export default function PrivySignIn({ appId, ...rest }: Props) {
   );
 }
 
+/** What a Privy error code means for the person, always with the code itself and Privy's own reason when it gave one. */
+function privyFailure(code: string, reason: string) {
+  const why: Record<string, string> = {
+    generic_connect_wallet_error: "The wallet didn't finish connecting or signing. Unlock it, approve the signature request it shows, and try again.",
+    unknown_connect_wallet_error: "The wallet didn't finish connecting or signing. Unlock it, approve the signature request it shows, and try again.",
+    disallowed_login_method: "This sign-in method is turned off for this app. Solana wallets must be enabled under Login methods in the Privy dashboard.",
+    allowlist_rejected: "This Privy app only admits accounts on its allowlist, and this one isn't on it.",
+    client_request_timeout: "Privy didn't answer in time. Check your connection and try again.",
+    not_supported: "This wallet or sign-in method isn't supported here.",
+    unsupported_chain_id: "The wallet is on a network this app doesn't use. Algebra signs in with Solana wallets.",
+  };
+  return `${why[code] ?? "Sign-in with Privy didn't complete. Try again."} (Privy: ${code}${reason ? `: ${reason}` : ""})`;
+}
+
+/** The readable part of something passed to console.warn: a string, an error (and its cause), or an API error object. */
+function describeWarning(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return "";
+  const v = value as { message?: unknown; error?: unknown; code?: unknown; privyErrorCode?: unknown; status?: unknown; cause?: unknown };
+  const parts = [v.message, v.error, v.privyErrorCode ?? v.code, v.status && `HTTP ${String(v.status)}`]
+    .filter((x): x is string | number => typeof x === "string" || typeof x === "number")
+    .map(String);
+  const cause = v.cause && v.cause !== value ? describeWarning(v.cause) : "";
+  return [...new Set([...parts, cause].filter(Boolean))].join(", ");
+}
+
 function hasSolanaWallet(user: PrivyUser) {
   return user.linkedAccounts.some((a) => a.type === "wallet" && a.chainType === "solana");
 }
@@ -65,11 +91,34 @@ function PrivyButton({ label, onSignedIn, onError }: Omit<Props, "appId">) {
   // Only a sign-in the person started here is traded: onComplete also fires
   // for a Privy session left over from an earlier visit.
   const started = useRef(false);
+  // Privy reports a failure as a bare code and writes the reason (the wallet's
+  // own error, say) to console.warn. While a sign-in is running, keep the last
+  // one so the message can say what actually went wrong.
+  const lastWarning = useRef("");
+  const stopWatching = useRef<(() => void) | null>(null);
+  const watchWarnings = useCallback(() => {
+    stopWatching.current?.();
+    lastWarning.current = "";
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => {
+      const text = args.map(describeWarning).filter(Boolean).join(" ");
+      // Privy warns twice on a failure: a general line, then the cause. Keep both.
+      if (text && !lastWarning.current.includes(text)) {
+        lastWarning.current = [lastWarning.current, text].filter(Boolean).slice(-2).join(": ").slice(0, 300);
+      }
+      original(...args);
+    };
+    stopWatching.current = () => {
+      console.warn = original;
+      stopWatching.current = null;
+    };
+  }, []);
 
   const finish = useCallback(
     async (privyUser: PrivyUser) => {
       if (!started.current) return;
       started.current = false;
+      stopWatching.current?.();
       setBusy(true);
       try {
         if (!hasSolanaWallet(privyUser)) {
@@ -99,13 +148,18 @@ function PrivyButton({ label, onSignedIn, onError }: Omit<Props, "appId">) {
     onComplete: ({ user }) => void finish(user),
     onError: (code) => {
       started.current = false;
-      if (code !== "exited_auth_flow") onError("Sign-in with Privy didn't complete. Try again.");
+      stopWatching.current?.();
+      if (code === "exited_auth_flow") return;
+      // Privy's own step failed, before Algebra was asked anything: say which,
+      // or the person has nothing to act on.
+      onError(privyFailure(String(code), lastWarning.current));
     },
   });
 
   async function start() {
     onError("");
     started.current = true;
+    watchWarnings();
     // A Privy session left from an abandoned attempt would skip the modal.
     if (authenticated) await logout().catch(() => {});
     login();

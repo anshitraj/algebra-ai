@@ -255,6 +255,9 @@ const (
 	// DenyMainnetDisabled: a real-money mainnet payment while this deployment
 	// has not explicitly enabled mainnet execution (MAINNET_EXECUTION=on).
 	DenyMainnetDisabled = "MAINNET_EXECUTION_DISABLED"
+	// ReasonAskedFirst: the request asked for a person's yes before paying
+	// (Spec.AskFirst), though the pass alone would have allowed it.
+	ReasonAskedFirst = "ASKED_FOR_APPROVAL"
 )
 
 // SetMainnetExecution turns real-money mainnet payments on. Off by default:
@@ -343,6 +346,11 @@ func (s *EconomicService) create(ctx context.Context, p *spendpass.Pass, agentID
 	d := evaluate(p, "", in.BudgetMaxMinor, spent, in.Currency, now)
 	if d.Decision == policy.Deny {
 		return nil, false, &AuthorityDenied{ReasonCodes: d.ReasonCodes}
+	}
+	if spec.AskFirst && d.Decision == policy.Allow {
+		// The request itself asked for a person's yes: stricter, never looser.
+		d.Decision = policy.RequireApproval
+		d.ReasonCodes = append(d.ReasonCodes, ReasonAskedFirst)
 	}
 	if d.Decision == policy.RequireApproval {
 		in.RequiresApproval = true

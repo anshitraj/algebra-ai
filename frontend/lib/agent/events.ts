@@ -17,7 +17,7 @@ export type AgentEvent =
     }
   | { type: "text"; text: string }
   /** A paid call is waiting for the person: approve or cancel it in the card. */
-  | { type: "approval"; intentId: string; provider?: string }
+  | { type: "approval"; intentId: string; provider?: string; askedFirst?: boolean }
   /** The agent asked 1-4 multiple-choice questions; the turn ends and the picks come back as the next message. */
   | { type: "question"; questions: AskedQuestion[] }
   /** USDC paid for a delivered call (micro-USDC). */
@@ -55,6 +55,8 @@ export type StepDetail = {
   reasons?: string[];
   /** One line of context shown under the detail. */
   note?: string;
+  /** What the Spend Pass's rules said about this payment. */
+  policy?: import("../policy-check").PolicyReport;
 };
 
 export type AskedQuestion = { question: string; options: string[] };

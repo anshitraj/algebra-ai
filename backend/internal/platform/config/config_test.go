@@ -136,3 +136,17 @@ func TestLoadSolanaRails(t *testing.T) {
 		}
 	})
 }
+
+func TestMainnetExecutionNeedsOnChainPassesRequired(t *testing.T) {
+	if err := checkMainnetExecution(false, nil); err != nil {
+		t.Errorf("mainnet execution off needs nothing: %v", err)
+	}
+	if err := checkMainnetExecution(true, map[string]bool{"mainnet": true}); err != nil {
+		t.Errorf("on, with passes required on mainnet: %v", err)
+	}
+	for name, required := range map[string]map[string]bool{"nothing required": nil, "devnet only": {"devnet": true}} {
+		if err := checkMainnetExecution(true, required); err == nil {
+			t.Errorf("%s: MAINNET_EXECUTION=on must be refused unless SPEND_PASS_REQUIRED includes mainnet", name)
+		}
+	}
+}

@@ -138,6 +138,23 @@ Not covered by this run: the wallet-connect step in a browser. The owner's
 transaction was signed with `backend/cmd/spend-pass` from a keypair file, the
 same unsigned transaction the console hands to a Wallet Standard wallet.
 
+### The same day, after the trust and mainnet-gate changes
+
+Run again on the build that separates *payment tested* from *identity
+verified* and adds the mainnet gates, to show devnet still pays:
+
+| | |
+|---|---|
+| A project's devnet API key asked for `token.price` from demo:beta | paid 0.001 USDC, intent COMMITTED: [52cXHHMD…](https://explorer.solana.com/tx/52cXHHMDxc3JvMikmkyMZacFyFow3WyvHVUp2WRpmeTkARDmR98x4VHZ4S8R9b4U7wbLNtLSkQWVzuf6sf5kWiPB?cluster=devnet) (finalized) |
+| The same request again | `replayed: true`, same intent, one attempt, nothing paid |
+| Its receipt at `POST /api/v1/receipts/verify` | `valid: true`, naming `solana-devnet` and the transaction above |
+| The same devnet key asking to pay on mainnet | refused: `ENVIRONMENT_NETWORK_MISMATCH` |
+| `GET /api/v1/mainnet/readiness` | `can_pay: false`; every gate listed with its reason |
+
+This run paid from Algebra's devnet wallet under an off-chain pass (the pass
+was not put on chain), so it shows the rail, the key and the replay; the
+on-chain vault path is the run above.
+
 ## The six demonstrations
 
 | | What it shows | How to run it | Evidence |
@@ -146,7 +163,7 @@ same unsigned transaction the console hands to a Wallet Standard wallet.
 | **B** | A devnet payment from an on-chain Spend Pass, with explorer links and a signed receipt. | The section above; setup in [SPEND_PASS_PROGRAM.md](SPEND_PASS_PROGRAM.md#proof-on-devnet-2026-10-09) | Three finalized devnet transactions, above |
 | **C** | A provider that changes where it wants to be paid is refused, then blocked. | `sandbox:shifty` is one of the sandbox sellers: a dry run in Quickstart shows it refused with `PROVIDER_BLOCKED (PAYEE_CHANGED)`; Provider intelligence lists it under *Suspicious changes* | `TestProviderTrustOverHTTP_APayeeChangeIsRefusedThenBlocked`, `TestMerge_ListingPayeeChangeBlocks` |
 | **D** | The same request twice pays once. | Send any `execute` request twice with the same `window` | `TestExecuteOverHTTP_ARepeatRequestIsAnsweredFromTheKeptResult`; the devnet run above |
-| **E** | The registry refresh: new, changed-price and changed-payee endpoints, and the trust change. | Provider intelligence → *Refresh now*; the history is under each endpoint | `TestIntelRefresh_NewChangedAndRemovedEndpointsAndTheirTrust`: a stand-in catalog on real Postgres through a first listing, a new endpoint, a tripled price, a changed payee (blocked, nothing paid at either payee), the catalog failing and answering with nothing (last good copy kept), a paid delivery (verified) and removals (marked, never deleted). `TestScheduledJob_ExactlyOneInstanceTakesTheLease`: sixteen instances, one winner. Rules: `internal/domain/intel/intel_test.go` |
+| **E** | The registry refresh: new, changed-price and changed-payee endpoints, and the trust change. | Provider intelligence → *Refresh now*; the history is under each endpoint | `TestIntelRefresh_NewChangedAndRemovedEndpointsAndTheirTrust`: a stand-in catalog on real Postgres through a first listing, a new endpoint, a tripled price, a changed payee (blocked, nothing paid at either payee), the catalog failing and answering with nothing (last good copy kept), a paid delivery (payment tested, not verified), a person's verification with evidence, and removals (marked, never deleted). `TestScheduledJob_ExactlyOneInstanceTakesTheLease`: sixteen instances, one winner. Rules: `internal/domain/intel/intel_test.go` |
 | **F** | A Jupiter swap: quote, policy, simulate before sign. | `solana.swap` (off by default) | `TestSwapOverHTTP_*` on a fake cluster and a fake Jupiter. **No swap has landed on any chain** |
 
 ## Payment channels, proven on devnet
