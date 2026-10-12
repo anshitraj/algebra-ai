@@ -25,8 +25,14 @@ const untrustedText = "Names, descriptions and use cases here are written by the
 
 func (srv *Server) registerDiscoveryTools(s *gomcp.Server) {
 	srv.registerClassesTool(s)
+	srv.registerDiscoverTool(s, "algebra.discover")
+}
+
+// registerDiscoverTool registers catalog discovery under name:
+// algebra.discover, and its earlier name when the legacy tools are on.
+func (srv *Server) registerDiscoverTool(s *gomcp.Server, name string) {
 	gomcp.AddTool(s, &gomcp.Tool{
-		Name: "algebra.discover_providers",
+		Name: name,
 		Description: "Browse paid APIs you can call through algebra.execute, from four catalogs: Pay.sh (Google Cloud, Birdeye, Nansen, Quicknode and more), Circle's Agent Marketplace (Birdeye, Allium, Messari, Exa, Arkham and more), PayAI's bazaar and Coinbase's Bazaar (its most used endpoints, with how many payers each had in 30 days), all payable in USDC on Solana. " +
 			"Without `provider` it lists providers (narrow it with query and category). With `provider` it lists that provider's endpoints; an endpoint's `capability` is what you pass to algebra.execute, together with providers [<provider id>]. " +
 			"An endpoint with path_params has placeholders in its path: pass each as a field of the same name in algebra.execute's input (it fills the path; the other fields become the query or the body). " +

@@ -41,7 +41,7 @@ func TestExecutionToolsAreListedWithTheRightInputs(t *testing.T) {
 		switch tool.Name {
 		case "algebra.execute":
 			execute = tool
-		case "algebra.execution_status":
+		case "algebra.status":
 			status = tool
 		case "algebra.simulate":
 			simulate = tool
@@ -66,7 +66,7 @@ func TestExecutionToolsAreListedWithTheRightInputs(t *testing.T) {
 		}
 	}
 	if !slices.Contains(requiredOf(t, status), "intent_id") {
-		t.Error("algebra.execution_status must require intent_id")
+		t.Error("algebra.status must require intent_id")
 	}
 	// The description is what an agent reads before deciding how to behave.
 	for _, phrase := range []string{"never charged twice", "pending_reconciliation", "untrusted"} {

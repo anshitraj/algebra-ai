@@ -143,6 +143,8 @@ type Bundle struct {
 
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
+	// MCPLegacyTools: see config.Config.MCPLegacyTools.
+	MCPLegacyTools bool
 	// OAuthProviders holds only the providers with credentials configured,
 	// keyed by name ("google", "github").
 	OAuthProviders map[string]identity.Provider
@@ -562,7 +564,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, Tenancy: tenancySvc, Leads: app.NewLeadService(postgres.NewLeadRepo(db)),
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders, Privy: privy,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders, Privy: privy,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,

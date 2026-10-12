@@ -72,9 +72,15 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 	for _, tool := range tools.Tools {
 		listed[tool.Name] = true
 	}
-	for _, want := range []string{"algebra.execute", "algebra.execution_status", "algebra.simulate", "algebra.classes", "algebra.discover_providers"} {
+	for _, want := range []string{"algebra.discover", "algebra.quote", "algebra.execute", "algebra.status", "algebra.receipt", "algebra.simulate", "algebra.spend_pass", "algebra.classes"} {
 		if !listed[want] {
 			t.Errorf("%s is not offered over /mcp", want)
+		}
+	}
+	// The original shopping tools and the earlier names stay off unless asked for.
+	for name := range listed {
+		if !strings.HasPrefix(name, "algebra.") || name == "algebra.discover_providers" || name == "algebra.execution_status" {
+			t.Errorf("%s is a legacy tool: it must need MCP_LEGACY_TOOLS=on", name)
 		}
 	}
 
@@ -94,6 +100,14 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 		t.Errorf("the sandbox provider would be paid: %v", sim["would_pay"])
 	}
 
+	// A quote asks the provider for its real price, ranks the offers and pays nothing.
+	quote, text, isErr := callTool(t, cs, "algebra.quote", map[string]any{
+		"capability": req["capability"], "input": req["input"], "max_price_usdc": req["max_price_usdc"],
+	})
+	if isErr || quote["verdict"] != "ALLOW" || quote["quoted_live"] != true || quote["paid"] != false {
+		t.Fatalf("quote: %v %s", quote, text)
+	}
+
 	// Executing pays through the sandbox rail, which works here.
 	first, text, isErr := callTool(t, cs, "algebra.execute", req)
 	if isErr || first["delivered"] != true || first["response"] == nil || first["receipt"] == nil {
@@ -111,12 +125,26 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 	}
 
 	// And the answer can be read back.
-	status, text, isErr := callTool(t, cs, "algebra.execution_status", map[string]any{"intent_id": intent["id"]})
+	status, text, isErr := callTool(t, cs, "algebra.status", map[string]any{"intent_id": intent["id"]})
 	if isErr {
 		t.Fatalf("execution_status: %s", text)
 	}
 	if kept, _ := status["result"].(map[string]any); kept == nil || kept["response_is_untrusted_provider_data"] != true {
 		t.Errorf("the kept answer is returned, marked as the provider's data: %v", status["result"])
+	}
+
+	// The receipt is signed, and the server's own check of it passes.
+	rcpt, text, isErr := callTool(t, cs, "algebra.receipt", map[string]any{"intent_id": intent["id"]})
+	if isErr || rcpt["receipt"] != first["receipt"] || rcpt["state"] != "COMMITTED" {
+		t.Fatalf("receipt: %v %s", rcpt, text)
+	}
+	if v, _ := rcpt["verification"].(map[string]any); v == nil || v["valid"] != true {
+		t.Errorf("the receipt verifies: %v", rcpt["verification"])
+	}
+	// Someone else's intent has no receipt to read.
+	other := mcpSession(t, base, issuePass(t, b))
+	if _, text, isErr := callTool(t, other, "algebra.receipt", map[string]any{"intent_id": intent["id"]}); !isErr {
+		t.Errorf("another person's receipt must not be readable: %s", text)
 	}
 
 	// Without catalogs there are no classes to list, and the tool says so.
@@ -139,5 +167,22 @@ func TestMCPOverHTTP_NoTokenNoPayment(t *testing.T) {
 	})
 	if !isErr || !strings.Contains(text, "invalid agent_token") {
 		t.Errorf("a made-up token is refused: %v %q", isErr, text)
+	}
+}
+
+func TestMCPOverHTTP_TheLegacyToolsNeedTheirFlag(t *testing.T) {
+	_, base := serveWith(t, map[string]string{"MCP_LEGACY_TOOLS": "on"})
+	tools, err := mcpSession(t, base, "").ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, tool := range tools.Tools {
+		listed[tool.Name] = true
+	}
+	for _, want := range []string{"algebra.execute", "algebra.status", "algebra.execution_status", "algebra.discover_providers", "commerce.search_products", "payments.create_intent"} {
+		if !listed[want] {
+			t.Errorf("with MCP_LEGACY_TOOLS=on, %s is offered", want)
+		}
 	}
 }

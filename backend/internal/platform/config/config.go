@@ -72,6 +72,11 @@ type Config struct {
 	// /mcp itself; empty means PUBLIC_WEB_URL + "/mcp", which the web app
 	// proxies to it.
 	MCPPublicURL string
+	// MCPLegacyTools (MCP_LEGACY_TOOLS=on) also offers the MCP tools of the
+	// original shopping product (commerce.*, payments.*, profiles.*,
+	// policy.*) and the earlier names algebra.discover_providers and
+	// algebra.execution_status. Off by default.
+	MCPLegacyTools bool
 
 	GeminiAPIKey      string
 	GeminiSearchModel string
@@ -410,6 +415,7 @@ func FromEnv() (*Config, error) {
 	cfg.GoogleSearchEngineID = os.Getenv("GOOGLE_SEARCH_ENGINE_ID")
 	cfg.GeminiAPIKey = getEnv("GEMINI_API_KEY", os.Getenv("GOOGLE_GEMINI_API"))
 	cfg.MCPPublicURL = strings.TrimRight(os.Getenv("MCP_PUBLIC_URL"), "/")
+	cfg.MCPLegacyTools = strings.EqualFold(strings.TrimSpace(os.Getenv("MCP_LEGACY_TOOLS")), "on")
 	cfg.GeminiSearchModel = os.Getenv("GEMINI_SEARCH_MODEL")
 	cfg.TavilyAPIKey = os.Getenv("TAVILY_API_KEY")
 	webSearchTTL, err := getDuration("WEB_SEARCH_CACHE_TTL", 10*time.Minute)

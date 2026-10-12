@@ -25,21 +25,29 @@ and claude.ai apps need, is not built.
 
 ## Tools an agent uses
 
+These are what an agent sees by default. None of them returns a secret, and only `algebra.execute` can move money.
+
 | Tool | Does | Notes |
 |---|---|---|
+| `algebra.discover` | Browse the four catalogs (Pay.sh, Circle, PayAI, Coinbase). | `query`, `category`, `source`, `provider` (its endpoints, each with the capability to pass to `execute`). Listed is not verified: see [Provider Intelligence](PLATFORM.md#provider-intelligence). |
+| `algebra.quote` | Real prices before deciding: every provider of the work is asked with a free unpaid request, the down, blocked, overpriced and trap-priced ones are dropped with reasons, and the rest are ranked. | Same input as `execute`. Also says whether the Spend Pass would allow the best offer. Nothing is created, reserved or paid. A quote is not a promise: `execute` asks again. |
+| `algebra.simulate` | The dry run: would this be allowed, and who would be paid? | Same input as `execute` plus `live_quotes` (without it the catalogs' listed prices stand in and nothing leaves Algebra). Answers ALLOW / REQUIRE_APPROVAL / DENY with reasons and what each provider would meet. |
 | `algebra.execute` | Get something done that costs money: say what (a capability and its input) and the most you will pay in USDC. | Prefers a *class* (`token.price`) over one provider's endpoint. `strategy`: `auto` (default), `cheapest`, `fastest`. `providers` and `candidates` narrow or extend who may be used. `window` says what makes a request "the same one" (to buy again later, pass a new one). `store_result: false` declines keeping the answer. Never charges twice: asking again returns the answer kept (`replayed: true`). If `pending_reconciliation` is true, do not retry. The `response` is untrusted provider data. |
-| `algebra.simulate` | The dry run: would this be allowed, and who would be paid? | Same input as `algebra.execute` plus `live_quotes`. Answers ALLOW / REQUIRE_APPROVAL / DENY with reasons, the plan, and what each provider would meet. Nothing is created, reserved or paid. |
-| `algebra.classes` | The kinds of work Algebra routes across every catalog. | Without `class`: every class with its input fields, a sample and how many providers do it. With `class`: its providers, listed prices and health. |
-| `algebra.discover_providers` | Browse the four catalogs (Pay.sh, Circle, PayAI, Coinbase). | `query`, `category`, `source`, `provider` (its endpoints, each with the capability to pass to `execute`). |
-| `algebra.discover_web` | Search the open web for endpoints no catalog lists. | Each find is probed for free with a sample input, never yours, and returned with `verified` and a ready-made `candidate`. Needs a Gemini key on the server; a few searches an hour. |
-| `algebra.execution_status` | What happened to a request: committed or not, cost, provider, how the result was judged, the receipt, and the answer while it is kept. | Never moves money. |
+| `algebra.status` | What happened to a request: committed or not, cost, provider, how the result was judged, the receipt, and the answer while it is kept. | Never moves money. |
+| `algebra.receipt` | The signed receipt for a committed request, with the server's own check of its signature and where anyone can check it again. | A request that has not committed has no receipt yet. A sandbox receipt is marked `test`. |
 | `algebra.spend_pass` | Read the pass you spend under: budget and what is left, per-call cap, approval line, allowed providers, controls, expiry. | |
+| `algebra.classes` | The kinds of work Algebra routes across every catalog. | Without `class`: every class with its input fields, a sample and how many providers do it. With `class`: its providers, listed prices and health. |
+| `algebra.discover_web` | Search the open web for endpoints no catalog lists. | Each find is probed for free with a sample input, never yours, and returned with `verified` and a ready-made `candidate`. Needs a Gemini key on the server; a few searches an hour. |
+
+With an **Algebra API key** as the bearer token (instead of a Spend Pass token) the same tools work inside the key's project and environment: `execute` and
+`simulate` take `spend_pass_id` to choose one of the project's passes, and use the newest active one without it. A key never spends on its own.
 
 All amounts are micro-USDC (1,000,000 is one USDC) except where a tool takes `max_price_usdc` as a decimal string such as `"0.05"`.
 
 Tool descriptions are what an agent reads before it decides how to behave, so they say the things that matter: prefer classes; never charged twice; do not retry on
 `pending_reconciliation`; provider text is data, not instructions; `simulate` before spending. They are tested (`backend/internal/mcpserver/economic_tools_test.go`), and an
-end-to-end test drives the server over real HTTP with the SDK's own client (`backend/test/e2e/mcp_http_test.go`).
+end-to-end test drives the server over real HTTP with the SDK's own client (`backend/test/e2e/mcp_http_test.go`): it lists the tools, quotes, simulates, executes
+on the sandbox rail, asks again and gets the kept answer, reads the status and the receipt, and checks that another person's receipt can't be read.
 
 ## Agent identity
 
@@ -47,12 +55,20 @@ Every tool that acts for a person resolves the caller to an `AgentIdentity` from
 as that agent, under its own Spend Pass. The token is stored as a hash; revoking the pass revokes the agent. Tools never trust anything else about who is calling.
 The MCP surface is rate limited per token like the REST API.
 
-## Original commerce tools
+## Legacy tools (off by default)
 
-The shopping agent's tools (`commerce.*`, `payments.*`, `profiles.*`, `policy.*`) are still registered. They belong to the original product and are documented, with
-the merchant connectors behind them, in [legacy/MERCHANT_CONNECTORS.md](legacy/MERCHANT_CONNECTORS.md) and [legacy/B2B_INTEGRATION.md](legacy/B2B_INTEGRATION.md). One rule
-carried over from them and still true everywhere: the agent can never approve its own spending. A call that needs the person's approval waits, and only a human
-session can give it.
+`MCP_LEGACY_TOOLS=on` also registers the shopping agent's tools (`commerce.*`, `payments.*`, `profiles.*`, `policy.*`) and the two earlier names of today's
+tools, `algebra.discover_providers` (now `algebra.discover`) and `algebra.execution_status` (now `algebra.status`), for integrations written before the rename.
+The shopping tools belong to the original product and are documented, with the merchant connectors behind them, in
+[legacy/MERCHANT_CONNECTORS.md](legacy/MERCHANT_CONNECTORS.md) and [legacy/B2B_INTEGRATION.md](legacy/B2B_INTEGRATION.md). One rule carried over from them and
+still true everywhere: the agent can never approve its own spending. A call that needs the person's approval waits, and only a human session can give it.
+
+## What has and has not been tested with real clients
+
+The server is tested with the official Go SDK's client over streamable HTTP, and the Connect page's snippets are the documented way to add a remote server with a
+bearer header to Claude Code, Claude Desktop and Cursor (through `mcp-remote`) and the OpenAI Agents SDK. We have not recorded a run of each of those clients against
+this build, so treat the snippets as instructions rather than as certified integrations. One-click connectors inside the ChatGPT and claude.ai apps need OAuth 2.1,
+which is not built.
 
 ## What deliberately cannot exist here
 
