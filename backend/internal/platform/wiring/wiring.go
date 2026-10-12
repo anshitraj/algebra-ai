@@ -532,10 +532,10 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		rc, err := redisplatform.Connect(ctx, cfg.RedisAddr)
 		if err != nil && cfg.IsProduction() {
 			db.Close()
-			return nil, fmt.Errorf("wiring: Redis unavailable at %q (required in production): %w", cfg.RedisAddr, err)
+			return nil, fmt.Errorf("wiring: Redis unavailable at %q (required in production): %w", redisplatform.Redact(cfg.RedisAddr), err)
 		}
 		if err != nil {
-			log.Printf("wiring: Redis unavailable at %q, continuing without rate limiting/locks: %v", cfg.RedisAddr, err)
+			log.Printf("wiring: Redis unavailable at %q, continuing without rate limiting/locks: %v", redisplatform.Redact(cfg.RedisAddr), err)
 		} else {
 			redisClient = rc
 			limiter = rc
