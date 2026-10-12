@@ -159,6 +159,8 @@ type ExecutionService struct {
 	results *ResultVault
 	// health is the free probe's record of providers; nil runs without it.
 	health *HealthService
+	// trust is the provider registry's payee pins and blocks; nil runs without it.
+	trust *IntelService
 	// web searches the open web for endpoints (see web_discovery.go); nil is off.
 	web        WebFinder
 	webLimiter RateLimiter
@@ -395,6 +397,9 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 	// like a trap, or on a network the intent can't pay on never takes one of
 	// the pricing slots below.
 	g := s.newGuards(ctx, req.Candidates)
+	if s.trust != nil {
+		g.flag = func(q routing.Quote) { s.trust.CheckQuote(ctx, q) }
+	}
 	for _, raw := range req.Candidates {
 		c, err := raw.Normalize()
 		if err != nil {
@@ -431,6 +436,7 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 	// 3. Which of them the intent's own limits allow.
 	var opts []routing.Option
 	for i, c := range cands {
+		s.trust.ObserveQuote(ctx, c, quotes[i].err)
 		if quotes[i].err != nil {
 			rejected = append(rejected, routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: routing.RejectUnquotable, Detail: briefly(quotes[i].err.Error())})
 			continue
@@ -708,6 +714,10 @@ func skippable(err error) (string, bool) {
 	if errors.As(err, &denied) {
 		return routing.RejectPolicy, true
 	}
+	var refused *TrustRefused
+	if errors.As(err, &refused) {
+		return refused.Code, true
+	}
 	return "", false
 }
 
@@ -734,6 +744,11 @@ func (s *ExecutionService) Execute(ctx context.Context, req ExecuteRequest) (*Ex
 	}
 	if view.Capability != q.Capability {
 		return nil, fmt.Errorf("%w: the quote is for %q but the intent wants %q", shared.ErrConflict, q.Capability, view.Capability)
+	}
+	// The registry's word before anything is reserved: a blocked endpoint or
+	// a payee other than the pinned one is never paid, whoever built the plan.
+	if r := s.trust.CheckQuote(ctx, q); r != nil {
+		return nil, r
 	}
 
 	// The provider is called with the input its quote priced: the intent's
@@ -821,6 +836,10 @@ func (s *ExecutionService) Execute(ctx context.Context, req ExecuteRequest) (*Ex
 	}
 	s.settle(&res, view2, rsv.ID, obs)
 	res.Finish(s.now())
+	if view2.State == econ.StateCommitted && res.Delivery == econ.FulfillmentFulfilled {
+		// Paid and delivered: the registry pins its payee and may verify it.
+		s.trust.ObserveDelivery(bg, q, int(res.LatencyMS))
+	}
 	if err := res.Validate(); err != nil {
 		s.log.Error("execution: inconsistent result", "intent_id", req.IntentID, "err", err)
 	}

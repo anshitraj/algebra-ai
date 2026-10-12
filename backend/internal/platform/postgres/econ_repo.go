@@ -38,7 +38,7 @@ type querier interface {
 const intentCols = `id, principal_id, COALESCE(pass_id,''), COALESCE(created_by_agent,''), capability, input_hash, input,
 	quantity, validity_window, effect_key, intent_hash, currency, budget_max_minor, constraints, provider_policy,
 	state, commitment, fulfillment, committed_minor, COALESCE(active_reservation_id,''), attempts, blocked_attempts,
-	requires_approval, approved_at, version, created_at, updated_at, expires_at`
+	requires_approval, approved_at, version, created_at, updated_at, expires_at, COALESCE(project_id,'')`
 
 func scanEconIntent(row pgx.Row) (*econ.Intent, error) {
 	var in econ.Intent
@@ -47,7 +47,7 @@ func scanEconIntent(row pgx.Row) (*econ.Intent, error) {
 	err := row.Scan(&in.ID, &in.PrincipalID, &in.PassID, &in.CreatedByAgent, &in.Capability, &in.InputHash, &input,
 		&in.Quantity, &in.Window, &in.EffectKey, &in.IntentHash, &in.Currency, &in.BudgetMaxMinor, &constraints, &providerPolicy,
 		&state, &commitment, &fulfillment, &in.CommittedMinor, &in.ActiveReservationID, &in.Attempts, &in.BlockedAttempts,
-		&in.RequiresApproval, &in.ApprovedAt, &in.Version, &in.CreatedAt, &in.UpdatedAt, &in.ExpiresAt)
+		&in.RequiresApproval, &in.ApprovedAt, &in.Version, &in.CreatedAt, &in.UpdatedAt, &in.ExpiresAt, &in.ProjectID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -79,12 +79,12 @@ func (r *EconRepo) CreateIntent(ctx context.Context, in *econ.Intent) (*econ.Int
 	tag, err := r.db.Pool.Exec(ctx, `
 		INSERT INTO economic_intents (id, principal_id, pass_id, created_by_agent, capability, input_hash, input, quantity,
 		    validity_window, effect_key, intent_hash, currency, budget_max_minor, constraints, provider_policy, state,
-		    commitment, fulfillment, requires_approval, version, created_at, updated_at, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16,$17,$18,$19,$20,$21,$22,$23)
+		    commitment, fulfillment, requires_approval, version, created_at, updated_at, expires_at, project_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16,$17,$18,$19,$20,$21,$22,$23,NULLIF($24,''))
 		ON CONFLICT (principal_id, effect_key) DO NOTHING`,
 		in.ID, in.PrincipalID, nullable(in.PassID), nullable(in.CreatedByAgent), in.Capability, in.InputHash, string(input), in.Quantity,
 		in.Window, in.EffectKey, in.IntentHash, in.Currency, in.BudgetMaxMinor, string(constraints), string(providerPolicy), string(in.State),
-		string(in.Commitment), string(in.Fulfillment), in.RequiresApproval, in.Version, in.CreatedAt, in.UpdatedAt, in.ExpiresAt)
+		string(in.Commitment), string(in.Fulfillment), in.RequiresApproval, in.Version, in.CreatedAt, in.UpdatedAt, in.ExpiresAt, in.ProjectID)
 	if err != nil {
 		return nil, false, fmt.Errorf("postgres: inserting economic intent: %w", err)
 	}

@@ -19,7 +19,10 @@ type Intent struct {
 	ID          string `json:"id"`
 	PrincipalID string `json:"-"`
 	// PassID is the Spend Pass the intent was created under.
-	PassID         string `json:"spend_pass_id,omitempty"`
+	PassID string `json:"spend_pass_id,omitempty"`
+	// ProjectID is the pass's project, when it has one. Not part of the
+	// intent's hash: it says who it was for, not what was bought.
+	ProjectID      string `json:"project_id,omitempty"`
 	CreatedByAgent string `json:"created_by_agent,omitempty"`
 
 	Capability string `json:"capability"`

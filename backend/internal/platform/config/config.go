@@ -72,6 +72,11 @@ type Config struct {
 	// /mcp itself; empty means PUBLIC_WEB_URL + "/mcp", which the web app
 	// proxies to it.
 	MCPPublicURL string
+	// MCPLegacyTools (MCP_LEGACY_TOOLS=on) also offers the MCP tools of the
+	// original shopping product (commerce.*, payments.*, profiles.*,
+	// policy.*) and the earlier names algebra.discover_providers and
+	// algebra.execution_status. Off by default.
+	MCPLegacyTools bool
 
 	GeminiAPIKey      string
 	GeminiSearchModel string
@@ -87,6 +92,11 @@ type Config struct {
 	// everywhere. On by default outside production; in production only
 	// with ECONOMIC_SANDBOX=on.
 	EconomicSandbox bool
+	// MainnetExecution allows real-money payments on Solana mainnet
+	// (MAINNET_EXECUTION=on). Off by default: mainnet discovery, quotes and
+	// simulations work without it; payments are refused with
+	// MAINNET_EXECUTION_DISABLED until an operator turns it on.
+	MainnetExecution bool
 
 	// EconomicProviders is a JSON array of x402 providers the operator pins
 	// by hand, the "configured" discovery source, e.g.
@@ -405,6 +415,7 @@ func FromEnv() (*Config, error) {
 	cfg.GoogleSearchEngineID = os.Getenv("GOOGLE_SEARCH_ENGINE_ID")
 	cfg.GeminiAPIKey = getEnv("GEMINI_API_KEY", os.Getenv("GOOGLE_GEMINI_API"))
 	cfg.MCPPublicURL = strings.TrimRight(os.Getenv("MCP_PUBLIC_URL"), "/")
+	cfg.MCPLegacyTools = strings.EqualFold(strings.TrimSpace(os.Getenv("MCP_LEGACY_TOOLS")), "on")
 	cfg.GeminiSearchModel = os.Getenv("GEMINI_SEARCH_MODEL")
 	cfg.TavilyAPIKey = os.Getenv("TAVILY_API_KEY")
 	webSearchTTL, err := getDuration("WEB_SEARCH_CACHE_TTL", 10*time.Minute)
@@ -442,6 +453,7 @@ func FromEnv() (*Config, error) {
 	if err := loadJupiter(&cfg.Jupiter); err != nil {
 		return nil, err
 	}
+	cfg.MainnetExecution = strings.EqualFold(strings.TrimSpace(os.Getenv("MAINNET_EXECUTION")), "on")
 	switch strings.ToLower(os.Getenv("ECONOMIC_SANDBOX")) {
 	case "on":
 		cfg.EconomicSandbox = true

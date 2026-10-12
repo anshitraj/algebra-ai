@@ -13,6 +13,9 @@ import {
   IconGauge,
   IconGrid,
   IconArrowRight,
+  IconCheck,
+  IconEye,
+  IconTag,
   IconLock,
   IconInbox,
   IconList,
@@ -35,6 +38,7 @@ const PRIMARY: NavItem[] = [
   { href: "/console/agent", label: "Agent chat", icon: <IconChat /> },
   { href: "/console", label: "Overview", icon: <IconGrid /> },
   { href: "/console/providers", label: "Providers", icon: <IconStore /> },
+  { href: "/console/intelligence", label: "Provider intelligence", icon: <IconEye /> },
   { href: "/console/routing", label: "Routing", icon: <IconGauge /> },
   { href: "/console/executions", label: "Executions", icon: <IconList />, badge: "approvals" },
 ];
@@ -42,6 +46,11 @@ const PRIMARY: NavItem[] = [
 const CONTROLS: NavItem[] = [
   { href: "/console/passes", label: "Spend passes", icon: <IconShield /> },
   { href: "/console/firewall", label: "Spend firewall", icon: <IconLock /> },
+];
+
+const DEVELOPERS: NavItem[] = [
+  { href: "/console/quickstart", label: "Quickstart", icon: <IconCheck /> },
+  { href: "/console/projects", label: "Projects & API keys", icon: <IconTag /> },
   { href: "/console/connect", label: "Connect an agent", icon: <IconPlug /> },
 ];
 
@@ -141,7 +150,7 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
           </div>
         </header>
         <div className="console-toolbar hidden shrink-0 items-center gap-3 border-b border-border md:flex print:hidden">
-          <div className="console-breadcrumb"><span>Workspace</span><span>/</span><strong>{[...PRIMARY, ...CONTROLS].find((item) => isActive(pathname, item.href))?.label ?? "Settings"}</strong></div>
+          <div className="console-breadcrumb"><span>Workspace</span><span>/</span><strong>{[...PRIMARY, ...CONTROLS, ...DEVELOPERS].find((item) => isActive(pathname, item.href))?.label ?? "Settings"}</strong></div>
           <div className="console-toolbar-actions"><Link href="/console/connect" className="console-status">Connect an agent <IconArrowRight size={13} /></Link><NetworkSwitch /></div>
         </div>
         <main className={`min-h-0 flex-1 ${fullBleed ? "overflow-hidden" : "overflow-y-auto"} print:overflow-visible`}>
@@ -208,6 +217,10 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
         <div>
           <p className="px-3 pb-1.5 text-xs font-medium text-muted/80">Your agents</p>
           <div className="flex flex-col gap-0.5">{CONTROLS.map(renderItem)}</div>
+        </div>
+        <div>
+          <p className="px-3 pb-1.5 text-xs font-medium text-muted/80">Developers</p>
+          <div className="flex flex-col gap-0.5">{DEVELOPERS.map(renderItem)}</div>
         </div>
         <div className="mx-1 mt-auto rounded-lg border border-border px-3.5 py-4"><IconShield size={20} className="text-foreground" /><p className="mt-3 text-xs font-medium text-foreground">Your limits. Every request.</p><p className="mt-1.5 text-[0.6875rem] leading-relaxed text-muted">USDC on Solana. Keys stay with Algebra. Authority stays with you.</p><Link href="/console/firewall" className="mt-3 inline-flex items-center gap-2 text-[0.6875rem] font-medium text-foreground">Review your firewall <IconArrowRight size={12} /></Link></div>
       </nav>

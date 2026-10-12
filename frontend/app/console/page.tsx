@@ -200,7 +200,7 @@ function GettingStarted({ providers }: { providers?: number }) {
         ))}
       </ol>
       <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
-        <IconCheck size={12} className="text-primary" /> Until this server has a funded Solana wallet, only the sandbox provider can be paid, with simulated USDC.
+        <IconCheck size={12} className="text-primary" /> The sandbox pays with simulated USDC and needs no wallet. Devnet and mainnet calls are paid from this server&apos;s Solana wallet, when one is configured and funded.
       </p>
     </section>
   );

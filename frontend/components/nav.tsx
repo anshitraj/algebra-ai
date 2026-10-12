@@ -9,8 +9,9 @@ import { NetworkToggle } from "./network-toggle";
 const links = [
   { href: "/#product", label: "Product" },
   { href: "/#how-it-works", label: "How it works" },
-  { href: "/#security", label: "Why Algebra" },
   { href: "/#integrate", label: "Developers" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/book-demo", label: "Book a demo" },
 ];
 
 export function Nav() {

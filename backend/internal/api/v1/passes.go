@@ -10,6 +10,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/receipt"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 	"github.com/project-algebra/algebra/internal/domain/spendpass"
+	"github.com/project-algebra/algebra/internal/domain/tenancy"
 )
 
 // --- Spend Passes: the person's side (session only) ---
@@ -28,6 +29,10 @@ type createPassRequest struct {
 	// Controls: calls per minute and the new-provider rule; omitted fields
 	// take the defaults.
 	Controls spendpass.Controls `json:"controls"`
+	// ProjectID and Environment make it a project's pass, usable by that
+	// project's API keys in that environment. Both or neither.
+	ProjectID   string `json:"project_id"`
+	Environment string `json:"environment"`
 }
 
 // Connect is how the new pass's agent reaches Algebra.
@@ -70,7 +75,18 @@ func (a *API) createMyPass(w http.ResponseWriter, r *http.Request) {
 	if days <= 0 {
 		days = 30
 	}
+	if strings.TrimSpace(req.ProjectID) != "" {
+		if a.b.Tenancy == nil {
+			writeJSON(w, http.StatusNotImplemented, errorBody{Error: "projects are not enabled on this server"})
+			return
+		}
+		if _, err := a.b.Tenancy.ManagedProject(r.Context(), sess.UserID, strings.TrimSpace(req.ProjectID)); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
 	issued, err := a.b.SpendPasses.Create(r.Context(), sess.UserID, spendpass.Pass{
+		ProjectID: req.ProjectID, Environment: strings.ToLower(strings.TrimSpace(req.Environment)),
 		Label: req.Label, AgentKind: spendpass.AgentKind(strings.ToLower(req.AgentKind)), Currency: req.Currency,
 		BudgetMinorUnits: req.BudgetMinorUnits, BudgetPeriod: spendpass.Period(strings.ToLower(req.BudgetPeriod)),
 		MaxPerPurchaseMinorUnits: req.MaxPerPurchaseMinorUnits, ApproveAboveMinorUnits: req.ApproveAboveMinorUnits,
@@ -121,7 +137,12 @@ func (a *API) getMyAgentPass(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	p, err := a.b.SpendPasses.ForAgent(r.Context(), ag.ID)
+	executor, err := a.executorForScope(r, ag, r.URL.Query().Get("spend_pass_id"), tenancy.ScopeRead)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	p, err := a.b.SpendPasses.ForAgent(r.Context(), executor)
 	if errors.Is(err, shared.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "this agent has no Spend Pass — it spends under the person's guardrails only"})
 		return

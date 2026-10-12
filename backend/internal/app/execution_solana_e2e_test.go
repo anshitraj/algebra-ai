@@ -47,6 +47,9 @@ type solWorld struct {
 func newSolWorld(t *testing.T, version int, providers ...string) *solWorld {
 	t.Helper()
 	svc, signer := app.NewTestCoordinator(t, 1, 100_000_000)
+	// These tests pay on a fake mainnet cluster: mainnet execution is on here,
+	// as an operator would turn it on (MAINNET_EXECUTION=on).
+	svc.SetMainnetExecution(true)
 	w := &solWorld{svc: svc, signer: signer, chain: solanatest.New(solana.MainnetGenesisHash), servers: map[string]*solanatest.X402Server{}, payees: map[string]solana.PublicKey{}}
 	w.payer, _ = solana.NewKeypair()
 	mintStr, _ := chain.AssetAddress(chain.Solana, "USDC")

@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/project-algebra/algebra/internal/domain/chain"
+	"github.com/project-algebra/algebra/internal/domain/intel"
 	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 )
@@ -48,6 +49,10 @@ const (
 type guards struct {
 	median int64
 	health map[string]EndpointHealth
+	// trust is what the provider registry knows of each candidate, by
+	// candidate ID; flag records a payee change it caught (nil in dry runs).
+	trust map[string]intel.Endpoint
+	flag  func(routing.Quote)
 }
 
 // newGuards prepares the checks for a request: the usual price of the work,
@@ -71,6 +76,9 @@ func (s *ExecutionService) newGuards(ctx context.Context, cands []routing.Candid
 	if s.health != nil {
 		g.health = s.health.Known(ctx, norm)
 	}
+	if s.trust != nil {
+		g.trust = s.trust.known(ctx, norm)
+	}
 	return g
 }
 
@@ -84,6 +92,11 @@ func (g guards) before(view *IntentView, c routing.Candidate) (routing.Candidate
 	// pricing slot from one it can.
 	if n := view.Constraints.AllowedNetworks; len(n) > 0 && c.Network != "" && !slices.Contains(n, chain.NormalizeNetwork(c.Network)) {
 		return reject(routing.RejectNetwork, "listed on "+c.Network)
+	}
+	// A blocked endpoint isn't even asked for a price.
+	if e, ok := g.trust[c.ID]; ok && e.Trust == intel.TrustBlocked {
+		_, detail := e.Check("")
+		return reject(intel.ReasonBlocked, detail)
 	}
 	if h, ok := g.health[c.ID]; ok {
 		if h.Status != HealthUp && h.Failures >= downAfter {
@@ -109,6 +122,15 @@ func (g guards) before(view *IntentView, c routing.Candidate) (routing.Candidate
 // after checks a live quote: what the provider asks right now, against what
 // it lists and what its peers ask.
 func (g guards) after(c routing.Candidate, q routing.Quote) *routing.Rejection {
+	// Its payee must be the one pinned for it (internal/domain/intel).
+	if e, ok := g.trust[c.ID]; ok {
+		if code, detail := e.Check(q.PayTo); code != "" {
+			if g.flag != nil && code == intel.ReasonPayeeChanged {
+				g.flag(q)
+			}
+			return &routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: code, Detail: detail}
+		}
+	}
 	live := q.Cost.ProviderMinor
 	if c.PriceMinor > 0 && live*100 > c.PriceMinor*listingTolerancePct {
 		return &routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: RejectPriceAboveListing,
@@ -156,3 +178,7 @@ func (s *ExecutionService) priceOnly(ctx context.Context, c routing.Candidate, i
 
 // SetHealth gives the router the health probe's findings.
 func (s *ExecutionService) SetHealth(h *HealthService) { s.health = h }
+
+// SetTrust gives the router the provider registry: blocked endpoints and
+// payees other than the pinned one are refused before anything is paid.
+func (s *ExecutionService) SetTrust(t *IntelService) { s.trust = t }

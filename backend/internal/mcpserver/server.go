@@ -33,6 +33,7 @@ import (
 	integratorpkg "github.com/project-algebra/algebra/internal/domain/integrator"
 	"github.com/project-algebra/algebra/internal/domain/privacy"
 	"github.com/project-algebra/algebra/internal/domain/quote"
+	"github.com/project-algebra/algebra/internal/domain/tenancy"
 	"github.com/project-algebra/algebra/providers/catalog"
 )
 
@@ -66,11 +67,15 @@ type Server struct {
 	// SpendPasses backs algebra.spend_pass: an agent reading its own limits.
 	SpendPasses *app.SpendPassService
 
+	// Tenancy resolves Algebra API keys to their project's Spend Pass. Nil
+	// leaves only Spend Pass tokens, as in tests.
+	Tenancy *app.TenancyService
+
 	// Economic and Execution back algebra.execute and
-	// algebra.execution_status: the agent says what it wants and Algebra
+	// algebra.status: the agent says what it wants and Algebra
 	// pays for it and does it. Candidates resolves the providers an agent
 	// names (configured ones and the catalogs). Directory backs
-	// algebra.discover_providers and is nil when the catalog is off. The
+	// algebra.discover and is nil when the catalog is off. The
 	// rest are nil when execution isn't enabled.
 	Economic   *app.EconomicService
 	Execution  *app.ExecutionService
@@ -82,6 +87,17 @@ type Server struct {
 	// Classes is nil when the catalogs are off; Health may be nil.
 	Classes *catalog.ClassIndex
 	Health  *app.HealthService
+
+	// IntentReceipts checks a receipt's signature for algebra.receipt; nil
+	// leaves the receipt unverified by the tool (it can still be verified
+	// by anyone against the published keys).
+	IntentReceipts *app.IntentReceiptService
+
+	// LegacyTools (MCP_LEGACY_TOOLS=on) also registers the earlier names
+	// algebra.discover_providers and algebra.execution_status and the
+	// original shopping product's commerce.*, payments.*, profiles.* and
+	// policy.* tools. Off by default: an agent sees the execution tools only.
+	LegacyTools bool
 
 	// Limiter is optional (mandate §35/§49) — nil means no MCP-level rate
 	// limiting, which is fine for local stdio development and not fine for
@@ -133,20 +149,38 @@ func stripInternal(q *quote.CheckoutQuote) quote.CheckoutQuote {
 	return public
 }
 
-// NewMCPServer builds the go-sdk server and registers every tool against
-// srv. Callers run it with server.Run(ctx, &gomcp.StdioTransport{}) for
+// NewMCPServer builds the go-sdk server and registers the tools against srv:
+// the execution tools always (algebra.discover, quote, simulate, execute,
+// status, receipt, spend_pass, classes, discover_web), the legacy ones only
+// with LegacyTools. Callers run it with server.Run(ctx, &gomcp.StdioTransport{}) for
 // local/dev, or gomcp.NewStreamableHTTPHandler for a production HTTP
 // deployment (see cmd/mcp).
 func NewMCPServer(srv *Server) *gomcp.Server {
 	s := gomcp.NewServer(&gomcp.Implementation{Name: "project-algebra", Version: "0.1.0"}, nil)
 	s.AddReceivingMiddleware(bearerMiddleware, srv.rateLimitMiddleware)
-	srv.registerCommerceTools(s)
 	srv.registerSpendPassTools(s)
 	srv.registerEconomicTools(s)
 	srv.registerDiscoveryTools(s)
-	srv.registerPaymentsTools(s)
-	srv.registerProfilesTools(s)
-	srv.registerPolicyTools(s)
-	srv.registerPaymentIntentTools(s)
+	if srv.LegacyTools {
+		srv.registerLegacyTools(s)
+	}
 	return s
+}
+
+// executor is who spends for a call: the calling agent itself when it is a
+// Spend Pass token, or, for an Algebra API key, the agent of a Spend Pass in
+// the key's project and environment (the one named, or the newest active
+// one). A key never spends on its own.
+func (srv *Server) executor(ctx context.Context, ag *agentpkg.Identity, passID string, scope tenancy.Scope) (string, error) {
+	if srv.Tenancy == nil {
+		return ag.ID, nil
+	}
+	exec, key, err := srv.Tenancy.ExecutorFor(ctx, ag, passID, scope)
+	if err != nil {
+		return "", err
+	}
+	if key == nil {
+		return ag.ID, nil
+	}
+	return exec, nil
 }

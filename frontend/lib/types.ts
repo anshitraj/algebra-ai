@@ -32,6 +32,9 @@ export type SpendPass = {
   controls?: import("./routing-types").PassControls;
   /** Set while the kill switch is on for this pass. */
   frozen_at?: string;
+  /** A project's pass: its API keys in this environment spend under it. */
+  project_id?: string;
+  environment?: import("./platform-types").Environment;
 };
 
 export type PassConnect = { api_base: string; mcp_url?: string };
@@ -52,6 +55,9 @@ export type NewPass = {
   /** Providers the pass may pay, by ID ("paysh:birdeye.data"); empty means any. */
   allowed_merchants?: string[];
   expires_in_days: number;
+  /** Both or neither: a project's pass for one environment (USDC only). */
+  project_id?: string;
+  environment?: import("./platform-types").Environment;
 };
 
 // --- the catalogs of paid APIs: Pay.sh, Circle's Agent Marketplace, PayAI, Coinbase's Bazaar ---

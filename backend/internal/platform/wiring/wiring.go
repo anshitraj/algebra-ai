@@ -28,6 +28,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/billing"
 	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/confidential"
+	"github.com/project-algebra/algebra/internal/domain/intel"
 	"github.com/project-algebra/algebra/internal/domain/merchant"
 	"github.com/project-algebra/algebra/internal/domain/paymentprovider"
 	"github.com/project-algebra/algebra/internal/domain/plugin"
@@ -94,6 +95,11 @@ type Bundle struct {
 	Onboarding *app.OnboardingService
 	Demo       *app.DemoService
 
+	// --- Organizations, projects and API keys (internal/domain/tenancy) ---
+	Tenancy *app.TenancyService
+	// Leads keeps Book a Demo enquiries from the public site.
+	Leads *app.LeadService
+
 	// --- Spend Passes and signed receipts (internal/domain/spendpass, receipt) ---
 	SpendPasses *app.SpendPassService
 	Receipts    *app.ReceiptService
@@ -121,6 +127,9 @@ type Bundle struct {
 	Classes *catalog.ClassIndex
 	// Health probes providers without paying, for the router and console.
 	Health *app.HealthService
+	// Intel is Provider Intelligence: the endpoint registry, its six-hourly
+	// refresh and the payee pins the router enforces.
+	Intel *app.IntelService
 	// SolanaRails are the Solana payment rails running (mainnet, devnet or
 	// both), for the console's wallet status.
 	SolanaRails []*solanax402.Rail
@@ -134,6 +143,8 @@ type Bundle struct {
 
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
+	// MCPLegacyTools: see config.Config.MCPLegacyTools.
+	MCPLegacyTools bool
 	// OAuthProviders holds only the providers with credentials configured,
 	// keyed by name ("google", "github").
 	OAuthProviders map[string]identity.Provider
@@ -362,6 +373,9 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	// receipt signed with a key derived from the master key.
 	passRepo := postgres.NewSpendPassRepo(db)
 	spendPassSvc := app.NewSpendPassService(passRepo, agentSvc, passRepo)
+	// Organizations, projects and API keys. A key signs in as its own agent
+	// identity and spends only through a pass of its project and environment.
+	tenancySvc := app.NewTenancyService(postgres.NewTenancyRepo(db), agents, passRepo)
 	policySvc.SetSpendPasses(spendPassSvc)
 	orderSvc.SetSpendPasses(spendPassSvc)
 	signer, err := receipt.NewSigner(masterKey)
@@ -379,6 +393,8 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	econSvc := app.NewEconomicService(econRepo, agents, passRepo, passRepo)
 	// Demo sign-ins are free and open to anyone: they pay in the sandbox only.
 	econSvc.SetAccountModes(accountSvc)
+	// Real-money mainnet payments only when the operator turned them on.
+	econSvc.SetMainnetExecution(cfg.MainnetExecution)
 	intentReceiptSvc := app.NewIntentReceiptService(signer, cfg.Auth.PublicWebURL, agents, econRepo)
 	econSvc.SetReceipts(intentReceiptSvc)
 	var sandboxProvider *sandboxpay.Provider
@@ -397,10 +413,13 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		}
 	}
 	execSvc, execProviders, solanaRails, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db))
+	var intelSources []app.IntelSource
 	if err == nil && sandboxPersonas != nil {
 		if port := listenPort(cfg.HTTPAddr); port > 0 {
 			var cands []routing.Candidate
-			if cands, err = sandboxPersonas.Candidates("http://127.0.0.1:" + strconv.Itoa(port) + "/api/v1/sandbox/x402/prices"); err == nil {
+			personaBase := "http://127.0.0.1:" + strconv.Itoa(port) + "/api/v1/sandbox/x402/prices"
+			intelSources = append(intelSources, personaRegistry{sandboxPersonas, personaBase})
+			if cands, err = sandboxPersonas.Candidates(personaBase); err == nil {
 				for _, c := range cands {
 					execProviders[c.Provider] = append(execProviders[c.Provider], c)
 				}
@@ -441,6 +460,19 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 			}
 		}()
 	}
+	// Provider Intelligence: the registry of every listed endpoint, refreshed
+	// every six hours (cmd/api runs it), with payee pins and blocks the router
+	// enforces before it pays anybody.
+	if directory != nil {
+		for _, src := range directory.Catalogs() {
+			intelSources = append(intelSources, catalog.RegistrySource{Source: src})
+		}
+	}
+	intelSvc := app.NewIntelService(postgres.NewIntelRepo(db), intelSources...)
+	execSvc.SetTrust(intelSvc)
+	// The sandbox sellers are served by this process: list them now, so a
+	// seller whose payee changed is refused from the first request.
+	intelSvc.SeedLocal(ctx)
 	// The free health probe: unpaid 402 requests, never a payment. Its
 	// findings keep dead and overcharging endpoints out of the router.
 	health := app.NewHealthService(execSvc, postgres.NewHealthRepo(db), candidates)
@@ -450,6 +482,9 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	execSvc.SetHealth(health)
 	onboardingSvc := app.NewOnboardingService(accountSvc, commerceProfileSvc, privacyResolver)
 	demoSvc := app.NewDemoService(accountSvc, onboardingSvc)
+	// A demo account starts with a pass for the sandbox sellers, so its first
+	// request works; it pays only in the sandbox (EconomicService.restrictDemo).
+	demoSvc.SetPasses(spendPassSvc)
 	oauthProviders := map[string]identity.Provider{}
 	if cfg.Auth.GoogleClientID != "" && cfg.Auth.GoogleClientSecret != "" {
 		oauthProviders["google"] = identity.NewGoogle(cfg.Auth.GoogleClientID, cfg.Auth.GoogleClientSecret)
@@ -528,8 +563,8 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
-		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders, Privy: privy,
+		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, Tenancy: tenancySvc, Leads: app.NewLeadService(postgres.NewLeadRepo(db)),
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders, Privy: privy,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,
@@ -693,6 +728,21 @@ func buildDirectory(cfg *config.Config) *catalog.Multi {
 		return nil
 	}
 	return catalog.NewMulti(sources...)
+}
+
+// personaRegistry lists the sandbox sellers for the provider registry, at the
+// same URLs the router calls them.
+type personaRegistry struct {
+	s    *sandboxpay.PersonaServer
+	base string
+}
+
+func (p personaRegistry) Name() string { return "sandbox" }
+
+func (p personaRegistry) Local() bool { return true }
+
+func (p personaRegistry) Snapshot(context.Context) ([]intel.Listed, bool, error) {
+	return p.s.Listings(p.base), false, nil
 }
 
 // catalogSource adapts the catalogs to app.CatalogSource: a capability no

@@ -76,6 +76,25 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/me/intents", api.listMyIntents)
 	mux.HandleFunc("GET /api/v1/me/approvals", api.listMyApprovals)
 	mux.HandleFunc("GET /api/v1/me/orders", api.listMyOrders)
+	// Organizations, projects and API keys (session only; tenancy.go).
+	mux.HandleFunc("GET /api/v1/orgs", api.listOrgs)
+	mux.HandleFunc("POST /api/v1/orgs", api.createOrg)
+	mux.HandleFunc("GET /api/v1/orgs/{id}/projects", api.listProjects)
+	mux.HandleFunc("POST /api/v1/orgs/{id}/projects", api.createProject)
+	mux.HandleFunc("PATCH /api/v1/projects/{id}", api.updateProject)
+	mux.HandleFunc("GET /api/v1/projects/{id}/keys", api.listKeys)
+	mux.HandleFunc("POST /api/v1/projects/{id}/keys", api.createKey)
+	mux.HandleFunc("GET /api/v1/projects/{id}/events", api.projectEvents)
+	mux.HandleFunc("GET /api/v1/projects/{id}/passes", api.projectPasses)
+	mux.HandleFunc("GET /api/v1/projects/{id}/usage", api.projectUsage)
+	mux.HandleFunc("POST /api/v1/orgs/{id}/trial", api.startTrial)
+	// Plans and Book a Demo (leads.go): the catalog and the form are public.
+	mux.HandleFunc("GET /api/v1/plans", api.listPlans)
+	mux.HandleFunc("POST /api/v1/leads", api.createLead)
+	mux.HandleFunc("GET /api/v1/leads", api.listLeads)
+	mux.HandleFunc("POST /api/v1/keys/{id}/rotate", api.rotateKey)
+	mux.HandleFunc("POST /api/v1/keys/{id}/revoke", api.revokeKey)
+
 	mux.HandleFunc("GET /api/v1/me/passes", api.listMyPasses)
 	mux.HandleFunc("POST /api/v1/me/passes", api.createMyPass)
 	mux.HandleFunc("POST /api/v1/me/passes/{id}/revoke", api.revokeMyPass)
@@ -126,6 +145,8 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	if b.SandboxPersonas != nil {
 		// SANDBOX providers of token.price: alpha, beta, flaky, greedy, trap.
 		mux.HandleFunc("POST /api/v1/sandbox/x402/prices/{name}", b.SandboxPersonas.Serve)
+		// What sandbox (and demo) accounts can buy: every simulated seller.
+		mux.HandleFunc("GET /api/v1/sandbox/sellers", api.sandboxSellers)
 	}
 
 	mux.HandleFunc("GET /api/v1/billing", api.getBilling)
@@ -198,6 +219,12 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/classes/{id}/health", api.getClassHealth)
 	mux.HandleFunc("POST /api/v1/classes/{id}/probe", api.probeClass)
 	mux.HandleFunc("GET /api/v1/rails", api.listRails)
+	mux.HandleFunc("GET /api/v1/intel/status", api.intelStatus)
+	mux.HandleFunc("GET /api/v1/intel/endpoints", api.listIntelEndpoints)
+	mux.HandleFunc("GET /api/v1/intel/endpoints/{id}", api.getIntelEndpoint)
+	mux.HandleFunc("PUT /api/v1/intel/endpoints/{id}/trust", api.setIntelTrust)
+	mux.HandleFunc("GET /api/v1/intel/changes", api.listIntelChanges)
+	mux.HandleFunc("POST /api/v1/intel/refresh", api.refreshIntel)
 
 	mux.HandleFunc("POST /api/v1/profiles/shipping", api.createShippingProfile)
 	mux.HandleFunc("POST /api/v1/profiles/billing", api.createBillingProfile)

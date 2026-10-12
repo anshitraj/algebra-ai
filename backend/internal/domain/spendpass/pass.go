@@ -85,6 +85,13 @@ type Pass struct {
 	// can be lifted.
 	FrozenAt *time.Time `json:"frozen_at,omitempty"`
 
+	// ProjectID and Environment place the pass in a project and an environment
+	// (sandbox, devnet or mainnet). Both are empty on passes made before projects
+	// existed; such passes keep working as they did. An environment limits the
+	// networks every intent made under the pass may pay on.
+	ProjectID   string `json:"project_id,omitempty"`
+	Environment string `json:"environment,omitempty"`
+
 	CreatedAt time.Time  `json:"created_at"`
 	ExpiresAt time.Time  `json:"expires_at"`
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
@@ -114,6 +121,18 @@ func (p Pass) Normalize(now time.Time, knownCategories []string) (Pass, error) {
 	}
 	if p.BudgetMinorUnits <= 0 {
 		return p, errors.New("the budget must be more than zero")
+	}
+	p.ProjectID, p.Environment = strings.TrimSpace(p.ProjectID), strings.TrimSpace(p.Environment)
+	switch p.Environment {
+	case "", "sandbox", "devnet", "mainnet":
+	default:
+		return p, fmt.Errorf("environment must be sandbox, devnet or mainnet, not %q", p.Environment)
+	}
+	if (p.ProjectID == "") != (p.Environment == "") {
+		return p, errors.New("a pass for a project names both the project and the environment")
+	}
+	if p.Environment != "" && p.Currency != "USDC" {
+		return p, errors.New("a project's pass spends USDC")
 	}
 	switch p.BudgetPeriod {
 	case PeriodTotal, PeriodWeek, PeriodMonth:

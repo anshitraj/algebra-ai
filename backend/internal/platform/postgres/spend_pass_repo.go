@@ -41,10 +41,11 @@ func (r *SpendPassRepo) Create(ctx context.Context, p *spendpass.Pass) error {
 	_, err = r.db.Pool.Exec(ctx, `
 		INSERT INTO spend_passes (id, user_id, agent_id, label, agent_kind, currency, budget_minor_units, budget_period,
 		                          max_per_purchase_minor_units, approve_above_minor_units, allowed_categories, allowed_merchants,
-		                          created_at, expires_at, controls)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,$15::jsonb)`,
+		                          created_at, expires_at, controls, project_id, environment)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,$15::jsonb,NULLIF($16,''),NULLIF($17,''))`,
 		p.ID, p.UserID, p.AgentID, p.Label, string(p.AgentKind), p.Currency, p.BudgetMinorUnits, string(p.BudgetPeriod),
-		p.MaxPerPurchaseMinorUnits, p.ApproveAboveMinorUnits, string(cats), string(merchants), p.CreatedAt, p.ExpiresAt, string(controls))
+		p.MaxPerPurchaseMinorUnits, p.ApproveAboveMinorUnits, string(cats), string(merchants), p.CreatedAt, p.ExpiresAt, string(controls),
+		p.ProjectID, p.Environment)
 	if err != nil {
 		return fmt.Errorf("postgres: inserting spend pass: %w", err)
 	}
@@ -54,7 +55,7 @@ func (r *SpendPassRepo) Create(ctx context.Context, p *spendpass.Pass) error {
 const passSelect = `
 	SELECT id, user_id, agent_id, label, agent_kind, currency, budget_minor_units, budget_period,
 	       max_per_purchase_minor_units, approve_above_minor_units, allowed_categories, allowed_merchants,
-	       created_at, expires_at, revoked_at, controls, frozen_at
+	       created_at, expires_at, revoked_at, controls, frozen_at, COALESCE(project_id, ''), COALESCE(environment, '')
 	FROM spend_passes`
 
 func scanPass(row pgx.Row) (*spendpass.Pass, error) {
@@ -63,7 +64,7 @@ func scanPass(row pgx.Row) (*spendpass.Pass, error) {
 	var cats, merchants, controls []byte
 	if err := row.Scan(&p.ID, &p.UserID, &p.AgentID, &p.Label, &kind, &p.Currency, &p.BudgetMinorUnits, &period,
 		&p.MaxPerPurchaseMinorUnits, &p.ApproveAboveMinorUnits, &cats, &merchants, &p.CreatedAt, &p.ExpiresAt, &p.RevokedAt,
-		&controls, &p.FrozenAt); err != nil {
+		&controls, &p.FrozenAt, &p.ProjectID, &p.Environment); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, shared.ErrNotFound
 		}
@@ -210,4 +211,23 @@ func (r *ReceiptRepo) Get(ctx context.Context, id string) (*app.StoredReceipt, e
 
 func (r *ReceiptRepo) GetByOrder(ctx context.Context, orderID string) (*app.StoredReceipt, error) {
 	return scanReceipt(r.db.Pool.QueryRow(ctx, receiptSelect+` WHERE order_id = $1`, orderID))
+}
+
+// ListByProject returns a project's passes in one environment (all
+// environments when env is empty), newest first.
+func (r *SpendPassRepo) ListByProject(ctx context.Context, projectID, env string) ([]spendpass.Pass, error) {
+	rows, err := r.db.Pool.Query(ctx, passSelect+` WHERE project_id = $1 AND ($2 = '' OR environment = $2) ORDER BY created_at DESC LIMIT 100`, projectID, env)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: listing project passes: %w", err)
+	}
+	defer rows.Close()
+	out := []spendpass.Pass{}
+	for rows.Next() {
+		p, err := scanPass(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *p)
+	}
+	return out, rows.Err()
 }

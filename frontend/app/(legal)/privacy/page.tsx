@@ -40,6 +40,11 @@ export default function PrivacyPage() {
           <li>
             <strong>Devices</strong> — for each signed-in session, its IP address, browser and last activity, so you can see and sign out devices.
           </li>
+          <li>
+            <strong>Demo requests</strong> — if you send the Book a demo form: the business name, work email, website, what you want to build and the
+            usage you expect, with the IP address it came from. We use it only to reply to you, and it is not shared with anyone else. Ask us to
+            delete it at any time.
+          </li>
         </ul>
         <p>We never collect card numbers, wallet private keys or one-time passwords.</p>
       </Section>

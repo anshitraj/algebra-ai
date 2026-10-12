@@ -29,6 +29,9 @@ func withJupiter(t *testing.T, b *wiring.Bundle) (*jupitertest.Harness, solana.P
 		t.Fatal(err)
 	}
 	b.Economic.RegisterRail(rail)
+	// A swap spends on (a fake) mainnet: mainnet execution is on for these
+	// tests, as an operator would turn it on with MAINNET_EXECUTION=on.
+	b.Economic.SetMainnetExecution(true)
 	b.Execution.RegisterRunner(jupiter.NewRunner(jupiter.RunnerConfig{
 		Client: jupiter.NewClient(h.APIURL, "", safehttp.New(safehttp.Options{AllowLoopback: true})), Wallet: wallet.PublicKey(),
 	}))

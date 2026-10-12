@@ -381,3 +381,108 @@ fn a_pass_id_is_used_once() {
     assert!(create(&mut w, 5, terms()).is_err());
     create(&mut w, 6, terms()).unwrap();
 }
+
+/// A pull that names `mint` and its vault for `pass`, as the agent.
+fn pull_of_mint(w: &World, pass: Pubkey, mint: Pubkey, destination: Pubkey, amount: u64) -> Instruction {
+    Instruction {
+        program_id: spend_pass::id(),
+        accounts: spend_pass::accounts::Pull {
+            agent: w.agent.pubkey(),
+            pass,
+            mint,
+            vault: vault_address(&pass, &mint),
+            destination,
+            token_program: TOKEN_PROGRAM_ID,
+        }
+        .to_account_metas(None),
+        data: spend_pass::instruction::Pull { amount, intent: [7; 32] }.data(),
+    }
+}
+
+#[test]
+fn only_the_passes_own_asset_can_be_pulled() {
+    let mut w = world();
+    let pass = create(&mut w, 1, terms()).unwrap();
+    deposit(&mut w, pass, 100_000).unwrap();
+
+    // Another token lands in an account the pass owns: anyone can send a
+    // pass tokens. The agent must not be able to take them out.
+    let owner = w.owner.insecure_clone();
+    let other = CreateMint::new(&mut w.svm, &owner).decimals(6).authority(&owner.pubkey()).send().unwrap();
+    let other_vault = CreateAssociatedTokenAccount::new(&mut w.svm, &owner, &other).owner(&pass).send().unwrap();
+    assert_eq!(other_vault, vault_address(&pass, &other));
+    MintTo::new(&mut w.svm, &owner, &other, &other_vault, 500_000).send().unwrap();
+    let payer = w.payer.insecure_clone();
+    let other_destination = CreateAssociatedTokenAccount::new(&mut w.svm, &payer, &other).owner(&payer.pubkey()).send().unwrap();
+
+    let agent = w.agent.insecure_clone();
+    // The other asset, to an account of the payer's in that asset.
+    let ix = pull_of_mint(&w, pass, other, other_destination, 1);
+    expect_refused(send(&mut w.svm, &[&agent], ix), "Custom(2001)"); // has_one = mint
+    // The other asset's vault with the pass's real destination.
+    let ix = pull_of_mint(&w, pass, other, w.destination, 1);
+    expect_refused(send(&mut w.svm, &[&agent], ix), "Custom(2001)");
+
+    assert_eq!(balance(&w, &other_vault), 500_000);
+    assert_eq!(balance(&w, &vault_address(&pass, &w.mint)), 100_000);
+    let p = state(&w, &pass);
+    assert_eq!((p.spent, p.pulls), (0, 0));
+}
+
+#[test]
+fn a_replayed_transaction_is_not_a_second_pull() {
+    let mut w = world();
+    let pass = create(&mut w, 1, terms()).unwrap();
+    deposit(&mut w, pass, 100_000).unwrap();
+
+    let agent = w.agent.insecure_clone();
+    w.svm.expire_blockhash();
+    let ix = pull_of_mint(&w, pass, w.mint, w.destination, 30_000);
+    let tx = Transaction::new(&[&agent], Message::new(&[ix], Some(&agent.pubkey())), w.svm.latest_blockhash());
+    w.svm.send_transaction(tx.clone()).unwrap();
+
+    // The very same signed transaction, sent again by anyone who saw it.
+    let replay = w.svm.send_transaction(tx).map(|_| ()).map_err(|e| format!("{:?}", e.err));
+    expect_refused(replay, "AlreadyProcessed");
+    let p = state(&w, &pass);
+    assert_eq!((p.spent, p.pulls), (30_000, 1));
+    assert_eq!(balance(&w, &w.destination), 30_000);
+
+    // The program does not remember intents: a new transaction for the same
+    // intent is a new pull. What bounds it is the budget, the per-call cap
+    // and the window, which is why Algebra's coordinator, not the program,
+    // is what allows one attempt per request.
+    let ix = pull_of_mint(&w, pass, w.mint, w.destination, 30_000);
+    send(&mut w.svm, &[&agent], ix).unwrap();
+    let p = state(&w, &pass);
+    assert_eq!((p.spent, p.pulls), (60_000, 2));
+    assert!(p.spent <= terms().total_budget);
+}
+
+#[test]
+fn an_account_that_is_not_a_pass_is_refused() {
+    let mut w = world();
+    let pass = create(&mut w, 1, terms()).unwrap();
+    deposit(&mut w, pass, 100_000).unwrap();
+    let agent = w.agent.insecure_clone();
+
+    // A token account where the pass should be: owned by another program.
+    let ix = pull_of_mint(&w, w.owner_token, w.mint, w.destination, 1);
+    assert!(send(&mut w.svm, &[&agent], ix).is_err());
+
+    // An address that holds nothing.
+    let nowhere = pass_address(&w.owner.pubkey(), 999);
+    let ix = pull_of_mint(&w, nowhere, w.mint, w.destination, 1);
+    assert!(send(&mut w.svm, &[&agent], ix).is_err());
+
+    // Someone else's pass, with this pass's vault: the vault must be the
+    // named pass's own.
+    let other_owner = Keypair::new();
+    w.svm.airdrop(&other_owner.pubkey(), 1_000_000_000).unwrap();
+    let mut ix = pull_of_mint(&w, pass, w.mint, w.destination, 1);
+    ix.accounts[3].pubkey = vault_address(&pass_address(&other_owner.pubkey(), 1), &w.mint);
+    assert!(send(&mut w.svm, &[&agent], ix).is_err());
+
+    assert_eq!(balance(&w, &vault_address(&pass, &w.mint)), 100_000);
+    assert_eq!(state(&w, &pass).pulls, 0);
+}

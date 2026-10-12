@@ -9,10 +9,12 @@ import (
 
 	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/shared"
+	"github.com/project-algebra/algebra/internal/domain/tenancy"
 )
 
 type spendPassInput struct {
-	AgentToken string `json:"agent_token,omitempty" jsonschema:"bearer token identifying the calling agent; omit when the connection sends Authorization: Bearer"`
+	AgentToken  string `json:"agent_token,omitempty" jsonschema:"bearer token identifying the calling agent; omit when the connection sends Authorization: Bearer"`
+	SpendPassID string `json:"spend_pass_id,omitempty" jsonschema:"with an Algebra API key: which of the project's passes to read. Omit for the newest active one"`
 }
 
 func (srv *Server) registerSpendPassTools(s *gomcp.Server) {
@@ -30,7 +32,11 @@ func (srv *Server) registerSpendPassTools(s *gomcp.Server) {
 		if err != nil {
 			return nil, app.PassView{}, err
 		}
-		p, err := srv.SpendPasses.ForAgent(ctx, ag.ID)
+		executor, err := srv.executor(ctx, ag, in.SpendPassID, tenancy.ScopeRead)
+		if err != nil {
+			return nil, app.PassView{}, err
+		}
+		p, err := srv.SpendPasses.ForAgent(ctx, executor)
 		if errors.Is(err, shared.ErrNotFound) {
 			return nil, app.PassView{}, fmt.Errorf("this agent has no Spend Pass — it spends under the person's own guardrails only")
 		}

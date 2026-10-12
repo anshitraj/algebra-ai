@@ -14,6 +14,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 	"github.com/project-algebra/algebra/internal/domain/spendpass"
+	"github.com/project-algebra/algebra/internal/domain/tenancy"
 	"github.com/project-algebra/algebra/policy"
 )
 
@@ -91,6 +92,8 @@ type EconomicService struct {
 	// modes tells demo accounts from live ones (AccountService). Nil leaves
 	// every account on every network, as in tests.
 	modes AccountModes
+	// mainnetExecution allows real-money payments on Solana mainnet.
+	mainnetExecution bool
 }
 
 // ResolutionHook is told when reconciliation settles an ambiguous attempt:
@@ -246,7 +249,42 @@ const (
 	// DenyNetworkNotAllowed: a payment was about to be signed on a network the
 	// intent's own constraints exclude.
 	DenyNetworkNotAllowed = "NETWORK_NOT_ALLOWED"
+	// DenyEnvironmentNetwork: a project's pass asked for a network outside its
+	// environment (a sandbox pass naming devnet, a devnet pass naming mainnet).
+	DenyEnvironmentNetwork = "ENVIRONMENT_NETWORK_MISMATCH"
+	// DenyMainnetDisabled: a real-money mainnet payment while this deployment
+	// has not explicitly enabled mainnet execution (MAINNET_EXECUTION=on).
+	DenyMainnetDisabled = "MAINNET_EXECUTION_DISABLED"
 )
+
+// SetMainnetExecution turns real-money mainnet payments on. Off by default:
+// quotes, simulations and discovery on mainnet keep working, payments do not.
+func (s *EconomicService) SetMainnetExecution(on bool) { s.mainnetExecution = on }
+
+// restrictEnvironment limits an intent to its pass's environment: a project's
+// sandbox pass pays only in the sandbox, a devnet pass only on devnet, a
+// mainnet pass only on mainnet. With no network named the intent gets the
+// environment's; naming any other is refused. Passes without an environment
+// (made before projects existed) are not restricted here.
+func (s *EconomicService) restrictEnvironment(p *spendpass.Pass, spec *econ.Spec) error {
+	allowed := tenancy.Environment(p.Environment).Networks()
+	if len(allowed) == 0 {
+		return nil
+	}
+	if len(spec.Constraints.AllowedNetworks) == 0 {
+		spec.Constraints.AllowedNetworks = slices.Clone(allowed)
+	} else {
+		for _, n := range spec.Constraints.AllowedNetworks {
+			if !slices.Contains(allowed, chain.NormalizeNetwork(n)) {
+				return &AuthorityDenied{ReasonCodes: []string{DenyEnvironmentNetwork}}
+			}
+		}
+	}
+	if !s.mainnetExecution && slices.Equal(spec.Constraints.AllowedNetworks, []string{chain.Solana}) {
+		return &AuthorityDenied{ReasonCodes: []string{DenyMainnetDisabled}}
+	}
+	return nil
+}
 
 // restrictDemo keeps a demo account in the sandbox. A demo sign-in is free and
 // open to anyone, so whatever the caller asks for, it must never reach the
@@ -281,6 +319,9 @@ func (s *EconomicService) create(ctx context.Context, p *spendpass.Pass, agentID
 	if err := s.restrictDemo(ctx, p.UserID, &spec); err != nil {
 		return nil, false, err
 	}
+	if err := s.restrictEnvironment(p, &spec); err != nil {
+		return nil, false, err
+	}
 	if s.funder != nil {
 		if err := s.funder.Check(ctx, p.ID); err != nil {
 			return nil, false, err
@@ -294,6 +335,7 @@ func (s *EconomicService) create(ctx context.Context, p *spendpass.Pass, agentID
 	if err != nil {
 		return nil, false, fmt.Errorf("%w: %s", shared.ErrConflict, err.Error())
 	}
+	in.ProjectID = p.ProjectID
 	spent, err := s.ordersSpent(ctx, p)
 	if err != nil {
 		return nil, false, err
@@ -702,6 +744,10 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 	// signed on a network the intent excludes.
 	if len(networks) > 0 && !slices.Contains(networks, chain.NormalizeNetwork(auth.Evidence.Network)) {
 		return nil, &AuthorityDenied{ReasonCodes: []string{DenyNetworkNotAllowed}}
+	}
+	// Real money on mainnet only where the deployment has turned it on.
+	if !s.mainnetExecution && chain.NormalizeNetwork(auth.Evidence.Network) == chain.Solana {
+		return nil, &AuthorityDenied{ReasonCodes: []string{DenyMainnetDisabled}}
 	}
 	// A pass on chain funds the payment itself, and the chain checks the
 	// owner's limits once more. The signed payment is handed over only after

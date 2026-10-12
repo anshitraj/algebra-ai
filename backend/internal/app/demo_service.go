@@ -3,9 +3,11 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/account"
 	"github.com/project-algebra/algebra/internal/domain/privacy"
+	"github.com/project-algebra/algebra/internal/domain/spendpass"
 )
 
 // DemoService starts demo accounts: one click from the sign-in page, no
@@ -16,7 +18,18 @@ import (
 type DemoService struct {
 	accounts   *AccountService
 	onboarding *OnboardingService
+	passes     *SpendPassService
 }
+
+// SetPasses gives every new demo account a Spend Pass for the sandbox sellers.
+func (s *DemoService) SetPasses(p *SpendPassService) { s.passes = p }
+
+// DemoPassBudgetMinor and DemoPassPerCallMinor bound a demo account's pass:
+// enough for every sandbox seller several times over, in simulated USDC.
+const (
+	DemoPassBudgetMinor  = 1_000_000 // 1 USDC
+	DemoPassPerCallMinor = 50_000    // 0.05 USDC
+)
 
 func NewDemoService(accounts *AccountService, onboarding *OnboardingService) *DemoService {
 	return &DemoService{accounts: accounts, onboarding: onboarding}
@@ -66,6 +79,20 @@ func (s *DemoService) Start(ctx context.Context, meta account.ClientMeta) (*Sign
 	if err := s.onboarding.Complete(ctx, res.Session, answers); err != nil {
 		_ = s.accounts.SignOut(ctx, res.Session)
 		return nil, fmt.Errorf("app: setting up demo account: %w", err)
+	}
+	if s.passes != nil {
+		// Ready to pay the sandbox sellers at once. A demo account pays only in
+		// the sandbox (EconomicService.restrictDemo), so this is simulated USDC.
+		perCall := int64(DemoPassPerCallMinor)
+		if _, err := s.passes.Create(ctx, res.User.ID, spendpass.Pass{
+			Label: "Demo agent (simulated USDC)", AgentKind: spendpass.AgentCustom, Currency: "USDC",
+			BudgetMinorUnits: DemoPassBudgetMinor, BudgetPeriod: spendpass.PeriodTotal, MaxPerPurchaseMinorUnits: &perCall,
+			Controls:  spendpass.Controls{NewProviders: spendpass.NewProvidersAllow},
+			ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+		}); err != nil {
+			_ = s.accounts.SignOut(ctx, res.Session)
+			return nil, fmt.Errorf("app: setting up the demo account's pass: %w", err)
+		}
 	}
 	u, err := s.accounts.User(ctx, res.User.ID)
 	if err != nil {

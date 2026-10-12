@@ -7,6 +7,8 @@ import (
 
 	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/econ"
+
+	"github.com/project-algebra/algebra/internal/domain/tenancy"
 )
 
 // simulatePolicy: POST /api/v1/policy/simulate — "would this be allowed, and
@@ -39,7 +41,7 @@ func (a *API) simulatePolicy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
 		return
 	}
-	executor, err := a.executorFor(r, ag, req.PassID)
+	executor, err := a.executorForScope(r, ag, req.PassID, tenancy.ScopeSimulate)
 	if err != nil {
 		writeError(w, err)
 		return
