@@ -20,5 +20,5 @@ export const LEGAL = {
     return this.entity === "Algebra" ? `Algebra ("we")` : `${this.entity} ("Algebra", "we")`;
   },
   /** Shown on every legal page. Update when the text changes. */
-  updated: "7 October 2026",
+  updated: "12 October 2026",
 };

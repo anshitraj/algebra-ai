@@ -107,6 +107,48 @@ providers, paid in Circle's devnet USDC from Algebra's wallet:
 | `token.price` with the kill switch on | refused with 403 "frozen by its owner's kill switch"; nothing paid | none |
 | `token.price` from demo:alpha, never paid before, pass rule "ask me" | intent moved to AWAITING_APPROVAL; after the person approved, paid **demo:alpha 0.002** | [3Jhety7a…](https://explorer.solana.com/tx/3Jhety7asFqxXtVUgJb95xivtAEcjntQvnNXgxUX5TA5GNxhSvC7k1WsKdsmx3Ezmjp3Mu7oSZ7kzY733GAHFcRc?cluster=devnet) |
 
+## Proof: a project's API key paying from an on-chain Spend Pass (2026-10-12)
+
+Demo B, run through the API on devnet. An organization's project had a devnet
+Spend Pass put on Solana by its owner's wallet, and the project's devnet API
+key (`alg_sk_devnet_…`) asked for `token.price`:
+
+| Step | What happened | Transaction |
+|---|---|---|
+| The owner's wallet made the pass and funded its vault | `CreatePass` + `Deposit` of 0.1 USDC in one transaction, signed by the owner [`9kEVg2no…`](https://explorer.solana.com/address/9kEVg2noE8uubD6e1jMtEwumULEyNLgr7uYCXDVL4CLW?cluster=devnet); pass [`6mWZibyY…`](https://explorer.solana.com/address/6mWZibyYhPJmML2ZKZjrgttiaZ7tfMmNzagbvA5v9Uyz?cluster=devnet) | [8ieRLFSe…](https://explorer.solana.com/tx/8ieRLFSe2T99w7C2aAfeiq1w5xNPYvMiyP14cHhSaTgiwpYRyWw4ZCvkWHjvph2zsb6Jj8Cf6Jnwu9Kr6LYxLYs?cluster=devnet) |
+| The key asked for `token.price`, at most 0.01 USDC | priced the providers of the class, rejected 19 candidates (down, overpriced, trap-priced, other networks), ranked demo:beta (0.001) over demo:alpha (0.002); policy ALLOW, re-checked before signing | none |
+| The program released the payment's amount | `pull` of exactly 0.001 USDC from the vault to Algebra's payer | [PNMGp9o1…](https://explorer.solana.com/tx/PNMGp9o1WLsUba1fasrqDuDuDQ8EXbstVjBMfZFf9JxqU9HLc3UGeCAjBWbsNRq9R5GpGEyAcrcjr1KcP5gFWSr?cluster=devnet) |
+| The provider was paid over x402 | 0.001 USDC to demo:beta's payee `8CgZoM7s…`; intent COMMITTED, answer delivered | [5C37eZ6G…](https://explorer.solana.com/tx/5C37eZ6GBoFFqJBb5gRApSKcb963Wjw4K6vvva6aXXiZhm6ou615NFtmXefFtLNzNa5LXw8yEfbVC9BJztWmDqZ?cluster=devnet) |
+| The same request was sent again (Demo D) | answered from the kept result (`replayed: true`): one attempt, one pull, one payment | none |
+
+Checked on 2026-10-12: all three transactions are finalized without error on
+devnet; the pass account has exactly two transactions (the creation and the
+one pull); the database holds one pull for the pass, in state `SETTLED` with
+nothing to refund; and the signed receipt (`ircpt_99265b38…`) verifies at
+`POST /api/v1/receipts/verify`, naming the pass, the provider, the amount and
+the payment transaction above.
+
+demo:beta is **Algebra's own demonstration provider** on devnet
+(`backend/cmd/demo-provider`), not an independent third party: the public
+catalogs list mainnet endpoints, and we did not find a third-party x402
+provider settling on Solana devnet to pay instead. The payment, the program
+and the settlement are real devnet transactions; the seller is ours.
+
+Not covered by this run: the wallet-connect step in a browser. The owner's
+transaction was signed with `backend/cmd/spend-pass` from a keypair file, the
+same unsigned transaction the console hands to a Wallet Standard wallet.
+
+## The six demonstrations
+
+| | What it shows | How to run it | Evidence |
+|---|---|---|---|
+| **A** | A new developer: sign up, project, sandbox pass, API key, dry run, sandbox execution, receipt. No wallet, no money. | Console → **Quickstart** (`/console/quickstart`) | Run in a browser on 2026-10-12 ([route audit](ROUTE_AUDIT.md)); `TestTenancyOverHTTP_AKeyRunsInItsProjectAndEnvironmentOnly` |
+| **B** | A devnet payment from an on-chain Spend Pass, with explorer links and a signed receipt. | The section above; setup in [SPEND_PASS_PROGRAM.md](SPEND_PASS_PROGRAM.md#proof-on-devnet-2026-10-09) | Three finalized devnet transactions, above |
+| **C** | A provider that changes where it wants to be paid is refused, then blocked. | `sandbox:shifty` is one of the sandbox sellers: a dry run in Quickstart shows it refused with `PROVIDER_BLOCKED (PAYEE_CHANGED)`; Provider intelligence lists it under *Suspicious changes* | `TestProviderTrustOverHTTP_APayeeChangeIsRefusedThenBlocked`, `TestMerge_ListingPayeeChangeBlocks` |
+| **D** | The same request twice pays once. | Send any `execute` request twice with the same `window` | `TestExecuteOverHTTP_ARepeatRequestIsAnsweredFromTheKeptResult`; the devnet run above |
+| **E** | The registry refresh: new, changed-price and changed-payee endpoints, and the trust change. | Provider intelligence → *Refresh now*; the history is under each endpoint | `internal/domain/intel/intel_test.go` (merge, price, payee, removal, restore, six-hour slots) on fixtures. Not yet shown: a scripted end-to-end run against stand-in catalogs, and two instances racing for the job lease |
+| **F** | A Jupiter swap: quote, policy, simulate before sign. | `solana.swap` (off by default) | `TestSwapOverHTTP_*` on a fake cluster and a fake Jupiter. **No swap has landed on any chain** |
+
 ## Payment channels, proven on devnet
 
 `backend/cmd/paychan-smoke` runs the x402 `upto` flow through the real

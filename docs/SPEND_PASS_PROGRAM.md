@@ -132,10 +132,33 @@ cargo build-sbf --manifest-path solana-program/Cargo.toml
 cargo test --manifest-path solana-program/Cargo.toml
 ```
 
-The tests are unit tests of every limit (`state.rs`) and LiteSVM tests that run
-the built `.so`: the whole life of a pass, every refusal (per-call cap, budget,
-window, expiry, frozen, revoked, wrong signer, wrong destination, refund over
-spent), agent rotation, and one pass per id.
+The tests are 13 unit tests of every limit (`state.rs`) and 11 LiteSVM tests
+that run the built `.so` (`tests/mod.rs`):
+
+| What must hold | Test |
+|---|---|
+| A legitimate pull, deposit, refund, withdraw, freeze, revoke and close | `a_pass_lives_its_whole_life` |
+| Per-call cap, budget, expiry, frozen, revoked | `every_limit_holds_on_chain`, and the unit tests |
+| The window cap, and that it cannot be reset by waiting | `a_window_cap_holds_on_chain`, unit tests |
+| Only the agent pulls, and only into the pass's destination | `only_the_agent_pulls_and_only_to_the_destination` |
+| Only the pass's own asset leaves it, even when another token sits in an account the pass owns | `only_the_passes_own_asset_can_be_pulled` |
+| A replayed transaction is not a second pull | `a_replayed_transaction_is_not_a_second_pull` |
+| An account that is not a pass, an empty address, or another pass's vault is refused | `an_account_that_is_not_a_pass_is_refused` |
+| Only the owner freezes, rotates the agent, withdraws, revokes, closes | `only_the_owner_manages` |
+| A refund comes only from the destination and never exceeds what was spent | `refunds_are_bounded_and_come_only_from_the_destination` |
+| Terms that make no sense, an agent that is the owner, a destination that is the vault | `bad_terms_and_bad_parties_are_refused_at_creation` |
+| One pass per id | `a_pass_id_is_used_once` |
+
+Last run on 2026-10-12 with cargo 1.92: `cargo build-sbf` succeeds (261,840
+bytes) and all 24 tests pass.
+
+Three things the brief's list names are the server's, not the program's, and
+are tested there: an expired quote and a duplicate payment (the economic
+coordinator: one live attempt and one commitment per intent, in
+`backend/internal/app` and over HTTP in `backend/test/e2e`), and concurrent
+attempts (the database constraint, and `TestPullStateMovesOnlyFromWhereItWas`
+for pulls). On chain, pulls against one pass are serialized by the runtime, and
+`the_budget_is_exact_to_the_last_unit` shows the budget cannot be overrun.
 
 ```bash
 solana program deploy solana-program/target/deploy/spend_pass.so --program-id solana-program/target/deploy/spend_pass-keypair.json --keypair .data/solana-devnet.json --upgrade-authority .data/solana-devnet.json -u devnet
@@ -178,9 +201,26 @@ send it a little devnet SOL and USDC, then use
 `go -C backend run ./cmd/spend-pass sign-send -owner ... -tx <transaction>` as
 the owner's wallet for the transactions the API prepares.
 
+## Proof on devnet (2026-10-12): an API key under an on-chain pass
+
+A project's devnet API key (not a pass token) paid for `token.price` from a
+vault its owner had funded:
+
+| | |
+|---|---|
+| Owner `9kEVg2no…` made the pass and deposited 0.1 USDC (`CreatePass` + `Deposit`, one transaction) | [8ieRLFSe…](https://explorer.solana.com/tx/8ieRLFSe2T99w7C2aAfeiq1w5xNPYvMiyP14cHhSaTgiwpYRyWw4ZCvkWHjvph2zsb6Jj8Cf6Jnwu9Kr6LYxLYs?cluster=devnet) |
+| The program released exactly 0.001 USDC for the one payment | [pull PNMGp9o1…](https://explorer.solana.com/tx/PNMGp9o1WLsUba1fasrqDuDuDQ8EXbstVjBMfZFf9JxqU9HLc3UGeCAjBWbsNRq9R5GpGEyAcrcjr1KcP5gFWSr?cluster=devnet) |
+| The x402 payment to demo:beta; intent COMMITTED | [5C37eZ6G…](https://explorer.solana.com/tx/5C37eZ6GBoFFqJBb5gRApSKcb963Wjw4K6vvva6aXXiZhm6ou615NFtmXefFtLNzNa5LXw8yEfbVC9BJztWmDqZ?cluster=devnet) |
+| The same request again: answered from the kept result; no second pull | the pass [`6mWZibyY…`](https://explorer.solana.com/address/6mWZibyYhPJmML2ZKZjrgttiaZ7tfMmNzagbvA5v9Uyz?cluster=devnet) has two transactions in all |
+
+All three are finalized without error (checked against the cluster on
+2026-10-12). The full table is in [DEMO.md](DEMO.md#proof-a-projects-api-key-paying-from-an-on-chain-spend-pass-2026-10-12).
+
 ## Mainnet
 
-Not deployed yet. The program has run on devnet only. Before real money goes in:
+Not deployed yet (the program account does not exist on mainnet: checked on
+2026-10-12). The full list of what must happen first is in
+[MAINNET_READINESS.md](MAINNET_READINESS.md). The program has run on devnet only. Before real money goes in:
 
 1. Deploy it from a wallet that holds the rent: 1.331 SOL stays locked in the
    program (refundable: closing the program returns it), plus as much again for
@@ -193,7 +233,15 @@ Not deployed yet. The program has run on devnet only. Before real money goes in:
 
 ## Limits, honestly
 
-- Not audited. The upgrade authority on devnet is one key.
+- Not audited.
+- The upgrade authority on devnet is one key, `GhpmTWT8…EoPA`, and it is the
+  same key the server uses as the agent and payer. Fine for a devnet demo;
+  for mainnet it must be a multisig or the program made immutable, and never
+  a key the server holds.
+- The program does not remember intents. `intent` is recorded on the pass and
+  in the event for auditing, but a new transaction for the same intent is a
+  new pull, bounded by the budget, the per-call cap and the window. One
+  attempt per request is the server's guarantee, not the program's.
 - A pull and its payment are two transactions: between them the money sits in
   the payer's account for a few seconds. The program bounds what can ever reach
   the payer; it can't make the payment itself without breaking x402.

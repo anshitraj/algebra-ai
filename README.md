@@ -6,6 +6,8 @@ An agent says what it wants done and the most it will pay. Algebra finds every p
 
 Think OpenRouter, but for paid APIs, with a firewall in front of the wallet.
 
+For a business it is one API: create a project, issue an API key for the sandbox, devnet or mainnet, and call it over REST or MCP. The key says who is calling; a Spend Pass says what may be spent. Algebra sits above the catalogs, Jupiter and the payment rails. It replaces none of them.
+
 ```bash
 curl -s localhost:8080/api/v1/execute \
   -H "Authorization: Bearer $SPEND_PASS_TOKEN" -H "Content-Type: application/json" \
@@ -27,7 +29,7 @@ curl -s localhost:8080/api/v1/execute \
 }
 ```
 
-Amounts are micro-USDC (3000 = 0.003 USDC). `token.price` is a *class* of work: Algebra prices every provider of it and routes to the best for your strategy (`cheapest`, `fastest` or `auto`), falling back to the next if one fails.
+The bearer token is a Spend Pass token or an Algebra API key (`alg_sk_…`, which spends through a pass of its own project and environment). Amounts are micro-USDC (3000 = 0.003 USDC). `token.price` is a *class* of work: Algebra prices every provider of it and routes to the best for your strategy (`cheapest`, `fastest` or `auto`), falling back to the next if one fails.
 
 ## Why
 
@@ -53,7 +55,9 @@ An agent that can pay for things has three problems, and none is the model's to 
 | **Swaps** | Buy a token with USDC through Jupiter (`solana.swap`, off by default). The wallet signs only a transaction that, *simulated*, spends no more than the amount, delivers at least the quote less the slippage, and changes nothing else about the wallet: no new delegate, no new owner, no closed account. |
 | **Receipts** | Every outcome gets an Ed25519 receipt with the routing decision, the execution and the settlement. Anyone can verify it against `/.well-known/jwks.json`, at `/verify` or with `backend/cmd/verify-intent`. |
 | **Replay** | The provider's answer is kept sealed (AES-256-GCM, 24 hours by default, opt out per request) so asking again returns it with `replayed: true` instead of "already committed". |
-| **Interfaces** | REST (`/api/v1`), an MCP server at `/mcp` (stateless streamable HTTP, the Spend Pass as a bearer token, so it never passes through the model), and a console with the agent chat, passes, providers, routing, the firewall and executions. |
+| **Developer platform** | Organizations, projects and API keys scoped to one project and one environment (`sandbox`, `devnet`, `mainnet`). A key authenticates; a Spend Pass authorises: two authorities, kept apart. Keys are shown once, stored as a hash, scoped (`read`, `simulate`, `execute`), rotated and revoked, with an audit trail and per-project usage. A sandbox key can never reach a chain. [docs/PLATFORM.md](docs/PLATFORM.md) |
+| **Provider Intelligence** | A registry of every paid endpoint the catalogs list (6,131 on 2026-10-12), refreshed every six hours by one instance under a database lease, with a history of what changed. The payee of an endpoint is pinned; one that asks to be paid somewhere else is refused at payment time and blocked. Listed, Quoted, Tested, Verified and Executable are five separate facts. [docs/PLATFORM.md](docs/PLATFORM.md#provider-intelligence) |
+| **Interfaces** | REST (`/api/v1`), an MCP server at `/mcp` (stateless streamable HTTP, the token as a bearer header, so it never passes through the model) whose default tools are `algebra.discover`, `quote`, `simulate`, `execute`, `status`, `receipt` and `spend_pass`, and a console: quickstart, projects and keys, the agent chat, passes, providers, provider intelligence, routing, the firewall and executions. |
 
 ## How a request flows
 
@@ -77,6 +81,18 @@ agent ──► POST /api/v1/execute   (or MCP algebra.execute)
    receipt (signed) + the answer (kept, sealed) ─► routing history learns from it
 ```
 
+Six diagrams of the architecture, routing, the Solana payment, policy, provider verification and receipts, as Mermaid: [docs/DIAGRAMS.md](docs/DIAGRAMS.md).
+
+## Sandbox, devnet and mainnet
+
+| | Money | Chain | What it is for |
+|---|---|---|---|
+| **Sandbox** | simulated USDC | none | onboarding and tests. Simulated sellers, including ones that misbehave. Receipts are marked `test` and are never evidence of a payment |
+| **Solana devnet** | test USDC | real transactions, real program | the demonstration: explorer-verifiable payments under on-chain limits |
+| **Solana mainnet** | real USDC | real | **read-only today**: discovery, quotes and dry runs. Every payment is refused until `MAINNET_EXECUTION=on`. [docs/MAINNET_READINESS.md](docs/MAINNET_READINESS.md) |
+
+A key or a pass belongs to one of the three and can never pay in another.
+
 ## Quick start
 
 You need Go 1.26+, Node 20+ with pnpm, and Postgres. On Windows without Docker, `scripts/dev-native.ps1` runs a throwaway Postgres (`:5433`) and Redis (`:6380`) from the installs already on the machine; with Docker, `make infra-up`.
@@ -90,7 +106,7 @@ make web                               # the frontend, the console on :3000 (fir
 
 The parts are separate. [backend/](backend/README.md) is the Go server (the API, the MCP server, the demo providers and the wallet tools), [frontend/](frontend/README.md) is the Next.js console, and [deploy/](deploy/README.md) says how to run and deploy each one on its own.
 
-Open `http://localhost:3000`, create an account, and issue a Spend Pass (Console → Spend passes). The token is shown once; give it to an agent as `Authorization: Bearer …`. Connecting Claude Code, Claude Desktop, Cursor or the OpenAI Agents SDK is a one-line snippet on the **Connect** page.
+Open `http://localhost:3000`, create an account, and follow **Quickstart** in the console: it makes a sandbox Spend Pass and an API key, runs a dry run and a sandbox execution, and shows the answer and its receipt, with no wallet and no money. To connect an agent instead, issue a Spend Pass (Console → Spend passes) and give its token to the agent as `Authorization: Bearer …`; the **Connect** page has the snippet for Claude Code, Claude Desktop, Cursor and the OpenAI Agents SDK.
 
 With `ECONOMIC_SANDBOX=on` (the default for local runs) Algebra hosts a simulated paid provider and a simulated rail, so you can run the whole flow with no wallet and no money; sandbox receipts are marked `test`.
 
@@ -108,15 +124,40 @@ A three-minute script for the router, the firewall and payment channels against 
 
 Wallet and rail details, mainnet, the first-payment runbook and `x402-dryrun` (prices a real provider and has a node *simulate* the payment, sending nothing): [docs/EXECUTION.md](docs/EXECUTION.md).
 
+## Demonstrations
+
+| | Shows | State |
+|---|---|---|
+| **A** | Sign up, project, sandbox pass, API key, dry run, sandbox execution, receipt | Works; run in a browser on 2026-10-12 |
+| **B** | A devnet payment from an on-chain Spend Pass, with explorer links and a signed receipt | Works on devnet; three finalized transactions. The seller is Algebra's own demo provider |
+| **C** | A provider that changes its payee is refused, then blocked, with the reason in the UI | Works; tested over HTTP |
+| **D** | The same request twice pays once | Works; tested over HTTP and shown on devnet |
+| **E** | The registry refresh detects new, re-priced and re-payee'd endpoints | The rules are unit-tested and the refresh runs against the live catalogs; a scripted end-to-end run on stand-in catalogs is not written |
+| **F** | A Jupiter swap: quote, policy, simulate before sign | Tested on a fake cluster only. No swap has landed on a chain |
+
+How to run each, and the evidence: [docs/DEMO.md](docs/DEMO.md#the-six-demonstrations). Scripts for a video: [docs/HACKATHON_CHECKLIST.md](docs/HACKATHON_CHECKLIST.md).
+
 ## Status, honestly
 
-- **Built and tested:** everything above. The Go suite (unit, Postgres integration and end-to-end over real HTTP and MCP) passes; the web app typechecks and lints clean.
-- **Verified against live services, read-only:** the four payable catalogs, Jupiter's quote API, Solana address derivation and transaction encoding on mainnet and devnet, and real x402 providers priced and their payments built and simulated with `backend/cmd/x402-dryrun`. Mainnet is configured in the demo and dry-runs against live providers (a Circle-listed price provider, a Coinbase-listed token-risk provider with two down and two trap-priced ones refused, PayAI's web search).
-- **Real payments, on devnet:** x402 `exact` calls and a metered `upto` call through a Solana payment channel (escrow, voucher, settle and refund in one transaction), each chosen and paid by the router with its guards and the firewall on. The transactions are linked in [docs/DEMO.md](docs/DEMO.md#proof-real-devnet-payments-through-algebra-2026-10-07).
-- **On-chain Spend Pass, on devnet:** the program is deployed and tested (unit tests of every limit, LiteSVM tests of the built program), and real paid requests through the API were funded by on-chain pulls, refused by an on-chain freeze, and refunded from chain proof. Transactions in [docs/SPEND_PASS_PROGRAM.md](docs/SPEND_PASS_PROGRAM.md#proof-on-devnet-2026-10-09). Not yet deployed on mainnet.
-- **Not yet real:** a mainnet payment, which needs a funded wallet and is the operator's to make (runbook in [docs/EXECUTION.md](docs/EXECUTION.md)), and a swap landing, verified on a fake cluster only.
-- **Not built:** cross-chain transfers (CCTP) and any EVM rail, so Base-only x402 providers are listed but not payable; Monid's tools, listed for comparison but billed from a Monid balance rather than x402, and card rails such as Stripe; selling a token or buying SOL; OAuth sign-in for MCP (a Spend Pass bearer token is used); a recipient allow-list for passes.
-- **The old product** (a grocery shopping agent, and tenant payment intents) still builds and its tests pass; its connectors, including web search, are kept as is, but it is not what Algebra is now. See [docs/legacy](docs/legacy/README.md).
+Every claim below has a test or a transaction behind it, listed in [docs/CLAIMS.md](docs/CLAIMS.md).
+
+- **Built and tested:** everything in the table above. The Go suite (unit, Postgres integration, and end-to-end over real HTTP and MCP) passes; the web app typechecks, lints and builds.
+- **Real payments, on devnet:** x402 `exact` calls, a metered `upto` call through a Solana payment channel, and paid requests funded by on-chain Spend Pass pulls, including one made with a project's API key. Transactions in [docs/DEMO.md](docs/DEMO.md) and [docs/SPEND_PASS_PROGRAM.md](docs/SPEND_PASS_PROGRAM.md).
+- **On-chain Spend Pass, on devnet:** the program is deployed and tested (13 unit tests, 11 LiteSVM tests of the built program). Not deployed on mainnet. Not audited. Its upgrade authority on devnet is a key the server holds.
+- **Mainnet: read-only.** The four catalogs, Jupiter's quote API and real x402 providers are priced, and their payments built and simulated, without sending anything. No mainnet payment has been made, and the server refuses to make one by default.
+- **Devnet sellers are ours.** The catalogs list mainnet endpoints; the devnet providers in every demo are Algebra's own demo provider, labelled as such.
+- **Not real yet:** a mainnet payment; a swap landing (fake cluster only); a browser wallet signing the on-chain pass transaction in a recorded run (it was signed from a keypair file).
+- **Defined, not sold:** five plans and a seven-day Startup trial. The trial and the project limit work; no payment processor is connected, nothing stops at a plan's execution allowance, and nobody can be invited into an organization yet.
+- **Not built:** PDF receipts, a TypeScript SDK, a provider credential vault and customer-key (BYO) execution, customer webhooks for the new platform, OAuth for hosted MCP connectors, the optional Parallel discovery source, asynchronous jobs and batches, cross-chain transfers (CCTP) and any EVM rail (Base-only providers are listed and not payable), card rails, Monid's tools (listed for comparison, billed from a Monid balance rather than x402), a recipient allow-list for passes, selling a token or buying SOL.
+- **The old product** (a grocery shopping agent, and tenant payment intents) still builds and its tests pass. Its MCP tools are off unless `MCP_LEGACY_TOOLS=on`. See [docs/legacy](docs/legacy/README.md).
+
+## Roadmap
+
+1. Mainnet, in the order of [docs/MAINNET_READINESS.md](docs/MAINNET_READINESS.md): an independent review of the program, the upgrade authority off the server, an isolated signer, then one small payment.
+2. Billing for the plans, and enforcement of the execution allowance.
+3. Team members, customer webhooks, a TypeScript SDK, PDF receipts.
+4. Customer-key execution for providers that bill in fiat, behind a credential vault.
+5. More rails: Base, CCTP.
 
 ## Repository layout
 
@@ -153,7 +194,7 @@ scripts/            dev-native.ps1: Postgres, Redis and the API on Windows witho
 
 ## Documents
 
-[Devnet demo](docs/DEMO.md) · [Execution, routing and the Solana rails](docs/EXECUTION.md) · [Economic coordination](docs/ECONOMIC_COORDINATION.md) · [Spend Passes and the firewall](docs/SPEND_PASSES.md) · [The Spend Pass program on Solana](docs/SPEND_PASS_PROGRAM.md) · [MCP](docs/MCP.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Local development](docs/LOCAL_DEVELOPMENT.md) · [Production](docs/PRODUCTION.md) · [REST API](backend/openapi/execution.yaml)
+[The developer platform](docs/PLATFORM.md) · [Diagrams](docs/DIAGRAMS.md) · [What is proven](docs/CLAIMS.md) · [Mainnet readiness](docs/MAINNET_READINESS.md) · [Hackathon checklist](docs/HACKATHON_CHECKLIST.md) · [Route audit](docs/ROUTE_AUDIT.md) · [Devnet demo](docs/DEMO.md) · [Execution, routing and the Solana rails](docs/EXECUTION.md) · [Economic coordination](docs/ECONOMIC_COORDINATION.md) · [Spend Passes and the firewall](docs/SPEND_PASSES.md) · [The Spend Pass program on Solana](docs/SPEND_PASS_PROGRAM.md) · [MCP](docs/MCP.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Local development](docs/LOCAL_DEVELOPMENT.md) · [Production](docs/PRODUCTION.md) · [REST API](backend/openapi/execution.yaml)
 
 ## Tests
 
@@ -161,6 +202,13 @@ scripts/            dev-native.ps1: Postgres, Redis and the API on Windows witho
 make test               # unit tests, no external dependencies
 make test-integration   # real Postgres, and the end-to-end flows over HTTP and MCP (needs DATABASE_URL)
 ```
+
+```bash
+cargo build-sbf --manifest-path solana-program/Cargo.toml && cargo test --manifest-path solana-program/Cargo.toml   # the Spend Pass program
+pnpm --dir frontend lint && pnpm --dir frontend build                                                               # the web app
+```
+
+Last full run, 2026-10-12 (Go 1.26, cargo 1.92, Node 24): 63 Go packages pass without a database and again against Postgres (57 more tests run with it); `go vet` is clean; the program builds and its 13 unit and 11 LiteSVM tests pass; the web app lints, typechecks and builds.
 
 Tests that need Postgres skip themselves when `DATABASE_URL` and `ALGEBRA_MASTER_KEY` aren't set. The end-to-end tests are hermetic: they turn every provider catalog off and use the sandbox, a fake Solana node and a fake Jupiter, so nothing leaves the machine.
 
