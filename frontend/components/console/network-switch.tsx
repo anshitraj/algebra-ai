@@ -1,12 +1,10 @@
 "use client";
 
 import { NETWORKS, useNetwork } from "@/lib/network";
-import { formatUSDC } from "@/lib/money";
 
-/** Mainnet or devnet, for the whole console, with the wallet that pays there. A demo account has the sandbox instead. */
+/** Mainnet or devnet, for the whole console. A demo account has the sandbox instead. The wallet is the wallet menu's. */
 export function NetworkSwitch({ compact = false }: { compact?: boolean }) {
-  const { network, demo, setNetwork, rails } = useNetwork();
-  const rail = rails?.find((r) => r.network === network);
+  const { network, demo, setNetwork } = useNetwork();
   if (demo) {
     return (
       <div className="flex items-center gap-3">
@@ -44,17 +42,6 @@ export function NetworkSwitch({ compact = false }: { compact?: boolean }) {
           );
         })}
       </div>
-      {!compact && rails !== null && (
-        <span className="hidden text-xs text-muted md:inline">
-          {!rail?.configured
-            ? network === "solana"
-              ? "No mainnet wallet on this server: calls can be priced, not paid"
-              : "No devnet wallet on this server: calls can be priced, not paid"
-            : rail.error
-              ? "Wallet set, node unreachable"
-              : `Wallet ${rail.address?.slice(0, 4)}…${rail.address?.slice(-4)} · ${rail.usdc_minor != null ? formatUSDC(rail.usdc_minor) : "no USDC yet"}`}
-        </span>
-      )}
     </div>
   );
 }

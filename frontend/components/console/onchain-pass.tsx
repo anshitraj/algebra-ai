@@ -6,9 +6,14 @@
 // program checks on chain. Freezing, withdrawing and closing are the
 // wallet's, with no one else's signature.
 
-import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { explorerAddress, explorerTx } from "@/lib/explorer";
+import { formatUSDC } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
+import { useSession } from "@/lib/session";
+import { getAuthProviders } from "@/lib/api-client";
+import type { AccountSigner } from "./account-wallet-signer";
 import {
   OnchainError,
   connectWallet,
@@ -33,6 +38,9 @@ const micro = (v: string) => (v.trim() === "" ? NaN : Math.round(Number(v) * 1_0
 const short = (s: string) => (s.length > 12 ? `${s.slice(0, 4)}…${s.slice(-4)}` : s);
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
+// Privy's SDK is large: loaded only for an account whose wallet Privy holds.
+const AccountWalletSigner = dynamic(() => import("./account-wallet-signer"), { ssr: false });
+
 const PULL_WORDS: Record<string, string> = {
   SENDING: "Confirming",
   PULLED: "Funding a payment",
@@ -42,8 +50,30 @@ const PULL_WORDS: Record<string, string> = {
   REFUNDED: "Returned",
 };
 
+/** Why the account wallet didn't send a transaction. */
+function accountFailure(e: unknown) {
+  const said = (e instanceof Error ? e.message : String(e ?? "")).trim();
+  if (/reject|denied|cancel|exited|closed/i.test(said)) return said.startsWith("You ") ? said : "You cancelled in Privy. Nothing was sent.";
+  return said || "Privy didn't send the transaction. Try again.";
+}
+
+/** Why a wallet didn't send a transaction Algebra had already checked on that network. */
+function walletFailure(e: unknown, wallet: string, network: string) {
+  const said = (e instanceof Error ? e.message : String(e ?? "")).trim();
+  if (/reject|denied|cancel/i.test(said)) return `You cancelled the request in ${wallet}. Nothing was sent.`;
+  const where = networkLabel(network);
+  const hint = network === "solana-devnet" ? ` In Phantom: Settings, Developer Settings, Testnet Mode, Solana Devnet.` : "";
+  return `${wallet} didn't send the transaction${said ? ` (it said: ${said})` : ""}. Algebra had checked that it succeeds on ${where} from this wallet, so the usual cause is the wallet being on another network: switch ${wallet} to ${where} and try again.${hint}`;
+}
+
 export function OnchainPassPanel({ passId, active }: { passId: string; active: boolean }) {
-  const { network } = useNetwork();
+  const { network, wallets: balances, refreshWallets } = useNetwork();
+  const { user } = useSession();
+  // The account wallet: the one Privy made at sign-in. It signs by default.
+  const account = useMemo(() => user?.wallets?.find((w) => w.chain === "solana" && w.kind === "embedded"), [user?.wallets]);
+  const [privyAppId, setPrivyAppId] = useState("");
+  const [accountSigner, setAccountSigner] = useState<AccountSigner | null>(null);
+  const [useBrowserWallet, setUseBrowserWallet] = useState(false);
   const [nets, setNets] = useState<OnchainNetwork[] | null>(null);
   const [view, setView] = useState<OnchainPassView | null | undefined>(undefined);
   const [error, setError] = useState("");
@@ -60,6 +90,13 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
       else setError(e instanceof Error ? e.message : String(e));
     }
   }, [passId]);
+
+  useEffect(() => {
+    if (!account) return;
+    getAuthProviders()
+      .then((p) => setPrivyAppId(p.privy && p.privy_app_id ? p.privy_app_id : ""))
+      .catch(() => setPrivyAppId(""));
+  }, [account]);
 
   useEffect(() => {
     onchainNetworks()
@@ -79,6 +116,8 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
   }, [load]);
 
   const net = nets?.find((n) => n.network === (view?.binding.network ?? network));
+  // The account wallet signs unless the person picked a browser wallet (or there is no account wallet).
+  const signWithAccount = !!account && !useBrowserWallet;
 
   async function withWallet<T>(want: string | undefined, fn: (w: StandardWallet, address: string, acct: Awaited<ReturnType<typeof connectWallet>>) => Promise<T>) {
     const ws = solanaWallets();
@@ -101,22 +140,40 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
     }
     setBusy("create");
     setError("");
-    try {
-      await withWallet(undefined, async (w, owner, acct) => {
-        const prep = await prepareOnchainPass(passId, { network: net.network, owner, deposit_minor: deposit });
-        await signAndSend(w, acct, prep.transaction, net.network);
-        // The pass exists once the transaction lands; link it as soon as it does.
-        for (let i = 0; i < 30; i++) {
-          try {
-            await linkOnchainPass(passId, net.network, prep.pass_address);
-            return;
-          } catch (e) {
-            if (!(e instanceof OnchainError && e.status === 404)) throw e;
-            await sleep(2000);
-          }
+    // The pass exists once the transaction lands; link it as soon as it does.
+    const link = async (passAddress: string) => {
+      for (let i = 0; i < 30; i++) {
+        try {
+          await linkOnchainPass(passId, net.network, passAddress);
+          return;
+        } catch (e) {
+          if (!(e instanceof OnchainError && e.status === 404)) throw e;
+          await sleep(2000);
         }
-        throw new Error("The transaction hasn't landed yet. Reload in a minute; the pass will link then.");
-      });
+      }
+      throw new Error("The transaction hasn't landed yet. Reload in a minute; the pass will link then.");
+    };
+    try {
+      if (signWithAccount) {
+        const prep = await prepareOnchainPass(passId, { network: net.network, owner: accountSigner!.address, deposit_minor: deposit });
+        try {
+          await accountSigner!.signAndSend(prep.transaction, net.network);
+        } catch (e) {
+          throw new Error(accountFailure(e));
+        }
+        await link(prep.pass_address);
+      } else {
+        await withWallet(undefined, async (w, owner, acct) => {
+          const prep = await prepareOnchainPass(passId, { network: net.network, owner, deposit_minor: deposit });
+          try {
+            await signAndSend(w, acct, prep.transaction, net.network);
+          } catch (e) {
+            throw new Error(walletFailure(e, w.name, net.network));
+          }
+          await link(prep.pass_address);
+        });
+      }
+      refreshWallets(true);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -140,10 +197,20 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
     setBusy(action);
     setError("");
     try {
-      await withWallet(view.binding.owner_wallet, async (w, _addr, acct) => {
+      if (account && view.binding.owner_wallet === account.address) {
+        if (!accountSigner) throw new Error("Your account wallet is still loading. Try again in a moment.");
         const { transaction } = await ownerTransaction(passId, action, minor);
-        await signAndSend(w, acct, transaction, view.binding.network);
-      });
+        try {
+          await accountSigner.signAndSend(transaction, view.binding.network);
+        } catch (e) {
+          throw new Error(accountFailure(e));
+        }
+      } else {
+        await withWallet(view.binding.owner_wallet, async (w, _addr, acct) => {
+          const { transaction } = await ownerTransaction(passId, action, minor);
+          await signAndSend(w, acct, transaction, view.binding.network);
+        });
+      }
       // Show the new state once the chain has it.
       const before = JSON.stringify([view.state, view.vault_minor, view.exists]);
       for (let i = 0; i < 15; i++) {
@@ -165,8 +232,12 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
   if (view === undefined || nets === null) return null;
   if (view === null && (!active || nets.length === 0)) return null;
 
+  const held = account ? balances?.wallets.find((w) => w.address === account.address) : undefined;
+  const createDisabled = busy !== "" || (signWithAccount ? !accountSigner : wallets.length === 0);
+
   return (
     <div className="mt-4 rounded-lg border border-border bg-surface p-4">
+      {account && privyAppId && <AccountWalletSigner appId={privyAppId} email={user?.email} address={account.address} onSigner={setAccountSigner} />}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <IconShield size={16} />
@@ -203,17 +274,54 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
                   <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" aria-label="USDC to put in the pass" />
                 </div>
               </label>
-              <Button onClick={create} disabled={busy !== "" || wallets.length === 0}>
-                {busy === "create" ? <Spinner size={13} /> : <IconWallet size={14} />} Create with my wallet
+              <Button onClick={create} disabled={createDisabled}>
+                {busy === "create" || (signWithAccount && !accountSigner) ? <Spinner size={13} /> : <IconWallet size={14} />}{" "}
+                {signWithAccount ? "Create with my account wallet" : "Create with my browser wallet"}
               </Button>
             </div>
           ) : (
             <p className="mt-2 text-xs text-muted">Switch the console to {nets.map((n) => networkLabel(n.network)).join(" or ")} to put this pass on chain.</p>
           )}
-          {wallets.length === 0 && net && (
+          {net && account && (
+            <div className="mt-3 rounded-lg bg-primary-tint/40 px-3 py-2.5 text-xs leading-relaxed text-muted">
+              {signWithAccount ? (
+                <>
+                  <p>
+                    Paid from your account wallet <span className="font-mono text-foreground">{short(account.address)}</span>
+                    {held?.ok ? (
+                      <>
+                        {" "}
+                        · holds <span className="font-mono text-foreground">{formatUSDC(held.usdc_minor)}</span> and{" "}
+                        <span className="font-mono text-foreground">{(held.sol_lamports / 1e9).toLocaleString("en-US", { maximumFractionDigits: 4 })} SOL</span>{" "}
+                        on {networkLabel(net.network)}
+                      </>
+                    ) : null}
+                    . Privy asks you to confirm it&apos;s you (your email code), then shows you the transaction to approve.
+                  </p>
+                  <p className="mt-1">
+                    It needs the USDC you put in and a little SOL for fees. To fund it, hover your wallet at the top right for its address and QR code.
+                  </p>
+                  {wallets.length > 0 && (
+                    <button type="button" className="mt-1 text-primary underline" onClick={() => setUseBrowserWallet(true)}>
+                      Use a browser wallet ({wallets.map((w) => w.name).join(", ")}) instead
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p>Signed by the Solana wallet in this browser, which must be set to {networkLabel(net.network)} and hold the USDC and a little SOL there.</p>
+                  <button type="button" className="mt-1 text-primary underline" onClick={() => setUseBrowserWallet(false)}>
+                    Use my account wallet {short(account.address)} instead
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {!signWithAccount && wallets.length === 0 && net && (
             <p className="mt-2 text-xs text-muted">No Solana wallet found in this browser. Install Phantom, Solflare or Backpack, then reload.</p>
           )}
           {net && (
+            <>
             <p className="mt-2 text-xs text-muted">
               Program{" "}
               <a className="text-primary" href={explorerAddress(net.program_id, net.network)} target="_blank" rel="noopener noreferrer">
@@ -221,6 +329,13 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
               </a>{" "}
               · pays only into Algebra&apos;s payer {short(net.agent)}
             </p>
+            {!account && (
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                Signed by the Solana wallet in this browser (Phantom, Solflare or Backpack), which must be set to {networkLabel(net.network)} and hold the USDC
+                and a little SOL there.
+              </p>
+            )}
+            </>
           )}
         </>
       ) : !view.exists ? (

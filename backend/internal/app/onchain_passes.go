@@ -340,6 +340,10 @@ func (s *OnchainPassService) Prepare(ctx context.Context, userID, passID string,
 	if err != nil {
 		return nil, err
 	}
+	// Don't hand a wallet a transaction that would revert: say why instead.
+	if why := s.checkFunding(ctx, n, owner, o.DepositMinor, tx); why != "" {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidRequest, why)
+	}
 	return &PreparedPass{Network: n.Network, PassAddress: addr.String(), PassNumber: number, Owner: owner.String(), Terms: terms,
 		DepositMinor: o.DepositMinor, Transaction: tx, LastValidBlockHeight: lvbh}, nil
 }

@@ -220,6 +220,7 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/classes/{id}/probe", api.probeClass)
 	mux.HandleFunc("GET /api/v1/rails", api.listRails)
 	mux.HandleFunc("GET /api/v1/mainnet/readiness", api.mainnetReadiness)
+	mux.HandleFunc("GET /api/v1/me/wallets", api.myWallets)
 	mux.HandleFunc("GET /api/v1/intel/status", api.intelStatus)
 	mux.HandleFunc("GET /api/v1/intel/endpoints", api.listIntelEndpoints)
 	mux.HandleFunc("GET /api/v1/intel/endpoints/{id}", api.getIntelEndpoint)
@@ -387,7 +388,12 @@ func writeError(w http.ResponseWriter, err error) {
 		w.Header().Set("Retry-After", formatSeconds(limited.Retry))
 		status = http.StatusTooManyRequests
 	}
-	writeJSON(w, status, errorBody{Error: err.Error()})
+	msg := err.Error()
+	if errors.Is(err, app.ErrInvalidRequest) {
+		// "algebra: invalid request: <what is wrong>": a person needs the second part.
+		msg = strings.TrimPrefix(msg, app.ErrInvalidRequest.Error()+": ")
+	}
+	writeJSON(w, status, errorBody{Error: msg})
 }
 
 func decodeJSON(r *http.Request, v any) error {

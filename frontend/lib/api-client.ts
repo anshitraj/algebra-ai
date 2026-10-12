@@ -19,6 +19,7 @@ import type {
   SessionInfo,
   SpendPass,
   User,
+  WalletsView,
 } from "./types";
 import type {
   APIKey,
@@ -202,6 +203,11 @@ export function listProviders(params: { q?: string; category?: string; source?: 
 /** id is a provider ID ("paysh:birdeye.data", "circle:birdeye") or a catalog's own name for it. */
 export function getProvider(id: string) {
   return apiFetch<ProviderDetail>(`/api/v1/providers/${id.split("/").map(encodeURIComponent).join("/")}`);
+}
+
+/** The signed-in person's own wallets and what each holds on a cluster. force skips the server's few-second cache. */
+export function myWallets(network: string, force = false) {
+  return apiFetch<WalletsView>(`/api/v1/me/wallets?network=${encodeURIComponent(network)}${force ? "&refresh=1" : ""}`);
 }
 
 /** Mainnet and devnet: whether Algebra can pay on each, from which wallet, with what balance. */

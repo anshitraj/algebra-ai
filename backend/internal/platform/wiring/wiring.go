@@ -144,6 +144,8 @@ type Bundle struct {
 	// Mainnet is what the server knows about its own mainnet set-up, for the
 	// readiness report (app.AssessMainnet).
 	Mainnet app.MainnetFacts
+	// WalletBalances reads what the signed-in person's own wallets hold.
+	WalletBalances *app.WalletBalanceService
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
 	// MCPLegacyTools: see config.Config.MCPLegacyTools.
@@ -570,9 +572,25 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		mainnet.AuthorityKnown, mainnet.Immutable, mainnet.UpgradeAuthority = st.AuthorityKnown, st.Immutable, st.UpgradeAuthority
 	}
 
+	walletRPCs := map[string]app.WalletRPC{}
+	for _, c := range []struct{ cluster, network string }{{"devnet", chain.SolanaDevnet}, {"mainnet", chain.Solana}} {
+		url := defaultSolanaRPC[c.cluster]
+		for _, sc := range cfg.SolanaRails {
+			cl := strings.ToLower(sc.Cluster)
+			if cl == "mainnet-beta" {
+				cl = "mainnet"
+			}
+			if cl == c.cluster && sc.RPCURL != "" {
+				url = sc.RPCURL
+			}
+		}
+		walletRPCs[c.network] = solana.NewRPC(url, nil)
+	}
+
 	return &Bundle{
-		Mainnet: mainnet,
-		DB:      db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
+		Mainnet:        mainnet,
+		WalletBalances: app.NewWalletBalanceService(accountSvc, walletRPCs),
+		DB:             db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
 		Users: userSvc, Intents: intentSvc, Discovery: discoverySvc, Quotes: quoteSvc,
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
