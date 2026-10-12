@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -96,5 +97,76 @@ func TestProviderTrustOverHTTP_APayeeChangeIsRefusedThenBlocked(t *testing.T) {
 	}
 	if d, _ = b.Intel.Endpoint(ctx, id); d.Trust != intel.TrustBlocked {
 		t.Fatalf("after the refresh: trust %s, want blocked", d.Trust)
+	}
+}
+
+func TestProviderRegistryOverHTTP_OpenToReadDecidedByAPerson(t *testing.T) {
+	b, base := serveWith(t, map[string]string{"ALGEBRA_OPERATOR_TOKEN": ""})
+	if b.Intel == nil || b.SandboxPersonas == nil {
+		t.Skip("provider intelligence or the sandbox sellers are off")
+	}
+	token := issuePass(t, b)
+	id := intel.ID("sandbox:alpha", base+"/api/v1/sandbox/x402/prices/alpha", sandboxpay.Network)
+
+	status, _, out := call(t, "GET", base+"/api/v1/intel/status", "", nil)
+	st, _ := out["status"].(map[string]any)
+	if status != 200 || st == nil || out["can_manage"] != false {
+		t.Fatalf("status: %d %v", status, out)
+	}
+	if !strings.Contains(stringify(st["sources"]), `"sandbox"`) {
+		t.Errorf("the sandbox catalog is not among the sources: %v", st["sources"])
+	}
+
+	status, _, out = call(t, "GET", base+"/api/v1/intel/endpoints?source=sandbox&q=alpha&limit=200", "", nil)
+	var found map[string]any
+	eps, _ := out["endpoints"].([]any)
+	for _, e := range eps {
+		if m, _ := e.(map[string]any); m["id"] == id {
+			found = m
+		}
+	}
+	if status != 200 || found == nil {
+		t.Fatalf("listing: %d, alpha (%s) not found among %d", status, id, len(eps))
+	}
+	if lv, _ := found["levels"].(map[string]any); lv["listed"] != true || lv["executable"] != true {
+		t.Errorf("alpha's levels: %v", found["levels"])
+	}
+	if status, _, _ := call(t, "GET", base+"/api/v1/intel/endpoints?level=trusted", "", nil); status != 400 {
+		t.Errorf("an unknown level: %d, want 400", status)
+	}
+
+	// An agent can read the registry but never decide about it.
+	for _, p := range []string{"/api/v1/intel/endpoints/" + id + "/trust", "/api/v1/intel/refresh"} {
+		method := "PUT"
+		if strings.HasSuffix(p, "refresh") {
+			method = "POST"
+		}
+		if status, _, out := call(t, method, base+p, token, map[string]any{"trust": "verified"}); status != 403 {
+			t.Errorf("%s %s with an agent token: %d %v, want 403", method, p, status, out)
+		}
+	}
+
+	// A person blocks it; the decision is in its history with who made it.
+	who := signUp(t, base, "Ops")
+	status, _, out = browserCall(t, "PUT", base+"/api/v1/intel/endpoints/"+id+"/trust", who, map[string]any{"trust": "blocked", "note": "e2e: looks wrong"})
+	if status != 200 || out["trust"] != "blocked" || out["trust_reason"] != intel.ReasonManual {
+		t.Fatalf("block: %d %v", status, out)
+	}
+	status, _, out = call(t, "GET", base+"/api/v1/intel/changes?endpoint="+id, "", nil)
+	changes, _ := out["changes"].([]any)
+	if status != 200 || len(changes) == 0 {
+		t.Fatalf("changes: %d %v", status, out)
+	}
+	last, _ := changes[0].(map[string]any)
+	if last["kind"] != string(intel.ChangeTrust) || last["actor"] == "system" || last["actor"] == "" {
+		t.Errorf("the latest change is %v, want a person's trust decision", last)
+	}
+
+	// Blocked by a person, it is refused when named.
+	req := priceRequest("e2e-alpha-blocked-" + uuid.NewString())
+	req["constraints"] = map[string]any{"allowed_networks": []string{"sandbox"}}
+	req["providers"] = []string{"sandbox:alpha"}
+	if status, _, out := call(t, "POST", base+"/api/v1/execute", token, req); status == 200 || rejectedCodes(out)["sandbox:alpha"] != intel.ReasonBlocked {
+		t.Errorf("a blocked endpoint named: %d %v", status, rejectedCodes(out))
 	}
 }

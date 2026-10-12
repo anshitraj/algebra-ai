@@ -213,6 +213,12 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/classes/{id}/health", api.getClassHealth)
 	mux.HandleFunc("POST /api/v1/classes/{id}/probe", api.probeClass)
 	mux.HandleFunc("GET /api/v1/rails", api.listRails)
+	mux.HandleFunc("GET /api/v1/intel/status", api.intelStatus)
+	mux.HandleFunc("GET /api/v1/intel/endpoints", api.listIntelEndpoints)
+	mux.HandleFunc("GET /api/v1/intel/endpoints/{id}", api.getIntelEndpoint)
+	mux.HandleFunc("PUT /api/v1/intel/endpoints/{id}/trust", api.setIntelTrust)
+	mux.HandleFunc("GET /api/v1/intel/changes", api.listIntelChanges)
+	mux.HandleFunc("POST /api/v1/intel/refresh", api.refreshIntel)
 
 	mux.HandleFunc("POST /api/v1/profiles/shipping", api.createShippingProfile)
 	mux.HandleFunc("POST /api/v1/profiles/billing", api.createBillingProfile)
