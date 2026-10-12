@@ -109,6 +109,13 @@ func main() {
 		go bundle.Health.Run(ctx)
 	}
 
+	// Provider Intelligence: refresh the endpoint registry every six hours
+	// (00/06/12/18 UTC); one instance at a time holds the job's lease.
+	// PROVIDER_INTELLIGENCE=off turns the refresh off (the trust gate stays).
+	if bundle.Intel != nil && os.Getenv("PROVIDER_INTELLIGENCE") != "off" {
+		go bundle.Intel.Run(ctx)
+	}
+
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
