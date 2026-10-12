@@ -43,14 +43,18 @@ export function hasOwnRules(p: SpendPass): boolean {
  * The pass's rules against one payment of paidMinor (0 or undefined when
  * nothing was paid yet). askedPerson: a person approved this payment.
  */
-export function policyReport(p: SpendPass, paidMinor: number | undefined, askedPerson: boolean): PolicyReport {
+export function policyReport(p: SpendPass, paidMinor: number | undefined, askedPerson: boolean, pending = false): PolicyReport {
   const paid = paidMinor ?? 0;
   const checks: PolicyCheck[] = [];
   const left = Math.max(0, p.remaining_minor_units - paid);
-  checks.push({ label: "Budget", result: `${usdc(left)} left of ${usdc(p.budget_minor_units)}${paid > 0 ? " after this call" : ""}`, state: "pass" });
+  checks.push({
+    label: "Budget",
+    result: pending ? `${usdc(p.remaining_minor_units)} left of ${usdc(p.budget_minor_units)}; this call would use ${usdc(paid)}` : `${usdc(left)} left of ${usdc(p.budget_minor_units)}${paid > 0 ? " after this call" : ""}`,
+    state: "pass",
+  });
   checks.push(
     p.max_per_purchase_minor_units != null
-      ? { label: "Cap per call", result: `${usdc(paid)} paid, cap ${usdc(p.max_per_purchase_minor_units)}`, state: "pass" }
+      ? { label: "Cap per call", result: `${pending ? "would cost" : "paid"} ${usdc(paid)}, cap ${usdc(p.max_per_purchase_minor_units)}`, state: "pass" }
       : { label: "Cap per call", result: "none set: any single call up to the budget", state: "open" },
   );
   if (askedPerson) {

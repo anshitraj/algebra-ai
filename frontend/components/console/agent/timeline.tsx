@@ -6,6 +6,7 @@ import type { ProviderCard, StepDetail, StepHint, StepStatus } from "@/lib/agent
 import Link from "next/link";
 import { IconArrowRight, IconBan, IconCheck, IconChevronDown, IconClock, IconExternal, IconShield, IconX } from "@/components/icons";
 import type { PolicyReport } from "@/lib/policy-check";
+import { DecisionPanel } from "@/components/console/decision-panel";
 import { LiveActivity, Pulse, ThinkingLine } from "./live-activity";
 import { ProviderLogo } from "@/components/provider-logo";
 import { networkLabel } from "@/lib/network";
@@ -192,6 +193,11 @@ function Detail({ detail, onAsk }: { detail: StepDetail; onAsk?: Ask }) {
             </div>
           ))}
         </dl>
+      )}
+      {detail.decision && (
+        <div className="border-t border-border p-3">
+          <DecisionPanel sim={detail.decision} compact />
+        </div>
       )}
       {detail.policy && <PolicySection report={detail.policy} />}
     </div>

@@ -7,6 +7,8 @@ import type { ToolResult } from "./execute-tool";
 import { explorerTx, networkWord, solscanTx } from "../explorer";
 import { pickLabel } from "../strategy";
 import type { PolicyReport } from "../policy-check";
+import type { Simulation } from "../routing-types";
+import { decisionOf } from "../decision";
 
 const USDC = 1_000_000;
 
@@ -124,7 +126,7 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
       return {
         status: "waiting",
         summary: `Waiting for your approval${typeof d.budget === "string" ? ` · up to ${d.budget}` : ""}`,
-        detail: { reasons: ["The Spend Pass asks you to approve calls at this price. Nothing has been paid."] },
+        detail: { reasons: ["Nothing has been paid. Approve or cancel it in the card below."] },
       };
     case "refused": {
       const codes = Array.isArray(d.reason_codes) ? (d.reason_codes as string[]) : [];
@@ -226,9 +228,11 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
       return paidOutcome(data);
     case "check_policy": {
       const wp = data.would_pay as { provider?: string; price?: string } | undefined;
+      const sim = data._decision as Simulation | undefined;
       return {
         status: "done",
-        summary: [String(data.verdict ?? "").toLowerCase().replace(/_/g, " "), wp?.provider ? `would pay ${wp.provider} ${wp.price ?? ""}`.trim() : ""].filter(Boolean).join(" · "),
+        summary: [decisionOf(sim?.decision ?? String(data.verdict ?? "")), wp?.provider ? `would pay ${wp.provider} ${wp.price ?? ""}`.trim() : ""].filter(Boolean).join(" · "),
+        detail: sim ? { decision: sim } : undefined,
       };
     }
     case "execution_status": {

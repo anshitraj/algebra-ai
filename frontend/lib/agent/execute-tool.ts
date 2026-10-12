@@ -2,6 +2,7 @@ import * as client from "./server-client";
 import type { ServerIdentity } from "./server-client";
 import type { ProviderEndpoint } from "../types";
 import { policyReport } from "../policy-check";
+import type { Simulation } from "../routing-types";
 
 export type ToolResult = { ok: true; data: unknown } | { ok: false; error: string };
 
@@ -38,6 +39,23 @@ function priceHere(e: ProviderEndpoint, network: string): number | undefined {
 
 function usdc(minor: number | undefined): string | undefined {
   return typeof minor === "number" ? `${(minor / USDC).toLocaleString("en-US", { maximumFractionDigits: 6 })} USDC` : undefined;
+}
+
+/** The dry run's answer, bounded, for the approval card and the check_policy card (never for the model to rely on). */
+function decisionOf(a: client.ExecutionAnswer): Simulation | undefined {
+  if (a.status >= 400) return undefined;
+  const s = a.body as unknown as Simulation;
+  if (!s || !s.verdict) return undefined;
+  return { ...s, candidates: (s.candidates ?? []).slice(0, 8), rejected: undefined, plan: s.plan ? { ...s.plan, offers: s.plan.offers.slice(0, 5) } : undefined };
+}
+
+/** Before asking a person to approve, what the server's dry run says about the same request: unpaid quotes only. */
+async function decisionFor(identity: ServerIdentity, req: client.ExecuteBody): Promise<Simulation | undefined> {
+  try {
+    return decisionOf(await client.simulate(identity, req));
+  } catch {
+    return undefined;
+  }
 }
 
 function needPass(identity: ServerIdentity) {
@@ -209,15 +227,17 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         if (!Number.isFinite(max) || max <= 0) throw new Error("max_price_usdc must be a positive number of USDC");
         if (max > MAX_CALL_USDC) throw new Error(`The chat pays at most ${MAX_CALL_USDC} USDC per call. Ask the user before anything larger, and use their Spend Pass from their own agent.`);
         const body = input.input && typeof input.input === "object" && !Array.isArray(input.input) ? input.input : {};
-        // The person's choice for this chat wins over what the model asks for.
-        const strategy = identity.pick ?? (typeof input.strategy === "string" ? input.strategy : "balanced");
-        const req = { capability: work, providers: [], input: body, budget_max_minor: Math.round(max * USDC), provider_policy: { strategy } };
+        // The person's choice for this chat (or their project default, which the client sends) wins over what
+        // the model asks for. With neither, the server applies the project default, or Balanced.
+        const strategy = identity.pick ?? (typeof input.strategy === "string" ? input.strategy : undefined);
+        const req = { capability: work, providers: [], input: body, budget_max_minor: Math.round(max * USDC), provider_policy: strategy ? { strategy } : undefined };
         if (name === "check_policy") {
           const a = await client.simulate(identity, req);
-          return { ok: true, data: simulationOf(a) };
+          return { ok: true, data: { ...simulationOf(a), _decision: decisionOf(a) } };
         }
         const a = await client.execute(identity, req);
         const out = outcomeOf(a, "routed", identity);
+        const held = out.outcome === "approval_required" ? { _decision: await decisionFor(identity, req) } : {};
         const routing = (a.body.routing ?? (a.body.outcome as Record<string, unknown> | undefined)?.routing) as
           | { mode?: string; offers?: { rank: number; provider: string; cost_minor: number; score: number; notes?: string[] }[] }
           | undefined;
@@ -225,6 +245,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
           ok: true,
           data: {
             ...out,
+            ...held,
             routing: routing
               ? {
                   mode: routing.mode,
@@ -242,13 +263,11 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         if (!Number.isFinite(max) || max <= 0) throw new Error("max_price_usdc must be a positive number of USDC");
         if (max > MAX_CALL_USDC) throw new Error(`The chat pays at most ${MAX_CALL_USDC} USDC per call. Ask the user before anything larger, and use their Spend Pass from their own agent.`);
         const body = input.input && typeof input.input === "object" && !Array.isArray(input.input) ? input.input : {};
-        const a = await client.execute(identity, {
-          capability: str(input, "capability"),
-          providers: [providerId],
-          input: body,
-          budget_max_minor: Math.round(max * USDC),
-        });
-        return { ok: true, data: outcomeOf(a, providerId, identity) };
+        const req = { capability: str(input, "capability"), providers: [providerId], input: body, budget_max_minor: Math.round(max * USDC) };
+        const a = await client.execute(identity, req);
+        const out = outcomeOf(a, providerId, identity);
+        const held = out.outcome === "approval_required" ? { _decision: await decisionFor(identity, req) } : {};
+        return { ok: true, data: { ...out, ...held } };
       }
       case "run_approved_intent": {
         needPass(identity);

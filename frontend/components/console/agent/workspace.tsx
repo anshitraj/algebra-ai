@@ -13,6 +13,7 @@ import type { SpendPass } from "@/lib/types";
 import { formatUSDC } from "@/lib/money";
 import { getOnchainPass } from "@/lib/onchain-pass";
 import { PICKS, isPick, type Pick } from "@/lib/strategy";
+import type { Simulation } from "@/lib/routing-types";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { IconArrowUp, IconRefresh, IconShield, IconStop } from "@/components/icons";
 import { useConsoleData } from "../console-data";
@@ -29,7 +30,7 @@ type Turn = {
   user: string;
   steps: Step[];
   notes: string[];
-  approvals: { intentId: string; provider?: string; askedFirst?: boolean; resolved?: ApprovalOutcome }[];
+  approvals: { intentId: string; provider?: string; askedFirst?: boolean; decision?: Simulation; resolved?: ApprovalOutcome }[];
   /** Clarifying questions the agent asked (ask_user), and the picks sent back. */
   questions?: AskedQuestion[];
   answered?: string[];
@@ -142,8 +143,16 @@ export function AgentWorkspace() {
   const [passId, setPassId] = useState("");
   // "Ask me before every payment": on unless the person turned it off in this browser.
   const [askFirst, setAskFirst] = useState(true);
-  // How providers are picked: Balanced unless the person chose otherwise in this browser.
-  const [pick, setPick] = useState<Pick>("balanced");
+  // How providers are picked. Their own choice (saved in this browser) wins, then the default of the
+  // pass's project; with neither, they are asked once before the first request, never again.
+  const [pick, setPick] = useState<Pick | null>(null);
+  const [projectPick, setProjectPick] = useState<Pick | null>(null);
+  const [askingPick, setAskingPick] = useState<string | null>(null);
+  const pickRef = useRef<Pick | null>(null);
+  const effectivePick = pick ?? projectPick;
+  useEffect(() => {
+    pickRef.current = effectivePick;
+  }, [effectivePick]);
   useEffect(() => {
     try {
       if (window.localStorage.getItem(ASK_KEY) === "off") setAskFirst(false);
@@ -153,7 +162,34 @@ export function AgentWorkspace() {
       // storage blocked: ask first
     }
   }, []);
+  // The default of the pass's project, when it has one.
+  const passProject = passes?.find((p) => p.id === passId)?.project_id;
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      let found: Pick | null = null;
+      if (passProject) {
+        try {
+          for (const org of (await api.listOrgs()).organizations) {
+            const proj = (await api.listProjects(org.id)).projects.find((x) => x.id === passProject);
+            if (proj) {
+              found = isPick(proj.default_strategy) ? proj.default_strategy : null;
+              break;
+            }
+          }
+        } catch {
+          // the default is a convenience: without it the person is asked
+        }
+      }
+      if (live) setProjectPick(found);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [passProject]);
+
   function choosePick(p: Pick) {
+    pickRef.current = p;
     setPick(p);
     try {
       window.localStorage.setItem(PICK_KEY, p);
@@ -283,6 +319,12 @@ export function AgentWorkspace() {
     async (raw: string) => {
       const text = raw.trim();
       if (!text || running) return;
+      // No choice and no project default: ask how to pick providers, once, then send.
+      if (!pickRef.current) {
+        setAskingPick(text);
+        setInput("");
+        return;
+      }
       const id = uid();
       setTurns((ts) => [...ts, { id, user: text, steps: [], notes: [], approvals: [], status: "running" }]);
       setInput("");
@@ -323,7 +365,7 @@ export function AgentWorkspace() {
             updateTurn(id, (t) =>
               t.approvals.some((a) => a.intentId === e.intentId)
                 ? t
-                : { ...t, approvals: [...t.approvals, { intentId: e.intentId, provider: e.provider, askedFirst: e.askedFirst }] }
+                : { ...t, approvals: [...t.approvals, { intentId: e.intentId, provider: e.provider, askedFirst: e.askedFirst, decision: e.decision }] }
             );
             refreshConsole();
             break;
@@ -357,7 +399,7 @@ export function AgentWorkspace() {
             spend_pass_id: passId || undefined,
             network,
             ask_first: askFirst,
-            pick,
+            pick: pickRef.current ?? undefined,
           }),
           signal: ctrl.signal,
         });
@@ -402,7 +444,7 @@ export function AgentWorkspace() {
         inputRef.current?.focus();
       }
     },
-    [running, choice, history, passId, network, askFirst, pick, updateTurn, refreshConsole]
+    [running, choice, history, passId, network, askFirst, updateTurn, refreshConsole]
   );
 
   function newChat() {
@@ -514,6 +556,7 @@ export function AgentWorkspace() {
                     onAnswered={onAnswered}
                     onAsk={onAsk}
                     canAnswer={!running && i === turns.length - 1}
+                    pass={pass ?? undefined}
                   />
                 ))}
               </div>
@@ -522,12 +565,49 @@ export function AgentWorkspace() {
         </div>
 
         <div className="shrink-0 px-5 pb-5">
+          {askingPick !== null && (
+            <div role="group" aria-label="Choose how to pick providers" className="mx-auto mb-3 w-full max-w-[720px] rounded-2xl border border-accent/60 bg-accent-tint/40 p-4">
+              <p className="text-sm font-medium text-foreground">Before the first request: how should Algebra pick a provider?</p>
+              <p className="mt-0.5 text-xs text-muted">
+                Every provider that is down, overcharging or blocked is already out. This only ranks the rest. You can change it any time, and a project can set a
+                default so you are not asked.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {PICKS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      const text = askingPick;
+                      setAskingPick(null);
+                      choosePick(p.id);
+                      void send(text);
+                    }}
+                    className="rounded-xl border border-border bg-surface px-3 py-2.5 text-left hover:border-primary"
+                  >
+                    <span className="block text-sm font-semibold text-foreground">{p.label}</span>
+                    <span className="mt-0.5 block text-xs text-muted">{p.hint}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setInput(askingPick);
+                  setAskingPick(null);
+                }}
+                className="mt-2 text-xs text-muted underline"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
               send(input);
             }}
-            className="mx-auto w-full max-w-[720px] rounded-2xl border border-border-strong bg-surface shadow-[0_10px_30px_-18px_rgba(11,16,32,0.35)] transition-[border-color,box-shadow] focus-within:border-primary/70 focus-within:shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-primary)_10%,transparent),0_10px_30px_-18px_rgba(11,16,32,0.35)]"
+            className="console-inverse mx-auto w-full max-w-[720px] rounded-2xl border border-border-strong bg-surface shadow-[0_10px_30px_-18px_rgba(11,16,32,0.35)] transition-[border-color,box-shadow] focus-within:border-primary/70 focus-within:shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-primary)_10%,transparent),0_10px_30px_-18px_rgba(11,16,32,0.35)]"
           >
             <label htmlFor="agent-input" className="sr-only">
               Message the agent
@@ -562,7 +642,7 @@ export function AgentWorkspace() {
               <ModelPicker providers={providers} value={choice} onChange={pickModel} lockedProvider={lockedProvider} />
               <PassPicker passes={passes} vaults={vaults} value={passId} onChange={pickPass} disabled={running} />
               {passId && <AskFirstSwitch on={askFirst} onToggle={toggleAskFirst} disabled={running} />}
-              <PickPicker value={pick} onChange={choosePick} disabled={running} />
+              <PickPicker value={effectivePick} fromProject={pick === null && projectPick !== null} onChange={choosePick} disabled={running} />
               <span className="hidden text-xs text-muted/80 xl:ml-auto xl:inline">
                 <kbd className="font-mono">Enter</kbd> to send
               </span>
@@ -608,7 +688,9 @@ function TurnView({
   onAnswered,
   onAsk,
   canAnswer,
+  pass,
 }: {
+  pass?: SpendPass;
   turn: Turn;
   latest: boolean;
   onResolved: (turnId: string, intentId: string, o: ApprovalOutcome) => void;
@@ -654,6 +736,8 @@ function TurnView({
           intentId={a.intentId}
           provider={a.provider}
           askedFirst={a.askedFirst}
+          decision={a.decision}
+          pass={pass}
           resolved={a.resolved}
           onResolved={(o) => onResolved(turn.id, a.intentId, o)}
         />
@@ -684,9 +768,14 @@ function TurnView({
 
 /** Which Spend Pass the chat pays under. Only active USDC passes can pay for API calls. */
 /** How providers are picked: cheapest, balanced or fastest. Applies to every request the chat routes. */
-function PickPicker({ value, onChange, disabled }: { value: Pick; onChange: (p: Pick) => void; disabled: boolean }) {
+function PickPicker({ value, fromProject, onChange, disabled }: { value: Pick | null; fromProject: boolean; onChange: (p: Pick) => void; disabled: boolean }) {
   return (
-    <div role="radiogroup" aria-label="How to pick a provider" className="inline-flex h-8 shrink-0 items-center rounded-lg bg-primary-tint/50 p-0.5">
+    <div
+      role="radiogroup"
+      aria-label="How to pick a provider"
+      title={fromProject ? "Your project default. Choose one here to use it in this browser instead." : value ? undefined : "Choose how Algebra picks among providers"}
+      className={`inline-flex h-8 shrink-0 items-center rounded-lg p-0.5 ${value ? "bg-primary-tint/50" : "border border-dashed border-border-strong"}`}
+    >
       {PICKS.map((p) => (
         <button
           key={p.id}

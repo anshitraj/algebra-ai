@@ -45,6 +45,8 @@ type TenancyStore interface {
 
 // ProjectPassLister lists the Spend Passes of one project and environment.
 type ProjectPassLister interface {
+	// GetByAgent is the pass an agent spends under.
+	GetByAgent(ctx context.Context, agentID string) (*spendpass.Pass, error)
 	ListByProject(ctx context.Context, projectID, env string) ([]spendpass.Pass, error)
 }
 
@@ -544,15 +546,24 @@ func (s *TenancyService) KeyForAgent(ctx context.Context, ag *agent.Identity) (*
 	return k, nil
 }
 
-// DefaultStrategy is the provider-selection strategy a request made with an
-// API key gets when it names none: its project's default (cheapest, fastest or
-// balanced), or "" for any other caller and for a project with no default.
-func (s *TenancyService) DefaultStrategy(ctx context.Context, ag *agent.Identity) string {
-	k, err := s.KeyForAgent(ctx, ag)
-	if err != nil || k == nil {
+// DefaultStrategy is the provider-selection strategy a request gets when it
+// names none: the default of the project it runs in (cheapest, fastest or
+// balanced), or "" when it has no project or its project sets none. executor
+// is the agent whose Spend Pass the request runs under; a request made with an
+// API key belongs to the key's project, any other to its pass's project.
+func (s *TenancyService) DefaultStrategy(ctx context.Context, ag *agent.Identity, executor string) string {
+	projectID := ""
+	if k, err := s.KeyForAgent(ctx, ag); err == nil && k != nil {
+		projectID = k.ProjectID
+	} else if s.passes != nil && executor != "" {
+		if p, err := s.passes.GetByAgent(ctx, executor); err == nil {
+			projectID = p.ProjectID
+		}
+	}
+	if projectID == "" {
 		return ""
 	}
-	p, err := s.store.Project(ctx, k.ProjectID)
+	p, err := s.store.Project(ctx, projectID)
 	if err != nil {
 		return ""
 	}
