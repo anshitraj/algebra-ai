@@ -327,7 +327,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
               <a className="text-primary" href={explorerAddress(net.program_id, net.network)} target="_blank" rel="noopener noreferrer">
                 {short(net.program_id)}
               </a>{" "}
-              · pays only into Algebra&apos;s payer {short(net.agent)}
+              · can only pay out to Algebra&apos;s settlement account, which pays providers (not a wallet you fund)
             </p>
             {!account && (
               <p className="mt-1.5 text-xs leading-relaxed text-muted">
