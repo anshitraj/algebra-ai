@@ -87,6 +87,11 @@ type Config struct {
 	// everywhere. On by default outside production; in production only
 	// with ECONOMIC_SANDBOX=on.
 	EconomicSandbox bool
+	// MainnetExecution allows real-money payments on Solana mainnet
+	// (MAINNET_EXECUTION=on). Off by default: mainnet discovery, quotes and
+	// simulations work without it; payments are refused with
+	// MAINNET_EXECUTION_DISABLED until an operator turns it on.
+	MainnetExecution bool
 
 	// EconomicProviders is a JSON array of x402 providers the operator pins
 	// by hand, the "configured" discovery source, e.g.
@@ -442,6 +447,7 @@ func FromEnv() (*Config, error) {
 	if err := loadJupiter(&cfg.Jupiter); err != nil {
 		return nil, err
 	}
+	cfg.MainnetExecution = strings.EqualFold(strings.TrimSpace(os.Getenv("MAINNET_EXECUTION")), "on")
 	switch strings.ToLower(os.Getenv("ECONOMIC_SANDBOX")) {
 	case "on":
 		cfg.EconomicSandbox = true

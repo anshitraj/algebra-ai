@@ -14,6 +14,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/routing"
+	"github.com/project-algebra/algebra/internal/domain/tenancy"
 )
 
 type executeToolInput struct {
@@ -27,6 +28,7 @@ type executeToolInput struct {
 	Candidates      []app.CandidateInput `json:"candidates,omitempty" jsonschema:"x402 endpoints you found yourself. They are treated as unverified, and the person's Spend Pass decides whether they may be paid"`
 	StoreResult     *bool                `json:"store_result,omitempty" jsonschema:"whether Algebra may keep the provider's answer for a while (sealed, 24 hours by default) so that asking again returns it instead of 'already_committed'. Default true; pass false to have it not kept"`
 	AllowedNetworks []string             `json:"allowed_networks,omitempty" jsonschema:"payment networks allowed for this request, such as [\"solana-devnet\"] for test USDC or [\"solana\"] for real USDC. Other networks are refused before payment"`
+	SpendPassID     string               `json:"spend_pass_id,omitempty" jsonschema:"with an Algebra API key: the Spend Pass of the key's project and environment to spend under. Omit to use the newest active one"`
 }
 
 type executionStatusInput struct {
@@ -73,8 +75,12 @@ func (srv *Server) registerEconomicTools(s *gomcp.Server) {
 
 		ctx, cancel := context.WithTimeout(ctx, 80*time.Second)
 		defer cancel()
+		executor, err := srv.executor(ctx, ag, in.SpendPassID, tenancy.ScopeExecute)
+		if err != nil {
+			return nil, nil, err
+		}
 		res, err := srv.Execution.Do(ctx, app.DoRequest{
-			AgentID: ag.ID,
+			AgentID: executor,
 			Spec: econ.Spec{
 				Capability: capability, Input: raw, Window: in.Window, Currency: "USDC", BudgetMaxMinor: budget,
 				ProviderPolicy: econ.ProviderPolicy{Strategy: in.Strategy},
@@ -153,6 +159,7 @@ type simulateToolInput struct {
 	Candidates      []app.CandidateInput `json:"candidates,omitempty" jsonschema:"x402 endpoints you found yourself, as for algebra.execute"`
 	LiveQuotes      bool                 `json:"live_quotes,omitempty" jsonschema:"ask each provider for its real price with a free unpaid request. Without it nothing leaves Algebra and the catalogs' listed prices stand in"`
 	AllowedNetworks []string             `json:"allowed_networks,omitempty" jsonschema:"payment networks allowed for this request, as for algebra.execute"`
+	SpendPassID     string               `json:"spend_pass_id,omitempty" jsonschema:"with an Algebra API key: the Spend Pass to check against, as for algebra.execute"`
 }
 
 func (srv *Server) registerSimulateTool(s *gomcp.Server) {
@@ -189,8 +196,12 @@ func (srv *Server) registerSimulateTool(s *gomcp.Server) {
 
 		ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
+		executor, err := srv.executor(ctx, ag, in.SpendPassID, tenancy.ScopeSimulate)
+		if err != nil {
+			return nil, nil, err
+		}
 		sim, err := srv.Execution.Simulate(ctx, app.SimulateRequest{
-			AgentID: ag.ID,
+			AgentID: executor,
 			Spec: econ.Spec{
 				Capability: capability, Input: raw, Window: "simulate", Currency: "USDC", BudgetMaxMinor: budget,
 				ProviderPolicy: econ.ProviderPolicy{Strategy: in.Strategy},

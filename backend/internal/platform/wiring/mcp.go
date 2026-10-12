@@ -18,6 +18,6 @@ func (b *Bundle) MCP() *mcpserver.Server {
 		Integrators: b.Integrators, TransactionPolicy: b.TransactionPolicy,
 		PaymentIntents: b.PaymentIntentSvc, CommerceProfiles: b.CommerceProfileSvc, SpendPasses: b.SpendPasses,
 		Economic: b.Economic, Execution: b.Execution, Candidates: b.Candidates, Directory: b.Directory,
-		Classes: b.Classes, Health: b.Health,
+		Classes: b.Classes, Health: b.Health, Tenancy: b.Tenancy,
 	}
 }

@@ -94,6 +94,9 @@ type Bundle struct {
 	Onboarding *app.OnboardingService
 	Demo       *app.DemoService
 
+	// --- Organizations, projects and API keys (internal/domain/tenancy) ---
+	Tenancy *app.TenancyService
+
 	// --- Spend Passes and signed receipts (internal/domain/spendpass, receipt) ---
 	SpendPasses *app.SpendPassService
 	Receipts    *app.ReceiptService
@@ -362,6 +365,9 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	// receipt signed with a key derived from the master key.
 	passRepo := postgres.NewSpendPassRepo(db)
 	spendPassSvc := app.NewSpendPassService(passRepo, agentSvc, passRepo)
+	// Organizations, projects and API keys. A key signs in as its own agent
+	// identity and spends only through a pass of its project and environment.
+	tenancySvc := app.NewTenancyService(postgres.NewTenancyRepo(db), agents, passRepo)
 	policySvc.SetSpendPasses(spendPassSvc)
 	orderSvc.SetSpendPasses(spendPassSvc)
 	signer, err := receipt.NewSigner(masterKey)
@@ -379,6 +385,8 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	econSvc := app.NewEconomicService(econRepo, agents, passRepo, passRepo)
 	// Demo sign-ins are free and open to anyone: they pay in the sandbox only.
 	econSvc.SetAccountModes(accountSvc)
+	// Real-money mainnet payments only when the operator turned them on.
+	econSvc.SetMainnetExecution(cfg.MainnetExecution)
 	intentReceiptSvc := app.NewIntentReceiptService(signer, cfg.Auth.PublicWebURL, agents, econRepo)
 	econSvc.SetReceipts(intentReceiptSvc)
 	var sandboxProvider *sandboxpay.Provider
@@ -531,7 +539,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
-		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc,
+		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, Tenancy: tenancySvc,
 		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, MCPPublicURL: cfg.MCPPublicURL, OAuthProviders: oauthProviders, Privy: privy,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,

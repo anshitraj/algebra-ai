@@ -13,6 +13,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/domain/shared"
+	"github.com/project-algebra/algebra/internal/domain/tenancy"
 )
 
 // --- Execution: Algebra does it for the agent ---
@@ -105,6 +106,22 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 // that person's active passes and then acts as that pass's agent, with exactly
 // that pass's limits. No other agent may borrow a pass.
 func (a *API) executorFor(r *http.Request, ag *agent.Identity, passID string) (string, error) {
+	return a.executorForScope(r, ag, passID, tenancy.ScopeExecute)
+}
+
+// executorForScope is executorFor for a given API-key scope. An Algebra API
+// key spends only through a Spend Pass of its own project and environment, and
+// only for what its scopes allow (TenancyService.ExecutorFor).
+func (a *API) executorForScope(r *http.Request, ag *agent.Identity, passID string, scope tenancy.Scope) (string, error) {
+	if a.b.Tenancy != nil {
+		exec, key, err := a.b.Tenancy.ExecutorFor(r.Context(), ag, passID, scope)
+		if err != nil {
+			return "", err
+		}
+		if key != nil {
+			return exec, nil
+		}
+	}
 	passID = strings.TrimSpace(passID)
 	if passID == "" {
 		return ag.ID, nil

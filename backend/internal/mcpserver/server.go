@@ -33,6 +33,7 @@ import (
 	integratorpkg "github.com/project-algebra/algebra/internal/domain/integrator"
 	"github.com/project-algebra/algebra/internal/domain/privacy"
 	"github.com/project-algebra/algebra/internal/domain/quote"
+	"github.com/project-algebra/algebra/internal/domain/tenancy"
 	"github.com/project-algebra/algebra/providers/catalog"
 )
 
@@ -65,6 +66,10 @@ type Server struct {
 
 	// SpendPasses backs algebra.spend_pass: an agent reading its own limits.
 	SpendPasses *app.SpendPassService
+
+	// Tenancy resolves Algebra API keys to their project's Spend Pass. Nil
+	// leaves only Spend Pass tokens, as in tests.
+	Tenancy *app.TenancyService
 
 	// Economic and Execution back algebra.execute and
 	// algebra.execution_status: the agent says what it wants and Algebra
@@ -149,4 +154,22 @@ func NewMCPServer(srv *Server) *gomcp.Server {
 	srv.registerPolicyTools(s)
 	srv.registerPaymentIntentTools(s)
 	return s
+}
+
+// executor is who spends for a call: the calling agent itself when it is a
+// Spend Pass token, or, for an Algebra API key, the agent of a Spend Pass in
+// the key's project and environment (the one named, or the newest active
+// one). A key never spends on its own.
+func (srv *Server) executor(ctx context.Context, ag *agentpkg.Identity, passID string, scope tenancy.Scope) (string, error) {
+	if srv.Tenancy == nil {
+		return ag.ID, nil
+	}
+	exec, key, err := srv.Tenancy.ExecutorFor(ctx, ag, passID, scope)
+	if err != nil {
+		return "", err
+	}
+	if key == nil {
+		return ag.ID, nil
+	}
+	return exec, nil
 }
