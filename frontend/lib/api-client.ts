@@ -282,6 +282,11 @@ export function setPassControls(id: string, c: PassControls) {
   return apiFetch<SpendPass>(`/api/v1/me/passes/${encodeURIComponent(id)}/controls`, { method: "PUT", body: c });
 }
 
+/** A pass's own rules: per-call cap, ask-me-above amount (0 asks every time), provider allow-list. null clears a limit. */
+export function setPassRules(id: string, r: { max_per_purchase_minor_units: number | null; approve_above_minor_units: number | null; allowed_merchants: string[] }) {
+  return apiFetch<SpendPass>(`/api/v1/me/passes/${encodeURIComponent(id)}/rules`, { method: "PUT", body: r });
+}
+
 /** "Would this be allowed, and who would do it?" Nothing is reserved or paid. */
 export function simulatePolicy(b: SimulateBody) {
   return apiFetch<Simulation>("/api/v1/policy/simulate", { method: "POST", body: b });

@@ -4,7 +4,8 @@
 
 import type { ProviderCard, StepDetail, StepHint, StepStatus } from "./events";
 import type { ToolResult } from "./execute-tool";
-import { explorerTx, networkWord } from "../explorer";
+import { explorerTx, networkWord, solscanTx } from "../explorer";
+import type { PolicyReport } from "../policy-check";
 
 const USDC = 1_000_000;
 
@@ -103,9 +104,14 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
   if (typeof d.paid === "string" && (d.paid_minor as number) > 0) rows.push({ label: "Paid", value: `${d.paid}${network ? ` on ${networkWord(network)}` : ""}` });
   if (tx) rows.push({ label: "Transaction", value: `${tx.slice(0, 8)}…${tx.slice(-8)}` });
   if (typeof d.intent_id === "string") rows.push({ label: "Intent", value: d.intent_id });
+  const where = d.test_money && network === "solana-devnet" ? " (devnet)" : "";
+  const intentId = typeof d.intent_id === "string" ? d.intent_id : undefined;
+  // A sandbox payment has no chain transaction to look at.
+  const onChain = !!tx && (network === "solana" || network === "solana-devnet");
   const links = [
-    ...(tx && !d.test_money ? [{ title: "Transaction on Solana Explorer", url: explorerTx(tx, network) }] : []),
-    ...(tx && d.test_money ? [{ title: "Transaction on Solana Explorer (devnet)", url: explorerTx(tx, network) }] : []),
+    ...(intentId && d._receipt ? [{ title: "Invoice, signed by Algebra", url: `/console/executions/${encodeURIComponent(intentId)}/invoice` }] : []),
+    ...(onChain ? [{ title: `Transaction on Solscan${where}`, url: solscanTx(tx, network) }] : []),
+    ...(onChain ? [{ title: `Transaction on Solana Explorer${where}`, url: explorerTx(tx, network) }] : []),
     { title: "Every paid call, with its receipt", url: "/console/executions" },
   ];
 
@@ -136,7 +142,7 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
       return {
         status: "done",
         summary: `Delivered${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid}` : " · nothing to pay"}${network ? ` on ${networkWord(network)}` : ""}${d.test_money ? " (test money)" : ""}`,
-        detail: { rows, links, response: pretty(d.response), note: "The response is the provider's own data, shown as received." },
+        detail: { rows, links, response: pretty(d.response), note: "The response is the provider's own data, shown as received.", policy: d._policy as PolicyReport | undefined },
       };
     case "being_confirmed":
       return {

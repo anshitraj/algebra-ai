@@ -3,7 +3,8 @@
 // Approval itself never goes through a tool — the browser approves or
 // cancels the intent with the person's own session.
 
-export type PendingApproval = { intentId: string; provider?: string };
+/** askedFirst: the person asked to approve every payment, so the pass alone would have allowed this one. */
+export type PendingApproval = { intentId: string; provider?: string; askedFirst?: boolean };
 
 export function detectPendingApproval(
   toolName: string,
@@ -11,7 +12,7 @@ export function detectPendingApproval(
   result: { ok: boolean; data?: unknown }
 ): PendingApproval | undefined {
   if ((toolName !== "pay_and_call" && toolName !== "run_approved_intent" && toolName !== "route_work") || !result.ok) return undefined;
-  const d = result.data as { outcome?: string; intent_id?: unknown; provider_id?: unknown } | undefined;
+  const d = result.data as { outcome?: string; intent_id?: unknown; provider_id?: unknown; asked_first?: unknown } | undefined;
   if (d?.outcome !== "approval_required" || typeof d.intent_id !== "string" || !d.intent_id) return undefined;
-  return { intentId: d.intent_id, provider: typeof d.provider_id === "string" ? d.provider_id : undefined };
+  return { intentId: d.intent_id, provider: typeof d.provider_id === "string" ? d.provider_id : undefined, askedFirst: d.asked_first === true };
 }

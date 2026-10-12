@@ -3,6 +3,7 @@ package v1
 import (
 	"net/http"
 
+	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/spendpass"
 )
 
@@ -69,6 +70,26 @@ func (a *API) freezeMyPass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, err := a.b.SpendPasses.Freeze(r.Context(), sess.UserID, r.PathValue("id"), *req.Frozen)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+// setMyPassRules: PUT /api/v1/me/passes/{id}/rules. A person's own rules on a
+// pass: the per-call cap, the ask-me-above amount and the provider allow-list.
+func (a *API) setMyPassRules(w http.ResponseWriter, r *http.Request) {
+	sess, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	var rules app.PassRules
+	if err := decodeJSON(r, &rules); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	p, err := a.b.SpendPasses.UpdateRules(r.Context(), sess.UserID, r.PathValue("id"), rules)
 	if err != nil {
 		writeError(w, err)
 		return

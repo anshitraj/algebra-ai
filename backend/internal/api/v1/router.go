@@ -100,6 +100,7 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/me/passes/{id}/revoke", api.revokeMyPass)
 	mux.HandleFunc("POST /api/v1/me/passes/{id}/freeze", api.freezeMyPass)
 	mux.HandleFunc("PUT /api/v1/me/passes/{id}/controls", api.setMyPassControls)
+	mux.HandleFunc("PUT /api/v1/me/passes/{id}/rules", api.setMyPassRules)
 	mux.HandleFunc("GET /api/v1/onchain/networks", api.onchainNetworks)
 	mux.HandleFunc("POST /api/v1/me/passes/{id}/onchain/prepare", api.prepareOnchainPass)
 	mux.HandleFunc("POST /api/v1/me/passes/{id}/onchain/link", api.linkOnchainPass)

@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
 import type { SpendPass } from "@/lib/types";
-import type { ClassRow, KillSwitchState, NewProviderRule, PassControls, Simulation } from "@/lib/routing-types";
+import type { ClassRow, KillSwitchState, Simulation } from "@/lib/routing-types";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { Button, ErrorNote, Field, Input, PageHeader, Panel, Skeleton, StatusBadge } from "@/components/console/ui";
+import { PolicyGuide } from "@/components/console/policy-guide";
 import { IconBan, IconCheck, IconShield, IconStop, Spinner } from "@/components/icons";
 
 /**
@@ -45,11 +46,12 @@ export default function FirewallPage() {
       <KillSwitch state={kill} onChange={(k) => { setKill(k); load(); }} />
 
       <section className="mt-8">
-        <h2 className="text-sm font-medium text-foreground">Per-pass controls</h2>
+        <h2 className="text-sm font-medium text-foreground">Rules for each pass</h2>
+        <p className="mt-1 text-sm text-muted">Answer four questions per pass. Algebra checks the answers before every payment.</p>
         <div className="mt-3 space-y-3">
           {!passes && !error && <Skeleton className="h-24" />}
           {passes?.length === 0 && <p className="text-sm text-muted">No active USDC Spend Pass. Create one under Spend passes.</p>}
-          {passes?.map((p) => <PassControlsCard key={p.id} pass={p} onSaved={load} />)}
+          {passes?.map((p) => <PolicyGuide key={p.id} pass={p} onSaved={load} />)}
         </div>
       </section>
 
@@ -98,103 +100,6 @@ function KillSwitch({ state, onChange }: { state: KillSwitchState | null; onChan
         {engaged ? "Lift the kill switch" : "Freeze every pass"}
       </Button>
     </div>
-  );
-}
-
-const RULES: { id: NewProviderRule; label: string; hint: string }[] = [
-  { id: "cap", label: "Cap each call", hint: "A provider you've never paid may be paid, up to the cap per call, until it's been paid once." },
-  { id: "approve", label: "Ask me", hint: "Paying a provider you've never paid waits for your approval; the router tries ones you have paid first." },
-  { id: "allow", label: "Allow", hint: "New providers are paid like any other." },
-];
-
-function PassControlsCard({ pass, onSaved }: { pass: SpendPass; onSaved: () => void }) {
-  const c = pass.controls;
-  const [perMin, setPerMin] = useState(String(c?.max_calls_per_minute ?? 60));
-  const [perProvider, setPerProvider] = useState(String(c?.max_calls_per_provider_per_minute ?? 20));
-  const [rule, setRule] = useState<NewProviderRule>(c?.new_providers ?? "cap");
-  const [cap, setCap] = useState(String((c?.new_provider_cap_minor_units ?? 50_000) / 1_000_000));
-  const [busy, setBusy] = useState<"" | "save" | "freeze">("");
-  const [msg, setMsg] = useState<string | null>(null);
-  const frozen = !!pass.frozen_at;
-
-  async function save() {
-    setBusy("save");
-    try {
-      const body: PassControls = {
-        max_calls_per_minute: Math.max(1, Math.round(Number(perMin) || 0)),
-        max_calls_per_provider_per_minute: Math.max(1, Math.round(Number(perProvider) || 0)),
-        new_providers: rule,
-        new_provider_cap_minor_units: Math.max(0, Math.round((Number(cap) || 0) * 1_000_000)),
-      };
-      await api.setPassControls(pass.id, body);
-      setMsg("Saved");
-      onSaved();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Couldn't save");
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function freeze() {
-    setBusy("freeze");
-    try {
-      await api.freezePass(pass.id, !frozen);
-      onSaved();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Couldn't change it");
-    } finally {
-      setBusy("");
-    }
-  }
-
-  return (
-    <Panel>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-            {pass.label} {frozen && <StatusBadge status="DENIED" label="frozen" />}
-          </p>
-          <p className="mt-0.5 text-xs text-muted">
-            {formatUSDC(pass.remaining_minor_units)} left of {formatUSDC(pass.budget_minor_units)}
-            {pass.allowed_merchants.length > 0 ? ` · only ${pass.allowed_merchants.join(", ")}` : ""}
-          </p>
-        </div>
-        <Button variant={frozen ? "secondary" : "danger"} onClick={freeze} disabled={busy !== ""}>
-          {busy === "freeze" ? <Spinner size={14} /> : frozen ? <IconCheck size={14} /> : <IconBan size={14} />} {frozen ? "Unfreeze" : "Freeze"}
-        </Button>
-      </div>
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Paid calls per minute" hint="Across all providers. Stops a looping agent.">
-          <Input type="number" min={1} value={perMin} onChange={(e) => setPerMin(e.target.value)} />
-        </Field>
-        <Field label="Per provider per minute">
-          <Input type="number" min={1} value={perProvider} onChange={(e) => setPerProvider(e.target.value)} />
-        </Field>
-        <Field label="Providers you've never paid" hint={RULES.find((r) => r.id === rule)?.hint}>
-          <select
-            value={rule}
-            onChange={(e) => setRule(e.target.value as NewProviderRule)}
-            className="w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
-          >
-            {RULES.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Cap per call (USDC)">
-          <Input type="number" min={0} step="0.001" value={cap} disabled={rule !== "cap"} onChange={(e) => setCap(e.target.value)} />
-        </Field>
-      </div>
-      <div className="mt-4 flex items-center gap-3">
-        <Button onClick={save} disabled={busy !== ""}>
-          {busy === "save" && <Spinner size={14} />} Save controls
-        </Button>
-        {msg && <span className="text-sm text-muted">{msg}</span>}
-      </div>
-    </Panel>
   );
 }
 

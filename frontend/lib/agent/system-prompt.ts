@@ -27,6 +27,8 @@ export type PromptContext = {
   pass: SpendPass | null;
   rail: RailStatus | undefined;
   mode: "live" | "demo";
+  /** "Ask me before every payment" is on. */
+  askFirst?: boolean;
 };
 
 /**
@@ -35,7 +37,7 @@ export type PromptContext = {
  * it. Rebuilt on every turn by the route handler, so a pass revoked or a
  * network switched in another tab takes effect on the very next message.
  */
-export function buildSystemPrompt({ network, pass, rail, mode }: PromptContext): string {
+export function buildSystemPrompt({ network, pass, rail, mode, askFirst }: PromptContext): string {
   const parts = [BASE_PROMPT];
   const sandbox = network === "sandbox";
   const where = sandbox
@@ -73,6 +75,10 @@ export function buildSystemPrompt({ network, pass, rail, mode }: PromptContext):
     if (pass.max_per_purchase_minor_units) p.push(`At most ${usdc(pass.max_per_purchase_minor_units)} per call.`);
     if (pass.approve_above_minor_units) p.push(`Calls at or above ${usdc(pass.approve_above_minor_units)} wait for the user's approval.`);
     if (pass.allowed_merchants?.length) p.push(`Only these providers: ${pass.allowed_merchants.join(", ")}.`);
+    if (askFirst)
+      p.push(
+        "The user turned on \"Ask me before every payment\": every paid call comes back approval_required first, with an approval card showing the price and provider. That is expected, not an error: say in one sentence what it would pay and to whom, and that it waits for their yes in the card. Never try to avoid it."
+      );
     p.push("The pass is enforced on Algebra's server; use it to set expectations, never as a substitute for pay_and_call's answer.");
     facts.push(p.join(" "));
   }

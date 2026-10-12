@@ -111,3 +111,22 @@ func TestEconomic_NoMainnetPaymentIsSignedUnlessEnabled(t *testing.T) {
 		t.Error("no payment authority may be recorded for a refused mainnet payment")
 	}
 }
+
+func TestEconomic_ARequestCanAskForAPersonsYesButNeverSkipIt(t *testing.T) {
+	ctx := context.Background()
+	rig := newEconRig(t, 1, 10_000_000)
+	spec := networkSpec("ask-first")
+	spec.AskFirst = true
+	v, _, err := rig.svc.CreateIntent(ctx, "agent_1", spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !v.RequiresApproval || v.State != econ.StateAwaitingApproval {
+		t.Fatalf("asked first: requires approval %v, state %s", v.RequiresApproval, v.State)
+	}
+	// Without it, the same pass pays on its own.
+	v, _, err = rig.svc.CreateIntent(ctx, "agent_1", networkSpec("no-ask"))
+	if err != nil || v.RequiresApproval || v.State != econ.StateOpen {
+		t.Fatalf("not asked: %v %v", v, err)
+	}
+}

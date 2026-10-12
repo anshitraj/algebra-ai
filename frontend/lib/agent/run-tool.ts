@@ -126,6 +126,6 @@ export async function runTool(
   }
 
   const pendingApproval = detectPendingApproval(name, input, result);
-  if (pendingApproval) emit({ type: "approval", intentId: pendingApproval.intentId, provider: pendingApproval.provider });
+  if (pendingApproval) emit({ type: "approval", intentId: pendingApproval.intentId, provider: pendingApproval.provider, askedFirst: pendingApproval.askedFirst });
   return { result: forModel(result), pendingApproval };
 }

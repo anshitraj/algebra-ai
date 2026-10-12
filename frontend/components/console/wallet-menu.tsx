@@ -6,14 +6,21 @@
 //
 // This is the wallet tied to the account: the one signed in with, or the one
 // Privy made for an email sign-in. It is not Algebra's payer wallet, which
-// pays providers and is shown here only to say so.
+// pays providers and is never shown as the person's.
 
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { useSession } from "@/lib/session";
+import dynamic from "next/dynamic";
 import { IconCheck, IconExternal, IconRefresh, IconWallet } from "@/components/icons";
+import { getAuthProviders } from "@/lib/api-client";
+import type { AccountSigner } from "./account-wallet-signer";
+import { ConvertSol } from "./convert-sol";
+
+// Privy's SDK loads only when the person starts a conversion.
+const AccountWalletSigner = dynamic(() => import("./account-wallet-signer"), { ssr: false });
 
 const short = (a: string) => (a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a);
 const sol = (lamports: number) => (lamports / 1e9).toLocaleString("en-US", { maximumFractionDigits: 4 });
@@ -42,10 +49,21 @@ async function copyText(text: string): Promise<boolean> {
 
 export function WalletMenu({ compact = false }: { compact?: boolean }) {
   const { user } = useSession();
-  const { network, demo, wallets, refreshWallets, rails } = useNetwork();
+  const { network, demo, wallets, refreshWallets } = useNetwork();
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState(0);
   const [copied, setCopied] = useState<"yes" | "no" | null>(null);
+  // While a swap is being signed in Privy's window (outside this menu), the menu stays open.
+  const pinned = useRef(false);
+  const [signerWanted, setSignerWanted] = useState(false);
+  const [privyAppId, setPrivyAppId] = useState("");
+  const [signer, setSigner] = useState<AccountSigner | null>(null);
+  const wantSigner = useCallback(() => {
+    setSignerWanted(true);
+    getAuthProviders()
+      .then((p) => setPrivyAppId(p.privy && p.privy_app_id ? p.privy_app_id : ""))
+      .catch(() => {});
+  }, []);
   const holder = useRef<HTMLDivElement>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,7 +78,7 @@ export function WalletMenu({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => {
-      if (!holder.current?.contains(e.target as Node)) setOpen(false);
+      if (!pinned.current && !holder.current?.contains(e.target as Node)) setOpen(false);
     };
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -97,7 +115,7 @@ export function WalletMenu({ compact = false }: { compact?: boolean }) {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     leaveTimer.current = setTimeout(() => {
       // Not while a control inside still has the keyboard.
-      if (!holder.current?.contains(document.activeElement)) setOpen(false);
+      if (!pinned.current && !holder.current?.contains(document.activeElement)) setOpen(false);
     }, 180);
   }, []);
 
@@ -107,7 +125,6 @@ export function WalletMenu({ compact = false }: { compact?: boolean }) {
   const held = wallets?.wallets.find((w) => w.address === wallet.address);
   const known = held?.ok === true;
   const onDevnet = network === "solana-devnet";
-  const rail = rails?.find((r) => r.network === network);
   const balanceText = known ? formatUSDC(held.usdc_minor) : held ? "balance unavailable" : "…";
 
   async function copy() {
@@ -119,6 +136,9 @@ export function WalletMenu({ compact = false }: { compact?: boolean }) {
 
   return (
     <div ref={holder} className="relative" onMouseEnter={enter} onMouseLeave={leave} onBlur={leave}>
+      {signerWanted && privyAppId && wallet.kind === "embedded" && (
+        <AccountWalletSigner appId={privyAppId} email={user?.email} address={wallet.address} onSigner={setSigner} />
+      )}
       <button
         type="button"
         aria-haspopup="dialog"
@@ -145,7 +165,7 @@ export function WalletMenu({ compact = false }: { compact?: boolean }) {
           id={panelId}
           role="dialog"
           aria-label="Your wallet"
-          className="absolute right-0 top-full z-50 mt-2 w-[19.5rem] max-w-[calc(100vw-1.5rem)] rounded-2xl border border-border bg-surface p-4 text-left shadow-[0_18px_44px_-18px_rgb(0_0_0/0.35)]"
+          className="absolute right-0 top-full z-50 mt-2 max-h-[calc(100vh-5rem)] w-[19.5rem] overflow-y-auto max-w-[calc(100vw-1.5rem)] rounded-2xl border border-border bg-surface p-4 text-left shadow-[0_18px_44px_-18px_rgb(0_0_0/0.35)]"
         >
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-semibold text-foreground">Your wallet</p>
@@ -202,6 +222,21 @@ export function WalletMenu({ compact = false }: { compact?: boolean }) {
             </button>
           </div>
 
+          {wallet.kind === "embedded" || network !== "solana" ? (
+            <ConvertSol
+              address={wallet.address}
+              network={network}
+              solLamports={known ? held.sol_lamports : undefined}
+              signer={signer?.address === wallet.address ? signer : null}
+              wantSigner={wantSigner}
+              onBusy={(b) => (pinned.current = b)}
+              onDone={() => refreshWallets(true)}
+              copyAddress={() => void copyText(wallet.address)}
+            />
+          ) : (
+            <p className="mt-3 text-[0.6875rem] leading-relaxed text-muted">To turn SOL into USDC, use the swap in your wallet app; it lands at this address.</p>
+          )}
+
           <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-lg border border-border px-2.5 py-2">
               <dt className="text-muted">USDC</dt>
@@ -240,13 +275,6 @@ export function WalletMenu({ compact = false }: { compact?: boolean }) {
             </p>
           )}
 
-          {rails !== null && (
-            <p className="mt-3 border-t border-border pt-2.5 text-[0.6875rem] leading-relaxed text-muted">
-              {rail?.configured && rail.address
-                ? `Providers are paid from Algebra's own ${networkLabel(network)} wallet (${short(rail.address)}${rail.usdc_minor != null ? `, ${formatUSDC(rail.usdc_minor)}` : ""}). You don't fund that one: your wallet funds your Spend Pass.`
-                : `This server has no ${networkLabel(network)} payer wallet: calls can be priced, not paid.`}
-            </p>
-          )}
         </div>
       )}
     </div>

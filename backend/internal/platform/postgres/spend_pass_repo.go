@@ -126,6 +126,22 @@ func (r *SpendPassRepo) SetControls(ctx context.Context, id string, c spendpass.
 	return nil
 }
 
+// SetRules replaces a pass's per-call cap, ask-me-above amount and provider allow-list.
+func (r *SpendPassRepo) SetRules(ctx context.Context, id string, maxPerCall, approveAbove *int64, providers []string) error {
+	if providers == nil {
+		providers = []string{}
+	}
+	tag, err := r.db.Pool.Exec(ctx, `UPDATE spend_passes SET max_per_purchase_minor_units = $2, approve_above_minor_units = $3, allowed_merchants = $4
+		WHERE id = $1 AND revoked_at IS NULL`, id, maxPerCall, approveAbove, providers)
+	if err != nil {
+		return fmt.Errorf("postgres: updating spend pass rules: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
 func (r *SpendPassRepo) Get(ctx context.Context, id string) (*spendpass.Pass, error) {
 	return scanPass(r.db.Pool.QueryRow(ctx, passSelect+` WHERE id = $1`, id))
 }

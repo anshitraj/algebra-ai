@@ -219,6 +219,10 @@ type Spec struct {
 	Constraints    Constraints
 	ProviderPolicy ProviderPolicy
 	TTL            time.Duration
+	// AskFirst: whoever asked wants a person's yes before anything is paid,
+	// even when the Spend Pass would allow it. It can only add an approval,
+	// never remove one, and is not part of the intent's hash.
+	AskFirst bool
 }
 
 var (

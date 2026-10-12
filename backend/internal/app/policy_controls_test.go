@@ -210,3 +210,29 @@ func TestSimulate_AnswersWithoutPayingAndExplains(t *testing.T) {
 		t.Fatalf("frozen: %v %+v", err, sim)
 	}
 }
+
+func TestPassRules_APersonSetsAndClearsTheirRules(t *testing.T) {
+	ctx := context.Background()
+	rig := newExecRig(t)
+	svc := NewSpendPassService(rig.passes, NewAgentService(rig.agents), nil)
+	cap, ask := int64(100_000), int64(10_000)
+	p, err := svc.UpdateRules(ctx, "user_1", "pass_agent_1", PassRules{MaxPerCallMinor: &cap, ApproveAboveMinor: &ask, AllowedProviders: []string{" Sandbox:Beta ", "sandbox:beta"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *p.MaxPerPurchaseMinorUnits != cap || *p.ApproveAboveMinorUnits != ask || len(p.AllowedMerchants) != 1 || p.AllowedMerchants[0] != "sandbox:beta" {
+		t.Fatalf("rules: %+v", p)
+	}
+	// Cleared: no cap, never asks, any provider.
+	if p, err = svc.UpdateRules(ctx, "user_1", "pass_agent_1", PassRules{}); err != nil || p.MaxPerPurchaseMinorUnits != nil || p.ApproveAboveMinorUnits != nil || len(p.AllowedMerchants) != 0 {
+		t.Fatalf("cleared: %+v %v", p, err)
+	}
+	// A cap above the budget is refused; someone else's pass doesn't exist.
+	big := p.BudgetMinorUnits + 1
+	if _, err := svc.UpdateRules(ctx, "user_1", "pass_agent_1", PassRules{MaxPerCallMinor: &big}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("cap above budget: %v", err)
+	}
+	if _, err := svc.UpdateRules(ctx, "user_2", "pass_agent_1", PassRules{}); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("another person's pass: %v", err)
+	}
+}

@@ -27,7 +27,7 @@ type Turn = {
   user: string;
   steps: Step[];
   notes: string[];
-  approvals: { intentId: string; provider?: string; resolved?: ApprovalOutcome }[];
+  approvals: { intentId: string; provider?: string; askedFirst?: boolean; resolved?: ApprovalOutcome }[];
   /** Clarifying questions the agent asked (ask_user), and the picks sent back. */
   questions?: AskedQuestion[];
   answered?: string[];
@@ -65,6 +65,7 @@ const MIN_VISIBLE_MS: Record<string, number> = { search_providers: 3000, get_pro
 
 const MODEL_KEY = "algebra:agent-model";
 const PASS_KEY = "algebra:agent-pass";
+const ASK_KEY = "algebra:agent-ask-first";
 // Provider history carries every tool result, so a long chat can get big.
 // Keep the newest turns that fit; the conversation matters more than its tail.
 const CHAT_MAX_BYTES = 400_000;
@@ -134,6 +135,25 @@ export function AgentWorkspace() {
   const [inspector, setInspector] = useState<"pass" | "activity">("pass");
   const [passes, setPasses] = useState<SpendPass[] | null>(null);
   const [passId, setPassId] = useState("");
+  // "Ask me before every payment": on unless the person turned it off in this browser.
+  const [askFirst, setAskFirst] = useState(true);
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(ASK_KEY) === "off") setAskFirst(false);
+    } catch {
+      // storage blocked: ask first
+    }
+  }, []);
+  function toggleAskFirst() {
+    setAskFirst((on) => {
+      try {
+        window.localStorage.setItem(ASK_KEY, on ? "off" : "on");
+      } catch {
+        // storage blocked: applies to this page only
+      }
+      return !on;
+    });
+  }
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -271,7 +291,7 @@ export function AgentWorkspace() {
             updateTurn(id, (t) =>
               t.approvals.some((a) => a.intentId === e.intentId)
                 ? t
-                : { ...t, approvals: [...t.approvals, { intentId: e.intentId, provider: e.provider }] }
+                : { ...t, approvals: [...t.approvals, { intentId: e.intentId, provider: e.provider, askedFirst: e.askedFirst }] }
             );
             refreshConsole();
             break;
@@ -304,6 +324,7 @@ export function AgentWorkspace() {
             history,
             spend_pass_id: passId || undefined,
             network,
+            ask_first: askFirst,
           }),
           signal: ctrl.signal,
         });
@@ -348,7 +369,7 @@ export function AgentWorkspace() {
         inputRef.current?.focus();
       }
     },
-    [running, choice, history, passId, network, updateTurn, refreshConsole]
+    [running, choice, history, passId, network, askFirst, updateTurn, refreshConsole]
   );
 
   function newChat() {
@@ -507,6 +528,7 @@ export function AgentWorkspace() {
             <div className="flex items-center gap-2 px-2.5 pt-1 pb-2.5">
               <ModelPicker providers={providers} value={choice} onChange={pickModel} lockedProvider={lockedProvider} />
               <PassPicker passes={passes} value={passId} onChange={pickPass} disabled={running} />
+              {passId && <AskFirstSwitch on={askFirst} onToggle={toggleAskFirst} disabled={running} />}
               <span className="hidden text-xs text-muted/80 xl:ml-auto xl:inline">
                 <kbd className="font-mono">Enter</kbd> to send
               </span>
@@ -597,6 +619,7 @@ function TurnView({
           key={a.intentId}
           intentId={a.intentId}
           provider={a.provider}
+          askedFirst={a.askedFirst}
           resolved={a.resolved}
           onResolved={(o) => onResolved(turn.id, a.intentId, o)}
         />
@@ -626,6 +649,26 @@ function TurnView({
 }
 
 /** Which Spend Pass the chat pays under. Only active USDC passes can pay for API calls. */
+/** "Ask me before every payment": the agent proposes, the person says yes or no in a card before anything is paid. */
+function AskFirstSwitch({ on, onToggle, disabled }: { on: boolean; onToggle: () => void; disabled: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onToggle}
+      disabled={disabled}
+      title={on ? "Every payment waits for your yes. Click to let the pass's rules decide." : "The pass's rules decide; you're asked only above its approval limit. Click to approve every payment."}
+      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-muted hover:bg-primary-tint/60 disabled:opacity-60"
+    >
+      <span className={`relative h-4 w-7 rounded-full transition-colors ${on ? "bg-primary" : "bg-border-strong"}`}>
+        <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-surface shadow-sm transition-[left] ${on ? "left-3.5" : "left-0.5"}`} />
+      </span>
+      <span className={on ? "text-foreground" : ""}>Ask before paying</span>
+    </button>
+  );
+}
+
 function PassPicker({
   passes,
   value,
