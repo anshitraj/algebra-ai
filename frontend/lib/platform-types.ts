@@ -6,6 +6,17 @@ export type Scope = "read" | "simulate" | "execute";
 export type Role = "owner" | "admin" | "developer" | "viewer";
 export type Strategy = "" | "cheapest" | "fastest" | "balanced";
 
+/** A commercial plan and what it allows; -1 means no limit. Mirrors backend/internal/domain/tenancy/plans.go. */
+export type Plan = {
+  id: string;
+  name: string;
+  monthly_usd_cents: number;
+  projects: number;
+  managed_executions: number;
+  members: number;
+  trial: boolean;
+};
+
 export type Organization = {
   id: string;
   name: string;
@@ -14,6 +25,25 @@ export type Organization = {
   trial_ends_at?: string;
   created_at: string;
   role: Role;
+  /** The plan in force now: the trial's while it runs. */
+  effective_plan: string;
+  entitlements: Plan;
+  trial_active: boolean;
+  /** False once the organization has had its one trial. */
+  trial_available: boolean;
+};
+
+/** A project's metered use this calendar month (UTC). Spend is what providers were paid, in micro-USDC. */
+export type ProjectUsage = {
+  project_id: string;
+  since: string;
+  requests: number;
+  by_state: Record<string, number>;
+  by_network: { network: string; environment?: Environment; executions: number; spent_minor: number }[];
+  /** Committed requests on devnet and mainnet: what a plan counts. Sandbox runs are not counted. */
+  managed_executions: number;
+  plan: string;
+  included_executions: number;
 };
 
 export type Project = {

@@ -15,6 +15,7 @@ export function Footer() {
             <span>PRODUCT</span>
             <Link href="/#product">The workspace</Link>
             <Link href="/#security">Spend firewall</Link>
+            <Link href="/pricing">Pricing</Link>
             <Link href="/verify">Verify a receipt</Link>
           </div>
           <div>
@@ -25,6 +26,7 @@ export function Footer() {
           </div>
           <div>
             <span>COMPANY</span>
+            <Link href="/book-demo">Book a demo</Link>
             <Link href="/contact">Contact</Link>
             <Link href="/privacy">Privacy</Link>
             <Link href="/terms">Terms</Link>

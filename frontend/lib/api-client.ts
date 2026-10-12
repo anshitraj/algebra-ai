@@ -33,6 +33,7 @@ import type {
   Organization,
   PlatformEvent,
   Project,
+  ProjectUsage,
   Strategy,
   Trust,
 } from "./platform-types";
@@ -294,6 +295,15 @@ const enc = encodeURIComponent;
 
 export function listOrgs() {
   return apiFetch<{ organizations: Organization[] }>("/api/v1/orgs");
+}
+
+/** Starts the organization's one seven-day Startup trial. No card, nothing charged. */
+export function startTrial(orgId: string) {
+  return apiFetch<Organization>(`/api/v1/orgs/${enc(orgId)}/trial`, { method: "POST" });
+}
+
+export function projectUsage(projectId: string) {
+  return apiFetch<ProjectUsage>(`/api/v1/projects/${enc(projectId)}/usage`);
 }
 
 export function listProjects(orgId: string) {

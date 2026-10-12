@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
-import type { APIKey, Environment, IssuedKey, Organization, PlatformEvent, Project, Scope, Strategy } from "@/lib/platform-types";
+import type { APIKey, Environment, IssuedKey, Organization, PlatformEvent, Project, ProjectUsage, Scope, Strategy } from "@/lib/platform-types";
 import type { SpendPass } from "@/lib/types";
 import { formatUSDC } from "@/lib/money";
 import { Button, EmptyState, ErrorNote, Field, Input, PageHeader, Panel, Skeleton, timeAgo } from "@/components/console/ui";
@@ -32,6 +32,7 @@ export default function ProjectsPage() {
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [startingTrial, setStartingTrial] = useState(false);
 
   useEffect(() => {
     api
@@ -73,6 +74,25 @@ export default function ProjectsPage() {
     }
   }
 
+  async function trial() {
+    if (!org) return;
+    setStartingTrial(true);
+    setError(null);
+    try {
+      const updated = await api.startTrial(org.id);
+      setOrg(updated);
+      setOrgs((x) => x?.map((o) => (o.id === updated.id ? updated : o)) ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't start the trial");
+    } finally {
+      setStartingTrial(false);
+    }
+  }
+
+  const live = projects?.filter((p) => !p.archived_at).length ?? 0;
+  const projectLimit = org?.entitlements?.projects ?? 1;
+  const atProjectLimit = projectLimit >= 0 && live >= projectLimit;
+
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader
@@ -96,14 +116,25 @@ export default function ProjectsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full bg-primary-tint px-2.5 py-0.5 font-medium text-primary capitalize">{org.plan} plan</span>
-            {org.trial_plan && org.trial_ends_at && new Date(org.trial_ends_at) > new Date() && (
+            {org.trial_active && org.trial_ends_at && (
               <span className="rounded-full bg-accent-tint px-2.5 py-0.5 font-medium text-accent">
-                {org.trial_plan} trial until {new Date(org.trial_ends_at).toLocaleDateString()}
+                <span className="capitalize">{org.trial_plan}</span> trial until {new Date(org.trial_ends_at).toLocaleDateString()}
               </span>
             )}
-            <span className="text-muted">You are {org.role}</span>
+            <span className="text-muted">
+              {projectLimit < 0 ? `${live} projects` : `${live} of ${projectLimit} project${projectLimit === 1 ? "" : "s"}`} · You are {org.role}
+            </span>
+            {manage && org.trial_available && (
+              <Button variant="secondary" onClick={trial} disabled={startingTrial} className="min-h-8 px-3 py-1 text-xs">
+                {startingTrial && <Spinner size={12} />} Start 7-day Startup trial
+              </Button>
+            )}
+            <Link href="/pricing" className="text-muted underline hover:text-foreground">Plans</Link>
           </div>
         </Panel>
+      )}
+      {org && manage && org.trial_available && (
+        <p className="mt-2 text-xs text-muted">The trial gives this organization the Startup plan&apos;s limits for seven days. No card, nothing is charged, and it returns to Free on its own.</p>
       )}
 
       {projects && (
@@ -122,17 +153,63 @@ export default function ProjectsPage() {
             ))}
             {manage && (
               <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); create(); }}>
-                <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New project name" maxLength={80} aria-label="New project name" />
-                <Button type="submit" variant="secondary" disabled={creating || !newName.trim()} className="w-full">
+                <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New project name" maxLength={80} aria-label="New project name" disabled={atProjectLimit} />
+                <Button type="submit" variant="secondary" disabled={creating || !newName.trim() || atProjectLimit} className="w-full">
                   {creating ? <Spinner size={13} /> : <IconPlus size={14} />} Add project
                 </Button>
+                {atProjectLimit && (
+                  <p className="text-xs leading-snug text-muted">
+                    Your plan includes {projectLimit} project{projectLimit === 1 ? "" : "s"}.{org?.trial_available ? " Start the trial above for more." : ""}
+                  </p>
+                )}
               </form>
             )}
           </nav>
-          {project ? <ProjectPanel key={project.id} project={project} manage={manage} onUpdated={(p) => setProjects((x) => x?.map((y) => (y.id === p.id ? p : y)) ?? null)} /> : <EmptyState title="No project" body="Create a project to issue API keys." />}
+          {project ? <ProjectPanel key={`${project.id}:${org?.effective_plan ?? ""}`} project={project} manage={manage} onUpdated={(p) => setProjects((x) => x?.map((y) => (y.id === p.id ? p : y)) ?? null)} /> : <EmptyState title="No project" body="Create a project to issue API keys." />}
         </div>
       )}
     </div>
+  );
+}
+
+// This month's metered use, from GET /api/v1/projects/{id}/usage. Spend is
+// what providers were paid from the project's passes, never an Algebra fee.
+function UsagePanel({ usage }: { usage: ProjectUsage | null }) {
+  if (!usage) return <Skeleton className="h-24" />;
+  const included = usage.included_executions;
+  const month = new Date(usage.since).toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold text-foreground">Usage in {month}</h3>
+        <p className="text-xs text-muted">
+          {usage.managed_executions.toLocaleString()} {included < 0 ? "on-chain executions" : `of ${included.toLocaleString()} on-chain executions included`} · sandbox runs are free
+        </p>
+      </div>
+      {usage.requests === 0 ? (
+        <p className="mt-2 text-sm text-muted">No requests yet this month. Run the <Link href="/console/quickstart" className="underline">quickstart</Link> to make the first one.</p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[420px] text-left text-sm">
+            <thead className="text-xs text-muted">
+              <tr><th className="py-1.5 pr-4 font-medium">Environment</th><th className="py-1.5 pr-4 font-medium">Committed executions</th><th className="py-1.5 font-medium">Paid to providers</th></tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {usage.by_network.map((n) => (
+                <tr key={n.network}>
+                  <td className="py-2 pr-4">{n.environment ? <EnvBadge env={n.environment} /> : <span className="font-mono text-xs">{n.network}</span>}</td>
+                  <td className="py-2 pr-4 tabular-nums">{n.executions.toLocaleString()}</td>
+                  <td className="py-2 tabular-nums">{formatUSDC(n.spent_minor)}{n.environment === "sandbox" ? <span className="ml-1.5 text-xs text-muted">simulated</span> : n.environment === "devnet" ? <span className="ml-1.5 text-xs text-muted">test USDC</span> : null}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2 text-xs text-muted">
+            {usage.requests.toLocaleString()} request{usage.requests === 1 ? "" : "s"} in all: {Object.entries(usage.by_state).map(([state, n]) => `${n} ${state.toLowerCase().replace(/_/g, " ")}`).join(", ")}.
+          </p>
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -142,14 +219,16 @@ function ProjectPanel({ project, manage, onUpdated }: { project: Project; manage
   const [events, setEvents] = useState<PlatformEvent[] | null>(null);
   const [apiBase, setApiBase] = useState("");
   const [issued, setIssued] = useState<IssuedKey | null>(null);
+  const [usage, setUsage] = useState<ProjectUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [k, p, ev] = await Promise.all([api.listKeys(project.id), api.listProjectPasses(project.id), api.listProjectEvents(project.id, 20)]);
+    const [k, p, ev, u] = await Promise.all([api.listKeys(project.id), api.listProjectPasses(project.id), api.listProjectEvents(project.id, 20), api.projectUsage(project.id)]);
     setKeys(k.keys);
     setApiBase(k.connect.api_base);
     setPasses(p.passes);
     setEvents(ev.events);
+    setUsage(u);
   }, [project.id]);
 
   useEffect(() => {
@@ -192,6 +271,8 @@ function ProjectPanel({ project, manage, onUpdated }: { project: Project; manage
           </label>
         </div>
       </Panel>
+
+      <UsagePanel usage={usage} />
 
       {issued && <IssuedSecret issued={issued} apiBase={apiBase} onDone={() => setIssued(null)} />}
 
