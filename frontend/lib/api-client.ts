@@ -21,6 +21,22 @@ import type {
   User,
 } from "./types";
 import type {
+  APIKey,
+  Environment,
+  IntelChange,
+  IntelEndpoint,
+  IntelEndpointDetail,
+  IntelQuery,
+  IntelStatus,
+  IssuedKey,
+  NewKey,
+  Organization,
+  PlatformEvent,
+  Project,
+  Strategy,
+  Trust,
+} from "./platform-types";
+import type {
   ClassDetail,
   ClassRow,
   EndpointHealth,
@@ -262,4 +278,89 @@ export function setPassControls(id: string, c: PassControls) {
 /** "Would this be allowed, and who would do it?" Nothing is reserved or paid. */
 export function simulatePolicy(b: SimulateBody) {
   return apiFetch<Simulation>("/api/v1/policy/simulate", { method: "POST", body: b });
+}
+
+/**
+ * Runs a request as one of the person's own passes, from the console (the
+ * session's agent acting under that pass's limits). No API key is involved.
+ */
+export function executeAsPass<T = Record<string, unknown>>(passId: string, body: Record<string, unknown>) {
+  return apiFetch<T>("/api/v1/execute", { method: "POST", body: { ...body, spend_pass_id: passId } });
+}
+
+// --- organizations, projects and API keys (a person's session only) ---
+
+const enc = encodeURIComponent;
+
+export function listOrgs() {
+  return apiFetch<{ organizations: Organization[] }>("/api/v1/orgs");
+}
+
+export function listProjects(orgId: string) {
+  return apiFetch<{ projects: Project[] }>(`/api/v1/orgs/${enc(orgId)}/projects`);
+}
+
+export function createProject(orgId: string, name: string) {
+  return apiFetch<Project>(`/api/v1/orgs/${enc(orgId)}/projects`, { method: "POST", body: { name } });
+}
+
+export function updateProject(id: string, p: { name?: string; default_strategy?: Strategy }) {
+  return apiFetch<Project>(`/api/v1/projects/${enc(id)}`, { method: "PATCH", body: p });
+}
+
+export function listKeys(projectId: string) {
+  return apiFetch<{ keys: APIKey[]; connect: PassConnect }>(`/api/v1/projects/${enc(projectId)}/keys`);
+}
+
+export function createKey(projectId: string, k: NewKey) {
+  return apiFetch<{ key: IssuedKey; connect: PassConnect }>(`/api/v1/projects/${enc(projectId)}/keys`, { method: "POST", body: k });
+}
+
+export function rotateKey(id: string) {
+  return apiFetch<{ key: IssuedKey; connect: PassConnect }>(`/api/v1/keys/${enc(id)}/rotate`, { method: "POST" });
+}
+
+export function revokeKey(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/v1/keys/${enc(id)}/revoke`, { method: "POST" });
+}
+
+export function listProjectEvents(projectId: string, limit = 50) {
+  return apiFetch<{ events: PlatformEvent[] }>(`/api/v1/projects/${enc(projectId)}/events?limit=${limit}`);
+}
+
+export function listProjectPasses(projectId: string, environment?: Environment) {
+  const q = environment ? `?environment=${enc(environment)}` : "";
+  return apiFetch<{ passes: SpendPass[] }>(`/api/v1/projects/${enc(projectId)}/passes${q}`);
+}
+
+// --- Provider Intelligence ---
+
+export function getIntelStatus() {
+  return apiFetch<{ status: IntelStatus; can_manage: boolean }>("/api/v1/intel/status");
+}
+
+export function listIntelEndpoints(q: IntelQuery = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") qs.set(k, String(v));
+  return apiFetch<{ endpoints: IntelEndpoint[]; total: number }>(`/api/v1/intel/endpoints?${qs}`);
+}
+
+export function getIntelEndpoint(id: string) {
+  return apiFetch<IntelEndpointDetail>(`/api/v1/intel/endpoints/${enc(id)}`);
+}
+
+export function listIntelChanges(p: { suspicious?: boolean; kind?: string; limit?: number } = {}) {
+  const qs = new URLSearchParams();
+  if (p.suspicious) qs.set("suspicious", "true");
+  if (p.kind) qs.set("kind", p.kind);
+  if (p.limit) qs.set("limit", String(p.limit));
+  return apiFetch<{ changes: IntelChange[] }>(`/api/v1/intel/changes?${qs}`);
+}
+
+export function refreshIntel() {
+  return apiFetch<{ started: boolean }>("/api/v1/intel/refresh", { method: "POST" });
+}
+
+export function setIntelTrust(id: string, trust: Trust, note: string) {
+  return apiFetch<IntelEndpoint>(`/api/v1/intel/endpoints/${enc(id)}/trust`, { method: "PUT", body: { trust, note } });
 }
