@@ -86,6 +86,12 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/projects/{id}/keys", api.createKey)
 	mux.HandleFunc("GET /api/v1/projects/{id}/events", api.projectEvents)
 	mux.HandleFunc("GET /api/v1/projects/{id}/passes", api.projectPasses)
+	mux.HandleFunc("GET /api/v1/projects/{id}/usage", api.projectUsage)
+	mux.HandleFunc("POST /api/v1/orgs/{id}/trial", api.startTrial)
+	// Plans and Book a Demo (leads.go): the catalog and the form are public.
+	mux.HandleFunc("GET /api/v1/plans", api.listPlans)
+	mux.HandleFunc("POST /api/v1/leads", api.createLead)
+	mux.HandleFunc("GET /api/v1/leads", api.listLeads)
 	mux.HandleFunc("POST /api/v1/keys/{id}/rotate", api.rotateKey)
 	mux.HandleFunc("POST /api/v1/keys/{id}/revoke", api.revokeKey)
 

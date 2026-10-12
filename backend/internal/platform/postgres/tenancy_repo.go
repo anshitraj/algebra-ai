@@ -251,3 +251,54 @@ func (r *TenancyRepo) PlatformEvents(ctx context.Context, projectID string, limi
 	}
 	return out, rows.Err()
 }
+
+// StartTrial starts an organization's one trial. It reports false when the
+// organization has already had one: the condition is in the UPDATE, so two
+// requests at once can't both start it.
+func (r *TenancyRepo) StartTrial(ctx context.Context, orgID, plan string, endsAt time.Time) (bool, error) {
+	tag, err := r.db.Pool.Exec(ctx, `UPDATE organizations SET trial_plan = $2, trial_ends_at = $3 WHERE id = $1 AND trial_ends_at IS NULL`,
+		orgID, plan, endsAt)
+	if err != nil {
+		return false, fmt.Errorf("postgres: starting trial: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// ProjectUsage counts a project's requests since a moment, by state, and what
+// its committed ones spent, by payment network.
+func (r *TenancyRepo) ProjectUsage(ctx context.Context, projectID string, since time.Time) (*app.ProjectUsage, error) {
+	u := &app.ProjectUsage{ProjectID: projectID, Since: since, ByState: map[string]int{}, ByNetwork: []app.NetworkUsage{}}
+	rows, err := r.db.Pool.Query(ctx, `SELECT state, count(*) FROM economic_intents WHERE project_id = $1 AND created_at >= $2 GROUP BY state`, projectID, since)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: counting project requests: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var state string
+		var n int
+		if err := rows.Scan(&state, &n); err != nil {
+			return nil, fmt.Errorf("postgres: scanning project requests: %w", err)
+		}
+		u.ByState[state] = n
+		u.Requests += n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: counting project requests: %w", err)
+	}
+	spent, err := r.db.Pool.Query(ctx, `
+		SELECT COALESCE(NULLIF(r.evidence->>'network', ''), r.rail, ''), count(*), COALESCE(sum(i.committed_minor), 0)
+		FROM economic_intents i JOIN economic_reservations r ON r.intent_id = i.id AND r.state = 'COMMITTED'
+		WHERE i.project_id = $1 AND i.created_at >= $2 GROUP BY 1 ORDER BY 1`, projectID, since)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: summing project spend: %w", err)
+	}
+	defer spent.Close()
+	for spent.Next() {
+		var n app.NetworkUsage
+		if err := spent.Scan(&n.Network, &n.Executions, &n.SpentMinor); err != nil {
+			return nil, fmt.Errorf("postgres: scanning project spend: %w", err)
+		}
+		u.ByNetwork = append(u.ByNetwork, n)
+	}
+	return u, spent.Err()
+}

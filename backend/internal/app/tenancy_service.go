@@ -35,6 +35,10 @@ type TenancyStore interface {
 	RevokeAPIKey(ctx context.Context, id string, at time.Time) error
 	TouchAPIKey(ctx context.Context, id string, at time.Time) error
 
+	// StartTrial starts the organization's one trial; false when it has had it.
+	StartTrial(ctx context.Context, orgID, plan string, endsAt time.Time) (bool, error)
+	ProjectUsage(ctx context.Context, projectID string, since time.Time) (*ProjectUsage, error)
+
 	AddPlatformEvent(ctx context.Context, e PlatformEvent) error
 	PlatformEvents(ctx context.Context, projectID string, limit int) ([]PlatformEvent, error)
 }
@@ -44,10 +48,47 @@ type ProjectPassLister interface {
 	ListByProject(ctx context.Context, projectID, env string) ([]spendpass.Pass, error)
 }
 
-// OrgMembership is an organization as one member sees it.
+// OrgMembership is an organization as one member sees it. The plan fields
+// are worked out when it is read, so a trial that has ended is simply gone.
 type OrgMembership struct {
 	tenancy.Organization
 	Role tenancy.Role `json:"role"`
+	// EffectivePlan is the plan in force now (the trial's while it runs),
+	// and Entitlements what it allows.
+	EffectivePlan  string       `json:"effective_plan"`
+	Entitlements   tenancy.Plan `json:"entitlements"`
+	TrialActive    bool         `json:"trial_active"`
+	TrialAvailable bool         `json:"trial_available"`
+}
+
+func (m *OrgMembership) withPlan(now time.Time) {
+	plan := m.Organization.EffectivePlan(now)
+	m.EffectivePlan, m.Entitlements = plan.ID, plan
+	m.TrialActive, m.TrialAvailable = m.Organization.TrialActive(now), !m.TrialUsed()
+}
+
+// NetworkUsage is what a project's committed requests spent on one network.
+type NetworkUsage struct {
+	Network     string              `json:"network"`
+	Environment tenancy.Environment `json:"environment,omitempty"`
+	Executions  int                 `json:"executions"`
+	SpentMinor  int64               `json:"spent_minor"`
+}
+
+// ProjectUsage is a project's metered use since a moment. Spend is what
+// providers were paid from the project's passes (micro-USDC), never a fee of
+// Algebra's. ManagedExecutions counts the committed requests on a chain, which
+// is what a plan includes; sandbox runs are free and not counted.
+type ProjectUsage struct {
+	ProjectID         string         `json:"project_id"`
+	Since             time.Time      `json:"since"`
+	Requests          int            `json:"requests"`
+	ByState           map[string]int `json:"by_state"`
+	ByNetwork         []NetworkUsage `json:"by_network"`
+	ManagedExecutions int            `json:"managed_executions"`
+	Plan              string         `json:"plan"`
+	// IncludedExecutions is the plan's monthly allowance (-1: no limit).
+	IncludedExecutions int `json:"included_executions"`
 }
 
 // PlatformEvent is one entry of the platform audit trail. Data never holds a
@@ -108,7 +149,7 @@ func (s *TenancyService) Workspace(ctx context.Context, userID, displayName stri
 		return nil, err
 	}
 	if len(orgs) > 0 {
-		return orgs, nil
+		return s.withPlans(orgs), nil
 	}
 	name := strings.TrimSpace(displayName)
 	if name == "" {
@@ -117,7 +158,16 @@ func (s *TenancyService) Workspace(ctx context.Context, userID, displayName stri
 	if _, err := s.CreateOrganization(ctx, userID, trimTo(name+"'s workspace", 80)); err != nil {
 		return nil, err
 	}
-	return s.store.OrganizationsForUser(ctx, userID)
+	orgs, err = s.store.OrganizationsForUser(ctx, userID)
+	return s.withPlans(orgs), err
+}
+
+func (s *TenancyService) withPlans(orgs []OrgMembership) []OrgMembership {
+	now := s.now()
+	for i := range orgs {
+		orgs[i].withPlan(now)
+	}
+	return orgs
 }
 
 func trimTo(s string, n int) string {
@@ -144,7 +194,66 @@ func (s *TenancyService) CreateOrganization(ctx context.Context, userID, name st
 	if _, err := s.createProject(ctx, userID, o.ID, "Default project"); err != nil {
 		return nil, err
 	}
-	return &OrgMembership{Organization: *o, Role: tenancy.RoleOwner}, nil
+	m := &OrgMembership{Organization: *o, Role: tenancy.RoleOwner}
+	m.withPlan(now)
+	return m, nil
+}
+
+// StartTrial starts the organization's seven-day trial of the Startup plan.
+// Owners and admins only, and once: an organization that has had its trial
+// is refused. When it ends the organization is on its own plan again, with
+// nothing to undo; no card is asked for and nothing is charged.
+func (s *TenancyService) StartTrial(ctx context.Context, userID, orgID string) (*OrgMembership, error) {
+	m, err := s.member(ctx, orgID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !m.Role.CanManage() {
+		return nil, fmt.Errorf("%w: only an organization's owners and admins start a trial", shared.ErrUnauthorized)
+	}
+	now := s.now().UTC()
+	ends := now.Add(tenancy.TrialLength)
+	started, err := s.store.StartTrial(ctx, orgID, tenancy.TrialPlan, ends)
+	if err != nil {
+		return nil, err
+	}
+	if !started {
+		return nil, fmt.Errorf("%w: this organization has already had its trial", shared.ErrConflict)
+	}
+	s.event(ctx, orgID, "", userID, "trial.started", map[string]any{"plan": tenancy.TrialPlan, "ends_at": ends})
+	o, err := s.store.Organization(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	out := &OrgMembership{Organization: *o, Role: m.Role}
+	out.withPlan(now)
+	return out, nil
+}
+
+// Usage is a project's metered use this calendar month (UTC), for anyone who
+// can read the project.
+func (s *TenancyService) Usage(ctx context.Context, userID, projectID string) (*ProjectUsage, error) {
+	p, _, err := s.ProjectFor(ctx, userID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	u, err := s.store.ProjectUsage(ctx, p.ID, time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		return nil, err
+	}
+	for i, n := range u.ByNetwork {
+		env, _ := tenancy.EnvironmentOfNetwork(n.Network)
+		u.ByNetwork[i].Environment = env
+		if env == tenancy.EnvDevnet || env == tenancy.EnvMainnet {
+			u.ManagedExecutions += n.Executions
+		}
+	}
+	if o, err := s.store.Organization(ctx, p.OrgID); err == nil {
+		plan := o.EffectivePlan(now)
+		u.Plan, u.IncludedExecutions = plan.ID, plan.ManagedExecutions
+	}
+	return u, nil
 }
 
 func invalid(err error) error {
@@ -180,6 +289,23 @@ func (s *TenancyService) CreateProject(ctx context.Context, userID, orgID, name 
 	}
 	if !m.Role.CanManage() {
 		return nil, fmt.Errorf("%w: only an organization's owners and admins create projects", shared.ErrUnauthorized)
+	}
+	o, err := s.store.Organization(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := s.store.Projects(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	live := 0
+	for _, p := range existing {
+		if p.ArchivedAt == nil {
+			live++
+		}
+	}
+	if plan := o.EffectivePlan(s.now()); !tenancy.Allows(plan.Projects, live) {
+		return nil, fmt.Errorf("%w: the %s plan includes %d project(s); archive one, start the Startup trial or change plan", shared.ErrConflict, plan.Name, plan.Projects)
 	}
 	return s.createProject(ctx, userID, orgID, name)
 }
