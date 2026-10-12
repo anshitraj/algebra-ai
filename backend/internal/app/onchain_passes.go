@@ -122,6 +122,32 @@ type OnchainNetwork struct {
 	// Required: on this network, a pass must be on chain to pay at all, so
 	// the payer never spends money that isn't a pass's.
 	Required bool
+	// The program's upgrade authority as read at startup: whoever holds it
+	// can replace the program. AuthorityKnown is false when it couldn't be
+	// read; Immutable when the program has none.
+	AuthorityKnown   bool
+	Immutable        bool
+	UpgradeAuthority string
+}
+
+// ProgramStatus is what is known about the program on one network.
+type ProgramStatus struct {
+	ProgramID, Payer, UpgradeAuthority  string
+	AuthorityKnown, Immutable, Required bool
+}
+
+// ProgramStatus reports the program on network, or nil where on-chain passes
+// aren't running.
+func (s *OnchainPassService) ProgramStatus(network string) *ProgramStatus {
+	if s == nil {
+		return nil
+	}
+	n := s.nets[chain.NormalizeNetwork(network)]
+	if n == nil {
+		return nil
+	}
+	return &ProgramStatus{ProgramID: n.Program.ID.String(), Payer: n.Payer.PublicKey().String(), UpgradeAuthority: n.UpgradeAuthority,
+		AuthorityKnown: n.AuthorityKnown, Immutable: n.Immutable, Required: n.Required}
 }
 
 // OnchainNetworkInfo is what a wallet needs to make a pass Algebra accepts.

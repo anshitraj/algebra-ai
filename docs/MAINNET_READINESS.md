@@ -31,6 +31,9 @@ mistake in configuration does not open the door.
 |---|---|---|
 | `SOLANA_ALLOW_MAINNET=yes`, or the server refuses to start with a mainnet wallet | `internal/platform/config/config.go` | unset |
 | `MAINNET_EXECUTION=on`, or every mainnet payment is refused with `MAINNET_EXECUTION_DISABLED` | `EconomicService`, tested by `TestEconomic_NoMainnetPaymentIsSignedUnlessEnabled` | off |
+| `MAINNET_EXECUTION=on` needs `SPEND_PASS_REQUIRED=mainnet`, or the server refuses to start: every real-money payment must come from an on-chain pass | `config.checkMainnetExecution`, `TestMainnetExecutionNeedsOnChainPassesRequired` | enforced |
+| With mainnet execution on, the server reads the program's upgrade authority from the cluster and refuses to start if it is the server's own payer key, or cannot be read | `solana.UpgradeAuthority`, `wiring.buildOnchainPasses` | enforced |
+| With passes required on mainnet, the server refuses to start if the program is not deployed there | `wiring.buildOnchainPasses` | enforced |
 | An API key or pass made for `sandbox` or `devnet` can never pay on mainnet | `domain/tenancy`, `TestEconomic_AProjectPassPaysOnlyInItsEnvironment`, `TestTenancyOverHTTP_AKeyRunsInItsProjectAndEnvironmentOnly` | always |
 | Demo accounts pay in the sandbox only | `TestDemoAccountOverHTTP_PaysInTheSandboxOnly` | always |
 | A hard ceiling per payment: 1 USDC unless `SOLANA_MAX_PAYMENT_USDC` says less | the Solana rail | 1 USDC |
@@ -38,6 +41,34 @@ mistake in configuration does not open the door.
 | Mainnet and devnet payments never cross: the rail checks the network it signed for against the intent's | `AuthorizePayment`, code `NETWORK_NOT_ALLOWED` | always |
 | The USDC mint and token program are fixed per cluster, not taken from the provider | `internal/domain/chain`, the rail | always |
 | Settlement is read from chain state, never from the provider's word | `providers/solanax402` | always |
+
+## The readiness report
+
+`GET /api/v1/mainnet/readiness` (signed in) answers from the running server's
+own configuration and from the cluster. It moves nothing.
+
+```jsonc
+{
+  "network": "solana",
+  "can_pay": false,                    // every blocking gate passes
+  "ready_for_customer_funds": false,   // every gate passes, including the ones only a person can settle
+  "works_today": ["discover mainnet providers", "ask them for unpaid quotes", "compare cost, speed and health", "dry-run a request against a Spend Pass"],
+  "gates": [
+    { "id": "rail",              "blocking": true,  "passed": false, "detail": "no mainnet wallet is loaded …" },
+    { "id": "program",           "blocking": true,  "passed": false, "detail": "the program does not answer on mainnet" },
+    { "id": "passes_required",   "blocking": true,  "passed": false, "detail": "SPEND_PASS_REQUIRED does not include mainnet …" },
+    { "id": "upgrade_authority", "blocking": true,  "passed": false, "detail": "…" },
+    { "id": "execution",         "blocking": true,  "passed": false, "detail": "MAINNET_EXECUTION is off …" },
+    { "id": "review",            "blocking": false, "passed": false, "detail": "not done: nobody outside the team has reviewed the program" },
+    { "id": "signer",            "blocking": false, "passed": false, "detail": "the payer key is a file or an environment variable on the server" }
+  ]
+}
+```
+
+That is the answer on 2026-10-12: all seven fail. The five blocking gates are
+enforced by the server. `review` and `signer` cannot be checked by code and no
+configuration makes them pass: they are in the report so that "can pay" is
+never mistaken for "should".
 
 ## What must be done before a funded mainnet test
 
@@ -60,7 +91,9 @@ them in.
       payments and pulls with*. That is acceptable for a devnet demo and
       unacceptable for real funds: whoever takes the server could replace the
       program. On mainnet the authority must be a multisig (Squads) or the
-      program made immutable.
+      program made immutable. **The server now checks this itself**: it logs
+      a warning on devnet at every start, and with `MAINNET_EXECUTION=on` it
+      will not start while the mainnet authority is its own key.
 
 ### 2. The signer
 
@@ -79,7 +112,7 @@ them in.
 
 ### 3. Operations
 
-- [ ] `SPEND_PASS_REQUIRED=mainnet` set, and tested on mainnet with a few cents.
+- [ ] `SPEND_PASS_REQUIRED=mainnet` set (the server now refuses `MAINNET_EXECUTION=on` without it), and tested on mainnet with a few cents.
 - [ ] A paid RPC endpoint (`SOLANA_MAINNET_RPC_URL`); the public one rate-limits.
 - [ ] Priority fees estimated per transaction. Today a fixed
       `SPEND_PASS_PRIORITY_MICROLAMPORTS` (10,000) is used for pulls and refunds.

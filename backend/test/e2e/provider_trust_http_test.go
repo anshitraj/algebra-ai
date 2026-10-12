@@ -170,3 +170,83 @@ func TestProviderRegistryOverHTTP_OpenToReadDecidedByAPerson(t *testing.T) {
 		t.Errorf("a blocked endpoint named: %d %v", status, rejectedCodes(out))
 	}
 }
+
+// A paid delivery makes a seller "payment tested". It never verifies it: that
+// takes every check of the standard and a person's record of the evidence.
+func TestProviderTrustOverHTTP_APaidDeliveryTestsASellerAndOnlyAReviewVerifiesIt(t *testing.T) {
+	b, base := serveWith(t, map[string]string{"ALGEBRA_OPERATOR_TOKEN": ""})
+	if b.Intel == nil || b.SandboxPersonas == nil {
+		t.Skip("provider intelligence or the sandbox sellers are off")
+	}
+	token := issuePass(t, b)
+	beta := intel.ID("sandbox:beta", base+"/api/v1/sandbox/x402/prices/beta", sandboxpay.Network)
+	alpha := intel.ID("sandbox:alpha", base+"/api/v1/sandbox/x402/prices/alpha", sandboxpay.Network)
+	detail := func(id string) map[string]any {
+		t.Helper()
+		status, _, out := call(t, "GET", base+"/api/v1/intel/endpoints/"+id, "", nil)
+		if status != 200 {
+			t.Fatalf("endpoint %s: %d %v", id, status, out)
+		}
+		return out
+	}
+	unmet := func(d map[string]any) []string {
+		var ids []string
+		checks, _ := d["verification"].([]any)
+		if len(checks) == 0 {
+			t.Fatalf("an endpoint carries the standard's checklist: %v", d)
+		}
+		for _, c := range checks {
+			if m := c.(map[string]any); m["passed"] != true {
+				ids = append(ids, m["id"].(string))
+			}
+		}
+		return ids
+	}
+
+	// Algebra pays beta and it delivers.
+	req := priceRequest("e2e-tested-" + uuid.NewString())
+	req["constraints"] = map[string]any{"allowed_networks": []string{"sandbox"}}
+	req["providers"] = []string{"sandbox:beta"}
+	if status, _, out := call(t, "POST", base+"/api/v1/execute", token, req); status != 200 || out["delivered"] != true {
+		t.Fatalf("execute: %d %v", status, out)
+	}
+	d := detail(beta)
+	lv, _ := d["levels"].(map[string]any)
+	if lv["tested"] != true || lv["verified"] != false || d["trust"] != "unverified" || d["verified_at"] != nil {
+		t.Fatalf("paid and delivered is payment tested, never verified: levels %v trust %v", lv, d["trust"])
+	}
+	if left := unmet(d); len(left) != 0 {
+		t.Fatalf("beta now meets every automatic check, yet: %v", left)
+	}
+
+	// Verifying is a person's, and needs the evidence they reviewed.
+	who := signUp(t, base, "Reviewer")
+	trust := base + "/api/v1/intel/endpoints/" + beta + "/trust"
+	for _, note := range []string{"", "looks fine"} {
+		if status, _, out := browserCall(t, "PUT", trust, who, map[string]any{"trust": "verified", "note": note}); status != 400 || !strings.Contains(stringify(out), "evidence") {
+			t.Fatalf("verifying with note %q: %d %v, want 400 asking for the evidence", note, status, out)
+		}
+	}
+	evidence := "Algebra's own sandbox seller, served by this process; reviewed for the e2e test"
+	status, _, out := browserCall(t, "PUT", trust, who, map[string]any{"trust": "verified", "note": evidence})
+	if status != 200 || out["trust"] != "verified" || out["trust_reason"] != intel.ReasonIdentityReviewed {
+		t.Fatalf("verify with evidence: %d %v", status, out)
+	}
+	status, _, out = call(t, "GET", base+"/api/v1/intel/changes?endpoint="+beta+"&kind=trust_changed", "", nil)
+	changes, _ := out["changes"].([]any)
+	if status != 200 || len(changes) != 1 {
+		t.Fatalf("one trust decision on record: %d %v", status, out)
+	}
+	if after, _ := changes[0].(map[string]any)["after"].(map[string]any); after["note"] != evidence {
+		t.Fatalf("the decision keeps the evidence: %v", changes[0])
+	}
+
+	// Alpha was never paid: no evidence, however good, verifies it.
+	if left := strings.Join(unmet(detail(alpha)), ","); !strings.Contains(left, "tested") {
+		t.Fatalf("alpha is untested, yet its unmet checks are %q", left)
+	}
+	status, _, out = browserCall(t, "PUT", base+"/api/v1/intel/endpoints/"+alpha+"/trust", who, map[string]any{"trust": "verified", "note": evidence})
+	if status != 400 || !strings.Contains(stringify(out), "no paid call has delivered") {
+		t.Fatalf("verifying an untested endpoint: %d %v", status, out)
+	}
+}

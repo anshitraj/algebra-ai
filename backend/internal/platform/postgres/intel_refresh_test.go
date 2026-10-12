@@ -155,10 +155,28 @@ func TestIntelRefresh_NewChangedAndRemovedEndpointsAndTheirTrust(t *testing.T) {
 		}
 	}
 
-	// 4. A paid delivery to the pinned payee is what verifies.
+	// 4. A paid delivery makes it payment tested. It does not verify it:
+	// that takes every check of the standard and a person's evidence.
 	svc.ObserveDelivery(ctx, quoteOf(a, a.PayTo), 120)
-	if e := endpoint(a); e.Trust != intel.TrustVerified || e.TrustReason != intel.ReasonPaidDelivery || e.TestedAt == nil {
-		t.Fatalf("a delivery at the pinned payee verifies: %+v", e)
+	if e := endpoint(a); e.Trust != intel.TrustUnverified || e.TestedAt == nil || e.VerifiedAt != nil {
+		t.Fatalf("a delivery tests an endpoint and never verifies it: %+v", e)
+	}
+	const evidence = "example.test is the fixture operator's own domain; payee confirmed with them directly"
+	if _, err := svc.SetTrust(ctx, a.ID(), intel.TrustVerified, evidence, "user_reviewer"); err == nil {
+		t.Fatal("verified although Algebra was never quoted by it")
+	}
+	svc.ObserveQuote(ctx, routing.Candidate{Provider: a.ProviderID, Endpoint: a.URL, Network: a.Network}, nil)
+	if _, err := svc.SetTrust(ctx, a.ID(), intel.TrustVerified, "ok", "user_reviewer"); err == nil {
+		t.Fatal("verified without the evidence reviewed")
+	}
+	if _, err := svc.SetTrust(ctx, a.ID(), intel.TrustVerified, evidence, "user_reviewer"); err != nil {
+		t.Fatalf("every check passes and the evidence is given: %v", err)
+	}
+	if e := endpoint(a); e.Trust != intel.TrustVerified || e.TrustReason != intel.ReasonIdentityReviewed {
+		t.Fatalf("verified by a person's review: %+v", e)
+	}
+	if ch := changesOf(a, intel.ChangeTrust); len(ch) != 1 || ch[0].Actor != "user_reviewer" || ch[0].After["note"] != evidence {
+		t.Fatalf("the decision is on record with who made it and on what evidence: %+v", ch)
 	}
 
 	// 5. The catalog drops two endpoints: they are marked removed, never deleted.

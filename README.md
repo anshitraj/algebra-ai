@@ -56,7 +56,7 @@ An agent that can pay for things has three problems, and none is the model's to 
 | **Receipts** | Every outcome gets an Ed25519 receipt with the routing decision, the execution and the settlement. Anyone can verify it against `/.well-known/jwks.json`, at `/verify` or with `backend/cmd/verify-intent`. |
 | **Replay** | The provider's answer is kept sealed (AES-256-GCM, 24 hours by default, opt out per request) so asking again returns it with `replayed: true` instead of "already committed". |
 | **Developer platform** | Organizations, projects and API keys scoped to one project and one environment (`sandbox`, `devnet`, `mainnet`). A key authenticates; a Spend Pass authorises: two authorities, kept apart. Keys are shown once, stored as a hash, scoped (`read`, `simulate`, `execute`), rotated and revoked, with an audit trail and per-project usage. A sandbox key can never reach a chain. [docs/PLATFORM.md](docs/PLATFORM.md) |
-| **Provider Intelligence** | A registry of every paid endpoint the catalogs list (6,131 on 2026-10-12), refreshed every six hours by one instance under a database lease, with a history of what changed. The payee of an endpoint is pinned; one that asks to be paid somewhere else is refused at payment time and blocked. Listed, Quoted, Tested, Verified and Executable are five separate facts. [docs/PLATFORM.md](docs/PLATFORM.md#provider-intelligence) |
+| **Provider Intelligence** | A registry of every paid endpoint the catalogs list (6,131 on 2026-10-12), refreshed every six hours by one instance under a database lease, with a history of what changed. The payee of an endpoint is pinned; one that asks to be paid somewhere else is refused at payment time and blocked. Listed, Quoted, Tested, Verified and Executable are five separate facts: a paid delivery makes an endpoint *payment tested* and nothing more, and *verified* means six checks passed and a person recorded the evidence of who runs it. [docs/PLATFORM.md](docs/PLATFORM.md#provider-intelligence) |
 | **Interfaces** | REST (`/api/v1`), an MCP server at `/mcp` (stateless streamable HTTP, the token as a bearer header, so it never passes through the model) whose default tools are `algebra.discover`, `quote`, `simulate`, `execute`, `status`, `receipt` and `spend_pass`, and a console: quickstart, projects and keys, the agent chat, passes, providers, provider intelligence, routing, the firewall and executions. |
 
 ## How a request flows
@@ -89,7 +89,7 @@ Six diagrams of the architecture, routing, the Solana payment, policy, provider 
 |---|---|---|---|
 | **Sandbox** | simulated USDC | none | onboarding and tests. Simulated sellers, including ones that misbehave. Receipts are marked `test` and are never evidence of a payment |
 | **Solana devnet** | test USDC | real transactions, real program | the demonstration: explorer-verifiable payments under on-chain limits |
-| **Solana mainnet** | real USDC | real | **read-only today**: discovery, quotes and dry runs. Every payment is refused until `MAINNET_EXECUTION=on`. [docs/MAINNET_READINESS.md](docs/MAINNET_READINESS.md) |
+| **Solana mainnet** | real USDC | real | **read-only today**: discovery, quotes and dry runs. Every payment is refused until `MAINNET_EXECUTION=on`, and the server will not accept that switch unless every mainnet payment must come from an on-chain pass and the program's upgrade authority is not its own key. `GET /api/v1/mainnet/readiness` lists each gate. [docs/MAINNET_READINESS.md](docs/MAINNET_READINESS.md) |
 
 A key or a pass belongs to one of the three and can never pay in another.
 
@@ -208,7 +208,7 @@ cargo build-sbf --manifest-path solana-program/Cargo.toml && cargo test --manife
 pnpm --dir frontend lint && pnpm --dir frontend build                                                               # the web app
 ```
 
-Last full run, 2026-10-12 (Go 1.26, cargo 1.92, Node 24): 63 Go packages pass without a database and again against Postgres (59 more tests run with it); `go vet` is clean; the program builds and its 13 unit and 11 LiteSVM tests pass; the web app lints, typechecks and builds.
+Last full run, 2026-10-12 (Go 1.26, cargo 1.92, Node 24): 63 Go packages pass without a database and again against Postgres (64 more tests run with it); `go vet` is clean; the program builds and its 13 unit and 11 LiteSVM tests pass; the web app lints, typechecks and builds.
 
 Tests that need Postgres skip themselves when `DATABASE_URL` and `ALGEBRA_MASTER_KEY` aren't set. The end-to-end tests are hermetic: they turn every provider catalog off and use the sandbox, a fake Solana node and a fake Jupiter, so nothing leaves the machine.
 

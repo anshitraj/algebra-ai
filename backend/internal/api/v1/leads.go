@@ -99,6 +99,16 @@ func (a *API) listPlans(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// mainnetReadiness: GET /api/v1/mainnet/readiness. What stands between this
+// server and paying with real money: each gate, whether it passes, and why
+// not. Reading it changes nothing. For a signed-in person.
+func (a *API) mainnetReadiness(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireSession(w, r); !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, app.AssessMainnet(a.b.Mainnet))
+}
+
 func (a *API) startTrial(w http.ResponseWriter, r *http.Request) {
 	userID, ok := a.humanSession(w, r)
 	if !ok {

@@ -454,6 +454,9 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	cfg.MainnetExecution = strings.EqualFold(strings.TrimSpace(os.Getenv("MAINNET_EXECUTION")), "on")
+	if err := checkMainnetExecution(cfg.MainnetExecution, cfg.OnchainPasses.Required); err != nil {
+		return nil, err
+	}
 	switch strings.ToLower(os.Getenv("ECONOMIC_SANDBOX")) {
 	case "on":
 		cfg.EconomicSandbox = true
@@ -774,6 +777,17 @@ func SolanaFromEnv() (SolanaConfig, error) {
 	var c SolanaConfig
 	err := loadSolana(&c)
 	return c, err
+}
+
+// checkMainnetExecution refuses real-money payments that aren't bounded on
+// chain: with MAINNET_EXECUTION=on every mainnet payment must come from an
+// on-chain Spend Pass, so the payer never holds money that is no pass's and
+// the program's limits apply to all of it.
+func checkMainnetExecution(execution bool, required map[string]bool) error {
+	if execution && !required["mainnet"] {
+		return errors.New("config: MAINNET_EXECUTION=on pays with real money; set SPEND_PASS_REQUIRED=mainnet as well, so that every mainnet payment comes from an on-chain Spend Pass")
+	}
+	return nil
 }
 
 // loadOnchainPasses reads the on-chain Spend Pass settings.

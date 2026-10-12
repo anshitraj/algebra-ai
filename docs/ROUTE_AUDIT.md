@@ -51,6 +51,16 @@ failures and layout width.
 | `/console/connect` | Yes | Real | | Listed two MCP tools by their earlier names: fixed in this pass |
 | `/console/settings` | Yes | Real: profile, sign-in methods, sessions, export, delete | Not exercised | |
 
+## After the audit: the trust standard changed
+
+Later the same day "verified" stopped being automatic. The one endpoint shown
+as verified above had earned it from a paid delivery alone; it is now
+*payment tested* and unverified (0 verified, 1 tested, 1 blocked), and the
+detail panel shows the six checks of the verification standard and asks for
+the evidence reviewed before *Mark verified* is enabled. That panel was
+typechecked, linted and built, and its API was exercised over HTTP in tests.
+**It was not re-opened in a browser.**
+
 ## What this pass fixed
 
 1. Provider detail pages (`/console/providers/[id]`) failed for every provider.

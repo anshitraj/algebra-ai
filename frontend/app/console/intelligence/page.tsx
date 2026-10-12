@@ -37,8 +37,8 @@ const SORTS = [
 const LEVEL_COLUMNS: { key: keyof IntelEndpoint["levels"]; label: string; hint: string }[] = [
   { key: "listed", label: "Listed", hint: "A catalog lists it now" },
   { key: "quoted", label: "Quoted", hint: "An unpaid request returned payment terms" },
-  { key: "tested", label: "Tested", hint: "Algebra paid it and it delivered" },
-  { key: "verified", label: "Verified", hint: "Tested, paid to its pinned payee, never blocked since" },
+  { key: "tested", label: "Tested", hint: "Payment tested: Algebra paid it and it delivered. One transaction worked; it says nothing about who the seller is" },
+  { key: "verified", label: "Verified", hint: "Identity verified: every check passed and a person reviewed evidence of who runs it. Never automatic" },
   { key: "executable", label: "Executable", hint: "Paid over x402, callable, not blocked: the router can pay it where its network's rail runs" },
 ];
 
@@ -238,7 +238,7 @@ export default function IntelligencePage() {
         </div>
       )}
       <p className="mt-6 text-xs leading-relaxed text-muted">
-        {status?.discovery?.parallel_ai ? `Open-web discovery (Parallel AI): ${status.discovery.parallel_ai}.` : ""} A verified check means Algebra&apos;s checks passed on its own paid calls; it is not a guarantee about the provider. Executable says the router could pay it; mainnet payments stay off unless the operator enables them.
+        {status?.discovery?.parallel_ai ? `Open-web discovery (Parallel AI): ${status.discovery.parallel_ai}.` : ""} Three facts are kept apart. <strong className="font-medium text-foreground">Payment tested</strong>: Algebra paid the endpoint and it delivered, which proves one transaction worked and nothing about who the seller is. <strong className="font-medium text-foreground">Identity verified</strong> (the check mark): every automatic check passed and a person reviewed evidence of who runs it; no listing, quote or payment ever grants it. <strong className="font-medium text-foreground">Execution approved</strong>: decided for each request by your Spend Pass and the router&apos;s guards, whatever an endpoint&apos;s trust. None is a guarantee about a provider. Executable says the router could pay it; mainnet payments stay off unless the operator enables them.
       </p>
     </div>
   );
@@ -385,9 +385,12 @@ function Detail({ id, canManage, onChanged }: { id: string; canManage: boolean; 
     ["First seen", new Date(d.first_seen_at).toLocaleString()],
     ["Last seen in its catalog", new Date(d.last_seen_at).toLocaleString()],
     ["Quoted", d.quoted_at && new Date(d.quoted_at).toLocaleString()],
-    ["Tested", d.tested_at && new Date(d.tested_at).toLocaleString()],
-    ["Verified", d.verified_at && new Date(d.verified_at).toLocaleString()],
+    ["Payment tested", d.tested_at && new Date(d.tested_at).toLocaleString()],
+    ["Identity verified", d.verified_at && new Date(d.verified_at).toLocaleString()],
   ];
+  const checks = d.verification ?? [];
+  const unmet = checks.filter((c) => !c.passed);
+  const evidenceOk = note.trim().length >= 20;
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
       <div>
@@ -396,15 +399,34 @@ function Detail({ id, canManage, onChanged }: { id: string; canManage: boolean; 
             <div key={k} className="flex gap-3"><dt className="w-40 shrink-0 text-muted">{k}</dt><dd className="min-w-0 font-mono break-all text-foreground">{v}</dd></div>
           ))}
         </dl>
+        {checks.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs font-medium text-foreground">Verification standard</p>
+            <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-muted">
+              {d.trust === "verified" ? "Every check passed and a person reviewed who runs it." : unmet.length === 0 ? "Every automatic check passes. It is still unverified until a person reviews who runs it." : `${unmet.length} of ${checks.length} checks not met. It can't be verified yet.`}
+            </p>
+            <ul className="mt-2 space-y-1 text-xs">
+              {checks.map((c) => (
+                <li key={c.id} className="flex gap-2">
+                  {c.passed ? <IconCheck size={13} className="mt-0.5 shrink-0 text-success" /> : <IconBan size={13} className="mt-0.5 shrink-0 text-muted" />}
+                  <span className={c.passed ? "text-foreground" : "text-muted"}>
+                    {c.label}
+                    {c.detail && <span className="text-muted">: {c.detail}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {canManage ? (
           <div className="mt-4 rounded-lg border border-border bg-surface p-3">
             <p className="text-xs font-medium text-foreground">Your decision</p>
-            <p className="mt-0.5 text-[0.6875rem] text-muted">Recorded with your name. Unblocking an endpoint blocked for a new payee accepts that payee.</p>
-            <Input value={note} onChange={(ev) => setNote(ev.target.value)} placeholder="Why (optional)" className="mt-2" maxLength={300} />
+            <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-muted">Recorded with your name. Unblocking an endpoint blocked for a new payee accepts that payee, and it must be tested again. To verify, write the evidence you reviewed: who runs this endpoint and how you know.</p>
+            <Input value={note} onChange={(ev) => setNote(ev.target.value)} placeholder="Why, or the evidence you reviewed (required to verify)" aria-label="Reason or evidence" className="mt-2" maxLength={1000} />
             <div className="mt-2 flex flex-wrap gap-2">
               {d.trust !== "blocked" && <Button variant="danger" onClick={() => decide("blocked")} disabled={busy !== null}>{busy === "blocked" && <Spinner size={13} />} Block</Button>}
               {d.trust !== "unverified" && <Button variant="secondary" onClick={() => decide("unverified")} disabled={busy !== null}>{busy === "unverified" && <Spinner size={13} />} {d.trust === "blocked" ? "Unblock" : "Mark unverified"}</Button>}
-              {d.trust !== "verified" && d.trust !== "blocked" && <Button variant="secondary" onClick={() => decide("verified")} disabled={busy !== null}>{busy === "verified" && <Spinner size={13} />} Mark verified</Button>}
+              {d.trust !== "verified" && d.trust !== "blocked" && <Button variant="secondary" onClick={() => decide("verified")} disabled={busy !== null || unmet.length > 0 || !evidenceOk} title={unmet.length > 0 ? "Every check of the standard must pass first" : !evidenceOk ? "Write the evidence you reviewed (at least 20 characters)" : undefined}>{busy === "verified" && <Spinner size={13} />} Mark verified</Button>}
             </div>
             {error && <div className="mt-2"><ErrorNote>{error}</ErrorNote></div>}
           </div>

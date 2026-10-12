@@ -134,7 +134,10 @@ export type IntelChange = {
   created_at: string;
 };
 
-export type IntelEndpointDetail = IntelEndpoint & { changes: IntelChange[] };
+/** One requirement of the verification standard (backend/internal/domain/intel/verification.go). */
+export type VerificationCheck = { id: string; label: string; passed: boolean; detail?: string };
+
+export type IntelEndpointDetail = IntelEndpoint & { verification: VerificationCheck[]; changes: IntelChange[] };
 
 export type SourceRun = {
   name: string;
