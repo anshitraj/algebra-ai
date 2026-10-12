@@ -209,7 +209,8 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         if (!Number.isFinite(max) || max <= 0) throw new Error("max_price_usdc must be a positive number of USDC");
         if (max > MAX_CALL_USDC) throw new Error(`The chat pays at most ${MAX_CALL_USDC} USDC per call. Ask the user before anything larger, and use their Spend Pass from their own agent.`);
         const body = input.input && typeof input.input === "object" && !Array.isArray(input.input) ? input.input : {};
-        const strategy = typeof input.strategy === "string" ? input.strategy : "auto";
+        // The person's choice for this chat wins over what the model asks for.
+        const strategy = identity.pick ?? (typeof input.strategy === "string" ? input.strategy : "balanced");
         const req = { capability: work, providers: [], input: body, budget_max_minor: Math.round(max * USDC), provider_policy: { strategy } };
         if (name === "check_policy") {
           const a = await client.simulate(identity, req);

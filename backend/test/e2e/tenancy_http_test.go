@@ -204,3 +204,42 @@ func stringify(v any) string {
 		return string(b)
 	}
 }
+
+// A project's default strategy ranks its keys' requests; a strategy named in a
+// request wins; "balanced" is the router's AUTO.
+func TestTenancyOverHTTP_AProjectDefaultsTheStrategy(t *testing.T) {
+	_, base := serve(t)
+	alice := signUp(t, base, "Alice")
+	_, project := workspace(t, base, alice)
+	projectPass(t, base, alice, project, "sandbox")
+	secret, _ := issueKey(t, base, alice, project, map[string]any{"name": "ci", "environment": "sandbox"})
+
+	mode := func(strategy string) string {
+		req := priceRequest("e2e-strat-" + uuid.NewString())
+		if strategy != "" {
+			req["provider_policy"] = map[string]any{"strategy": strategy}
+		}
+		status, _, out := call(t, "POST", base+"/api/v1/execute", secret, req)
+		if status != 200 {
+			t.Fatalf("execute (%q): %d %v", strategy, status, out)
+		}
+		routing, _ := out["routing"].(map[string]any)
+		m, _ := routing["mode"].(string)
+		return m
+	}
+	if got := mode(""); got != "AUTO" {
+		t.Fatalf("a project with no default: %q, want AUTO", got)
+	}
+	if status, _, out := browserCall(t, "PATCH", base+"/api/v1/projects/"+project, alice, map[string]any{"default_strategy": "cheapest"}); status != 200 {
+		t.Fatalf("set default: %d %v", status, out)
+	}
+	if got := mode(""); got != "CHEAPEST" {
+		t.Errorf("the project default: %q, want CHEAPEST", got)
+	}
+	if got := mode("fastest"); got != "FASTEST" {
+		t.Errorf("a named strategy wins: %q, want FASTEST", got)
+	}
+	if got := mode("balanced"); got != "AUTO" {
+		t.Errorf("balanced: %q, want AUTO", got)
+	}
+}

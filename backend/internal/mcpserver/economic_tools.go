@@ -79,11 +79,15 @@ func (srv *Server) registerEconomicTools(s *gomcp.Server) {
 		if err != nil {
 			return nil, nil, err
 		}
+		strategy := in.Strategy
+		if strings.TrimSpace(strategy) == "" && srv.Tenancy != nil {
+			strategy = srv.Tenancy.DefaultStrategy(ctx, ag)
+		}
 		res, err := srv.Execution.Do(ctx, app.DoRequest{
 			AgentID: executor,
 			Spec: econ.Spec{
 				Capability: capability, Input: raw, Window: in.Window, Currency: "USDC", BudgetMaxMinor: budget,
-				ProviderPolicy: econ.ProviderPolicy{Strategy: in.Strategy},
+				ProviderPolicy: econ.ProviderPolicy{Strategy: strategy},
 				Constraints:    econ.Constraints{AllowedNetworks: in.AllowedNetworks},
 			},
 			Candidates:    candidates,

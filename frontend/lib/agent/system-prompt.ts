@@ -29,6 +29,8 @@ export type PromptContext = {
   mode: "live" | "demo";
   /** "Ask me before every payment" is on. */
   askFirst?: boolean;
+  /** How the user wants providers picked in this chat. */
+  pick?: "cheapest" | "balanced" | "fastest";
 };
 
 /**
@@ -37,7 +39,7 @@ export type PromptContext = {
  * it. Rebuilt on every turn by the route handler, so a pass revoked or a
  * network switched in another tab takes effect on the very next message.
  */
-export function buildSystemPrompt({ network, pass, rail, mode, askFirst }: PromptContext): string {
+export function buildSystemPrompt({ network, pass, rail, mode, askFirst, pick }: PromptContext): string {
   const parts = [BASE_PROMPT];
   const sandbox = network === "sandbox";
   const where = sandbox
@@ -81,6 +83,11 @@ export function buildSystemPrompt({ network, pass, rail, mode, askFirst }: Promp
       );
     p.push("The pass is enforced on Algebra's server; use it to set expectations, never as a substitute for pay_and_call's answer.");
     facts.push(p.join(" "));
+  }
+  if (pick) {
+    facts.push(
+      `The user picked "${pick}" for how providers are chosen: route_work uses it whatever strategy you pass, so don't offer to change it; if they ask for a different one, tell them to switch it above the message box.`,
+    );
   }
   if (mode === "demo") facts.push("This is a demo account: the user is trying Algebra without signing up.");
 

@@ -17,10 +17,10 @@ const SCOPES: { id: Scope; label: string; detail: string }[] = [
   { id: "execute", label: "Execute", detail: "Pay within its project's Spend Pass" },
 ];
 const STRATEGIES: { id: Strategy; label: string }[] = [
-  { id: "", label: "Ask when it matters" },
+  { id: "", label: "None: balanced unless a request says otherwise" },
   { id: "cheapest", label: "Cheapest" },
-  { id: "fastest", label: "Fastest" },
   { id: "balanced", label: "Balanced" },
+  { id: "fastest", label: "Fastest" },
 ];
 const select = "h-10 w-full rounded-lg border border-border-strong bg-surface px-3 text-sm text-foreground focus-visible:border-primary";
 

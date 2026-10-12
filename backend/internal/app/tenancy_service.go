@@ -544,6 +544,21 @@ func (s *TenancyService) KeyForAgent(ctx context.Context, ag *agent.Identity) (*
 	return k, nil
 }
 
+// DefaultStrategy is the provider-selection strategy a request made with an
+// API key gets when it names none: its project's default (cheapest, fastest or
+// balanced), or "" for any other caller and for a project with no default.
+func (s *TenancyService) DefaultStrategy(ctx context.Context, ag *agent.Identity) string {
+	k, err := s.KeyForAgent(ctx, ag)
+	if err != nil || k == nil {
+		return ""
+	}
+	p, err := s.store.Project(ctx, k.ProjectID)
+	if err != nil {
+		return ""
+	}
+	return p.DefaultStrategy
+}
+
 // ExecutorFor resolves who spends for a request made with an API key: the
 // agent of a Spend Pass in the key's project and environment, either the one
 // named or the newest active one. A key never spends on its own, and never

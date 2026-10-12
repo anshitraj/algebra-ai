@@ -77,6 +77,7 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	a.applyDefaultStrategy(r.Context(), ag, &req.ProviderPolicy)
 	candidates, rejected := a.b.Candidates.Resolve(r.Context(), capability, req.Providers, req.Candidates)
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
@@ -98,6 +99,15 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.writeExecution(w, created, rep, rejected, err)
+}
+
+// applyDefaultStrategy gives a request that names no strategy its project's
+// default, when it was made with an API key. A strategy in the request wins.
+func (a *API) applyDefaultStrategy(ctx context.Context, ag *agent.Identity, p *econ.ProviderPolicy) {
+	if a.b.Tenancy == nil || strings.TrimSpace(p.Strategy) != "" {
+		return
+	}
+	p.Strategy = a.b.Tenancy.DefaultStrategy(ctx, ag)
 }
 
 // executorFor is the agent an execution runs as. An agent spends under its
