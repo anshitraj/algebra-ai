@@ -1,0 +1,12 @@
+# Public HTTPS for the web app. Caddy gets and renews the certificate itself.
+# Replace app.example.com with your hostname (or 34-123-45-67.sslip.io).
+app.example.com {
+	encode gzip
+	# The web app proxies /api/v1 and /mcp to the API on 127.0.0.1:8080.
+	# A paid call can take up to 80 seconds, so don't cut it short.
+	reverse_proxy 127.0.0.1:3000 {
+		transport http {
+			response_header_timeout 95s
+		}
+	}
+}

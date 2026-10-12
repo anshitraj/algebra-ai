@@ -1,0 +1,14 @@
+[Unit]
+Description=Algebra devnet demo providers
+After=network-online.target
+
+[Service]
+User=algebra
+Environment=ALGEBRA_DATA_DIR=/var/lib/algebra
+ExecStart=/opt/algebra/bin/demo-provider -addr 127.0.0.1:8402
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

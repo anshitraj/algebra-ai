@@ -1,0 +1,19 @@
+[Unit]
+Description=Algebra API
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+User=algebra
+WorkingDirectory=/opt/algebra/backend
+EnvironmentFile=/etc/algebra/api.env
+ExecStart=/opt/algebra/bin/api
+Restart=on-failure
+RestartSec=3
+# The API owns its key files; nothing else needs to write here.
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/algebra
+
+[Install]
+WantedBy=multi-user.target
