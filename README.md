@@ -214,6 +214,20 @@ Tests that need Postgres skip themselves when `DATABASE_URL` and `ALGEBRA_MASTER
 
 > Core principle: give agents **permission to spend**, not **access to money**.
 
+## Deployed program address on Solana devnet
+```
+46gQDUuJCt6VdDMaguGPoD8SKEtFqvpG7ECtpC2F9tdS
+```
+
 ## Program tests
 <img width="861" height="684" alt="image" src="https://github.com/user-attachments/assets/1101b5fe-8352-487d-9fa7-f1927af14cb9" />
+
+## Architecture diagram
+<img width="10040" height="4248" alt="1-spend-pass-program" src="https://github.com/user-attachments/assets/18abefbb-27da-4f4d-9597-f327db6fde33" />
+
+<img width="9600" height="5408" alt="2-system-architecture" src="https://github.com/user-attachments/assets/3f5ef81b-7ecc-4f28-8e04-362dba4b7b73" />
+
+<img width="8800" height="5440" alt="3-paid-request-flow" src="https://github.com/user-attachments/assets/1a31203a-be7b-4faf-bc2f-e65ec7180aa2" />
+
+<img width="7560" height="3304" alt="4-on-chain-pass-lifecycle" src="https://github.com/user-attachments/assets/00feda73-4423-4bc0-bc49-ef574c3b2212" />
 
