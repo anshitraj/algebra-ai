@@ -14,6 +14,13 @@ export type ChatNetwork = "solana" | "solana-devnet" | "sandbox";
 
 export type ServerIdentity = {
   agentToken: string;
+  /**
+   * The browser's session cookie, kept server-side and never sent to the model:
+   * when the person clicks a card to pay, that click is their approval, recorded
+   * on the intent with their own session (an agent token can never approve); and
+   * after a payment from an on-chain pass, it reads that pass's pull for the card.
+   */
+  cookie?: string;
   /** "demo" accounts: a person trying Algebra without signing up. */
   mode: "live" | "demo";
   /** The Spend Pass this chat pays under, picked in the console. Without one the agent can look, not pay. */
@@ -26,8 +33,6 @@ export type ServerIdentity = {
   askFirst?: boolean;
   /** How the person wants providers picked for this chat; it wins over what the model asks for. */
   pick?: "cheapest" | "balanced" | "fastest";
-  /** The browser's session cookie, for the person's own reads (an on-chain pass's pulls). Never sent to the model. */
-  cookie?: string;
 };
 
 export class ServerApiError extends Error {
@@ -169,6 +174,10 @@ export type ExecuteBody = {
   input: unknown;
   budget_max_minor: number;
   provider_policy?: { strategy?: string };
+  /** Names the request: the same window is the same request, paid at most once. */
+  window?: string;
+  /** Ask for the person's yes before anything is paid, whatever the pass allows. */
+  require_approval?: boolean;
 };
 
 /** POST /api/v1/policy/simulate: what /execute would do, without reserving or paying anything. */
@@ -180,6 +189,8 @@ export async function simulate(identity: ServerIdentity, b: ExecuteBody): Promis
       currency: "USDC",
       constraints: { allowed_networks: [identity.network] },
       spend_pass_id: identity.passId,
+      // The dry run shows what a real request would meet, including the yes the person asked for.
+      require_approval: identity.askFirst || undefined,
       live_quotes: true,
     },
   });
@@ -196,10 +207,25 @@ export async function execute(identity: ServerIdentity, b: ExecuteBody): Promise
       constraints: { allowed_networks: [identity.network] },
       spend_pass_id: identity.passId,
       // Only ever adds a step: the person's yes, before anything is paid.
-      require_approval: identity.askFirst || undefined,
+      require_approval: b.require_approval || identity.askFirst || undefined,
     },
   });
   return answer(res);
+}
+
+/**
+ * Approves an intent as the person: their own session, never the agent's
+ * token. Only the route handler calls it, and only for a card the person
+ * clicked in the browser (the model can't reach it).
+ */
+export async function approveAsPerson(identity: ServerIdentity, intentId: string): Promise<boolean> {
+  if (!identity.cookie) return false;
+  const res = await fetch(`${API_URL}/api/v1/me/economic-intents/${encodeURIComponent(intentId)}/approve`, {
+    method: "POST",
+    headers: { Cookie: identity.cookie },
+    cache: "no-store",
+  });
+  return res.ok;
 }
 
 /** Runs an intent that already exists, typically one the person has just approved. */

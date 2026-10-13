@@ -11,11 +11,17 @@ const (
 	PlanEnterprise = "enterprise"
 )
 
-// TrialPlan is the plan a trial gives, and TrialLength how long it lasts.
+// TrialPlan is the plan a trial gives, and TrialLength how long it lasts. A
+// person gets one trial, whichever of their organizations takes it.
 const (
 	TrialPlan   = PlanStartup
 	TrialLength = 7 * 24 * time.Hour
 )
+
+// MaxOwnedOrganizations is how many organizations one account may own. Plans
+// count projects per organization, so this bounds what one person can get on
+// the Free plan.
+const MaxOwnedOrganizations = 3
 
 // Unlimited marks a limit a plan doesn't have.
 const Unlimited = -1

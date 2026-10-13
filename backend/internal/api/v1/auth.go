@@ -77,11 +77,32 @@ func (a *API) csrfGuard(next http.Handler) http.Handler {
 		}
 		origin := r.Header.Get("Origin")
 		if origin != "" && !a.originAllowed(origin) {
-			writeJSON(w, http.StatusForbidden, errorBody{Error: "cross-origin request rejected"})
+			// Almost always the operator's own site on an address the API was never
+			// told about (a new domain, or www against the bare name): say which
+			// address and which settings, here and in the log, or every button in
+			// the console fails with nothing to act on.
+			log.Printf("auth: refused a %s to %s from origin %q: not in CORS_ALLOWED_ORIGINS and not PUBLIC_WEB_URL", r.Method, r.URL.Path, truncateOrigin(origin))
+			writeJSON(w, http.StatusForbidden, errorBody{Error: "cross-origin request rejected: " + truncateOrigin(origin) +
+				" is not an address this server accepts changes from. Whoever runs it must add that exact address to CORS_ALLOWED_ORIGINS (or set PUBLIC_WEB_URL to it) on the API."})
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// truncateOrigin bounds an Origin header before it is echoed or logged: it is
+// whatever the caller sent.
+func truncateOrigin(origin string) string {
+	origin = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, origin)
+	if len(origin) > 120 {
+		return origin[:120] + "…"
+	}
+	return origin
 }
 
 func (a *API) originAllowed(origin string) bool {
@@ -169,6 +190,11 @@ type userResponse struct {
 	CreatedAt string           `json:"created_at"`
 	// Mode is "live" or "demo" — see account.Mode.
 	Mode string `json:"mode"`
+	// NotificationEmail is where sign-in alerts and receipts go; empty when
+	// nowhere. NeedsNotificationEmail: the account signed in with a wallet,
+	// has no address mail can reach, and has confirmed none.
+	NotificationEmail      string `json:"notification_email"`
+	NeedsNotificationEmail bool   `json:"needs_notification_email"`
 }
 
 func (a *API) toUserResponse(ctx context.Context, u *account.User) userResponse {
@@ -184,7 +210,14 @@ func (a *API) toUserResponse(ctx context.Context, u *account.User) userResponse 
 	if app.IsWalletOnlyEmail(email) {
 		email = "" // a placeholder, not an address anyone can write to
 	}
+	var notify app.NotificationView
+	if a.b.Notifications != nil {
+		if v, err := a.b.Notifications.View(ctx, u); err == nil {
+			notify = *v
+		}
+	}
 	return userResponse{
+		NotificationEmail: notify.Address, NeedsNotificationEmail: notify.NeedsEmail,
 		ID: u.ID, Email: email, Name: u.Name, AvatarURL: u.AvatarURL,
 		EmailVerified: u.EmailVerifiedAt != nil, Onboarded: u.OnboardedAt != nil,
 		HasPassword: u.HasPassword(), LinkedProviders: linked, Wallets: wallets,
@@ -258,6 +291,12 @@ func (a *API) privySignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setSessionCookie(w, res.Token)
+	if a.b.Notifications != nil && id.Profile.Email != "" && id.Profile.EmailVerified {
+		// A wallet account whose person has since verified an email with Privy
+		// is written to there, without confirming it a second time.
+		a.b.Notifications.AdoptVerifiedEmail(r.Context(), res.User, id.Profile.Email)
+	}
+	a.signedIn(r, res)
 	resp := a.toUserResponse(r.Context(), res.User)
 	status := http.StatusOK
 	if res.Created {
@@ -347,6 +386,7 @@ func (a *API) signUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setSessionCookie(w, res.Token)
+	a.signedIn(r, res)
 	resp := a.toUserResponse(r.Context(), res.User)
 	writeJSON(w, http.StatusCreated, sessionResponse{User: &resp})
 }
@@ -375,6 +415,7 @@ func (a *API) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setSessionCookie(w, res.Token)
+	a.signedIn(r, res)
 	resp := a.toUserResponse(r.Context(), res.User)
 	writeJSON(w, http.StatusOK, sessionResponse{User: &resp})
 }
@@ -561,6 +602,7 @@ func (a *API) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setSessionCookie(w, res.Token)
+	a.signedIn(r, res)
 	dest := "/console"
 	if res.User.OnboardedAt == nil {
 		dest = "/onboarding"

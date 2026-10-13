@@ -52,8 +52,53 @@ export default function PrivySignIn({ appId, ...rest }: Props) {
   );
 }
 
+/**
+ * What other servers refused since t0 (a performance.now() reading), from the browser's own
+ * record of each request: "429 from auth.privy.io/api/v1/siws/authenticate". Privy reports a
+ * failure as a bare code, and the same code can come from any of its calls, so this is what
+ * tells them apart. Empty when nothing was refused or the browser doesn't record statuses.
+ */
+function refusedSince(t0: number): string {
+  try {
+    const seen: string[] = [];
+    for (const e of performance.getEntriesByType("resource") as (PerformanceResourceTiming & { responseStatus?: number })[]) {
+      const status = e.responseStatus ?? 0;
+      if (e.startTime < t0 || status < 400) continue;
+      const u = new URL(e.name);
+      if (u.origin === window.location.origin) continue;
+      // IDs in a path (an app, a user, a wallet) say nothing a person can act on.
+      const line = `${status} from ${u.host}${u.pathname.replace(/[A-Za-z0-9_-]{20,}/g, "…")}`;
+      if (!seen.includes(line)) seen.push(line);
+    }
+    return seen.slice(-3).join("; ");
+  } catch {
+    return "";
+  }
+}
+
+// Privy's servers answer 429 when one of their limits is used up. Some of those limits are
+// counted per week (wallet sign-ins are, per wallet), so a few minutes' wait may change nothing.
+// Algebra's own API was never asked. detail names the call Privy refused, when the browser saw it.
+function rateLimited(detail: string) {
+  return `Privy, which runs this sign-in, refused it for too many requests. Algebra's server was never asked, and trying again right away won't help: use another sign-in method, or try later. (Privy: too_many_requests${detail ? `; ${detail}` : ""})`;
+}
+
+function isRateLimited(err: unknown): boolean {
+  // Algebra's own API has its own limit and says so in its own words.
+  if (!err || typeof err !== "object" || err instanceof api.ApiError) return false;
+  const e = err as { status?: unknown; privyErrorCode?: unknown; code?: unknown; message?: unknown };
+  return e.status === 429 || e.privyErrorCode === "too_many_requests" || e.code === "too_many_requests" || (typeof e.message === "string" && /too many requests/i.test(e.message));
+}
+
 /** What a Privy error code means for the person, always with the code itself and Privy's own reason when it gave one. */
-function privyFailure(code: string, reason: string) {
+function privyFailure(code: string, reason: string, refused = "") {
+  if (code === "too_many_requests" || /too[ _]many[ _]requests|HTTP 429/i.test(reason) || /^429 /.test(refused)) return rateLimited(refused);
+  // Privy only signs people in from the addresses listed for the app. It is a dashboard
+  // setting, so trying again never helps: name the address and where to add it.
+  if (code === "invalid_origin" || /invalid_origin/i.test(reason)) {
+    const here = typeof window === "undefined" ? "this address" : window.location.origin;
+    return `Privy doesn't allow sign-in from ${here}. Add exactly that address under Allowed origins (Privy dashboard, Configuration, App settings, Domains), then try again. (Privy: invalid_origin)`;
+  }
   const why: Record<string, string> = {
     generic_connect_wallet_error: "The wallet didn't finish connecting or signing. Unlock it, approve the signature request it shows, and try again.",
     unknown_connect_wallet_error: "The wallet didn't finish connecting or signing. Unlock it, approve the signature request it shows, and try again.",
@@ -63,7 +108,7 @@ function privyFailure(code: string, reason: string) {
     not_supported: "This wallet or sign-in method isn't supported here.",
     unsupported_chain_id: "The wallet is on a network this app doesn't use. Algebra signs in with Solana wallets.",
   };
-  return `${why[code] ?? "Sign-in with Privy didn't complete. Try again."} (Privy: ${code}${reason ? `: ${reason}` : ""})`;
+  return `${why[code] ?? "Sign-in with Privy didn't complete. Try again."} (Privy: ${code}${reason ? `: ${reason}` : ""}${refused ? `; ${refused}` : ""})`;
 }
 
 /** The readable part of something passed to console.warn: a string, an error (and its cause), or an API error object. */
@@ -95,6 +140,8 @@ function PrivyButton({ label, onSignedIn, onError }: Omit<Props, "appId">) {
   // own error, say) to console.warn. While a sign-in is running, keep the last
   // one so the message can say what actually went wrong.
   const lastWarning = useRef("");
+  // When the attempt began (performance.now()), to read what was refused during it.
+  const attemptAt = useRef(0);
   const stopWatching = useRef<(() => void) | null>(null);
   const watchWarnings = useCallback(() => {
     stopWatching.current?.();
@@ -120,24 +167,44 @@ function PrivyButton({ label, onSignedIn, onError }: Omit<Props, "appId">) {
       started.current = false;
       stopWatching.current?.();
       setBusy(true);
+      // Which step is running, for the message when one fails: Privy is signed in by now.
+      let step = "making your wallet";
       try {
-        if (!hasSolanaWallet(privyUser)) {
-          await createWallet();
-        }
-        // A fresh identity token, naming the wallet just made.
-        await refreshUser();
-        const token = await getIdentityToken();
+        const made = !hasSolanaWallet(privyUser);
+        if (made) await createWallet();
+        // The token Privy issued at sign-in already names the wallet they came with. Only a wallet
+        // made just now needs a fresh one: a refresh is one more request against Privy's limits.
+        step = "reading your Privy identity";
+        let token = made ? null : await getIdentityToken();
+        let refreshFailed: unknown;
         if (!token) {
-          throw new Error(
-            "Privy didn't send an identity token. Turn on “Return user data in an identity token” in the Privy dashboard.",
+          // A refresh Privy refuses is not the end: the token from sign-in still proves who this
+          // is. It only lacks the wallet made a moment ago, which the next sign-in records.
+          await refreshUser().catch((e: unknown) => (refreshFailed = e));
+          token = await getIdentityToken();
+        }
+        if (!token) {
+          throw (
+            refreshFailed ??
+            new Error("Privy didn't send an identity token. Turn on “Return user data in an identity token” in the Privy dashboard.")
           );
         }
+        step = "signing in to Algebra";
         const { user } = await api.signInWithPrivy(token);
         await logout().catch(() => {});
         onSignedIn(user);
       } catch (err) {
+        // Read before signing out of Privy, which makes requests of its own.
+        const refused = err instanceof api.ApiError ? "" : refusedSince(attemptAt.current);
         await logout().catch(() => {});
-        onError(err instanceof Error ? err.message : "Sign-in with Privy didn't complete. Try again.");
+        const where = [`while ${step}`, refused].filter(Boolean).join("; ");
+        onError(
+          isRateLimited(err)
+            ? rateLimited(where)
+            : err instanceof api.ApiError
+              ? err.message
+              : `${err instanceof Error ? err.message : "Sign-in with Privy didn't complete. Try again."} (${where})`,
+        );
         setBusy(false);
       }
     },
@@ -152,13 +219,20 @@ function PrivyButton({ label, onSignedIn, onError }: Omit<Props, "appId">) {
       if (code === "exited_auth_flow") return;
       // Privy's own step failed, before Algebra was asked anything: say which,
       // or the person has nothing to act on.
-      onError(privyFailure(String(code), lastWarning.current));
+      onError(privyFailure(String(code), lastWarning.current, refusedSince(attemptAt.current)));
     },
   });
 
   async function start() {
     onError("");
     started.current = true;
+    // The browser keeps a short list of requests; start this attempt's from empty.
+    try {
+      performance.clearResourceTimings();
+    } catch {
+      // not every browser lets a page clear it: the readings are filtered by time anyway
+    }
+    attemptAt.current = performance.now();
     watchWarnings();
     // A Privy session left from an abandoned attempt would skip the modal.
     if (authenticated) await logout().catch(() => {});

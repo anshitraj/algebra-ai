@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
 import type { ProviderDetail, ProviderEndpoint } from "@/lib/types";
+import { EndpointTrustChips, ProviderTrustChips } from "./trust-badges";
 import { catalogName, categoryLabel } from "@/lib/paysh";
 import { formatEndpointPrice, formatPriceRange } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
@@ -48,6 +49,7 @@ export function ProviderDetailPage({ id }: { id: string }) {
         <p className="mb-4 font-mono text-[0.6rem] tracking-[0.2em] text-muted uppercase">{catalogName(detail.source)} / {categoryLabel(detail.category)}</p>
         <div className="flex items-center gap-4"><ProviderLogo name={detail.name} logo={detail.logo_url} website={detail.website} host={detail.host} fqn={detail.fqn} size={44} /><h1 className="font-display min-w-0 break-words text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">{detail.name}</h1></div>
         <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">{detail.description || detail.use_case || `API endpoints served at ${detail.host}.`}</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2"><ProviderTrustChips trust={detail.trust} /><span className="text-xs text-muted">Verified means a person reviewed who runs it; payment tested means one paid call delivered. Every payment is still checked against your Spend Pass.</span></div>
         <div className="mt-5 flex flex-wrap items-center gap-3 text-xs">
           {website && <a href={website} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 items-center gap-1 text-primary hover:underline">Website <IconExternal size={12} /></a>}
           {catalog && <a href={catalog} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 items-center gap-1 text-primary hover:underline">Catalog &amp; docs <IconExternal size={12} /></a>}
@@ -67,7 +69,7 @@ export function ProviderDetailPage({ id }: { id: string }) {
               return <article key={e.capability} className="border-b border-border px-4 py-4 last:border-b-0">
                 <div className="grid gap-3 sm:grid-cols-[58px_minmax(0,1fr)_130px]">
                   <span className={`h-fit w-fit rounded-md px-2 py-1 font-mono text-[0.65rem] ${e.method === "GET" ? "bg-primary-tint text-primary" : "bg-accent-tint text-accent"}`}>{e.method}</span>
-                  <div className="min-w-0"><p className="break-words font-mono text-xs text-foreground">/{e.path.replace(/^\/+/, "")}</p>{e.description && <p className="mt-1.5 text-xs leading-relaxed text-muted">{e.description}</p>}<p className="mt-2 break-all font-mono text-[0.6rem] text-muted">{e.capability}</p></div>
+                  <div className="min-w-0"><p className="break-words font-mono text-xs text-foreground">/{e.path.replace(/^\/+/, "")}</p>{e.description && <p className="mt-1.5 text-xs leading-relaxed text-muted">{e.description}</p>}<p className="mt-2 break-all font-mono text-[0.6rem] text-muted">{e.capability}</p><div className="mt-2"><EndpointTrustChips rows={detail.endpoint_trust?.[e.capability]} /></div></div>
                   <div className="text-xs text-foreground sm:text-right"><p className="font-mono">{formatEndpointPrice(pay?.price_minor ?? e.price_minor, e.free)}</p><p className="mt-1 text-[0.65rem] text-muted">{pay ? networkLabel(network) : "Other network"}</p></div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 sm:pl-[70px]">
@@ -101,11 +103,11 @@ function EndpointExample({ provider, endpoint: e, network }: { provider: Provide
   const input = Object.fromEntries((e.path_params ?? []).map((p) => [p, `<${p}>`]));
   const body = { capability: e.capability, providers: [provider.id], input, budget_max_minor: valid ? budget : "<BUDGET_IN_MICRO_USDC>", constraints: { allowed_networks: [network] } };
   const mcp = { capability: e.capability, providers: [provider.id], input, max_price_usdc: valid ? ceiling : "<MAX_USDC>", allowed_networks: [network] };
-  const curl = `curl -X POST "$ALGEBRA_API/execute" \\\n  -H "Authorization: Bearer $SPEND_PASS_TOKEN" \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(body).replace(/'/g, "'\\''")}'`;
+  const curl = `curl -X POST "$ALGEBRA_API/execute" \\\n  -H "Authorization: Bearer $ALGEBRA_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(body).replace(/'/g, "'\\''")}'`;
   return <div className="mt-4 space-y-4 rounded-lg border border-border bg-background p-4">
     <label className="block max-w-xs text-xs text-muted">Request spending ceiling (USDC)<Input value={ceiling} onChange={(ev) => setCeiling(ev.target.value)} inputMode="decimal" className="mt-1.5" /></label>
     {!valid && <ErrorNote>Enter a positive USDC ceiling.</ErrorNote>}
-    <p className="text-xs leading-relaxed text-muted">Add the endpoint&apos;s required parameters to <code>input</code>. GET uses query parameters; POST uses a JSON body. Set <code>ALGEBRA_API</code> to your API base URL and <code>SPEND_PASS_TOKEN</code> to your agent&apos;s token. Copying an example doesn&apos;t make a payment.</p>
+    <p className="text-xs leading-relaxed text-muted">Add the endpoint&apos;s required parameters to <code>input</code>. GET uses query parameters; POST uses a JSON body. Set <code>ALGEBRA_API</code> to your API base URL and <code>ALGEBRA_API_KEY</code> to a key from Projects &amp; API keys. Copying an example doesn&apos;t make a payment.</p>
     <Snippet title="REST request" code={curl} />
     <Snippet title="MCP tool arguments · algebra.execute" code={JSON.stringify(mcp, null, 2)} />
     {e.input_schema != null && <Snippet title="Input schema from the catalog" code={JSON.stringify(e.input_schema, null, 2)} />}

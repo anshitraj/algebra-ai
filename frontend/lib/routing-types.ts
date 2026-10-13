@@ -56,25 +56,46 @@ export type EndpointHealth = {
 
 export type NewProviderRule = "allow" | "cap" | "approve";
 
+/** How a pass treats a provider whose identity no person has verified: pay, wait for a yes, or never pay. */
+export type UnverifiedRule = "allow" | "approve" | "deny";
+
 export type PassControls = {
   max_calls_per_minute: number;
   max_calls_per_provider_per_minute: number;
   new_providers: NewProviderRule;
   new_provider_cap_minor_units: number;
+  unverified_providers?: UnverifiedRule;
 };
 
 export type KillSwitchState = { engaged: boolean; frozen_passes: number; live_passes: number; changed?: number };
 
 export type Verdict = "ALLOW" | "REQUIRE_APPROVAL" | "DENY";
 
+/** What the console calls a verdict: ALLOW runs, HOLD waits for a person's yes, BLOCK pays nothing. */
+export type Decision = "ALLOW" | "HOLD" | "BLOCK";
+
+/** What Algebra knows about who it would pay, as separate facts. A payment that worked is not a verified identity. */
+export type Seller = {
+  known: boolean;
+  /** "verified" is identity verification: every check of the standard passed and a person reviewed who runs it. */
+  trust?: "verified" | "unverified" | "blocked";
+  payment_tested: boolean;
+  payee_pinned: boolean;
+};
+
 export type CandidateVerdict = {
   provider: string;
   candidate_id?: string;
   network?: string;
   price_minor: number;
-  price_source: "live" | "listed";
+  /** The estimated total cost: the provider's price plus any fee. */
+  total_minor: number;
+  /** "unlisted": the catalog states no price; it is unknown until a provider is asked. */
+  price_source: "live" | "listed" | "unlisted";
   verdict: Verdict;
+  decision: Decision;
   reasons?: string[];
+  seller: Seller;
 };
 
 export type RoutedOffer = {
@@ -83,6 +104,9 @@ export type RoutedOffer = {
   network?: string;
   cost_minor: number;
   expected_latency_ms?: number;
+  /** How the speed is known: "observed" (Algebra's own paid calls), "estimate", "price_check", or absent. */
+  latency_source?: string;
+  calls?: number;
   trust: string;
   score: number;
   components?: Record<string, number>;
@@ -94,11 +118,18 @@ export type Rejection = { candidate_id?: string; provider?: string; code: string
 
 export type Simulation = {
   verdict: Verdict;
+  decision: Decision;
   reasons: string[] | null;
+  /** How the plan was ranked: CHEAPEST, FASTEST or AUTO (shown as Balanced). */
+  strategy?: string;
   would_pay?: CandidateVerdict;
   plan?: { mode: string; plan_hash: string; offers: RoutedOffer[] };
   candidates: CandidateVerdict[];
   rejected?: Rejection[];
+  /** The best offer each way: cheapest, balanced and fastest, from the same priced offers. */
+  recommendations?: Recommendation[];
+  /** Every offer that could be paid or approved, ranked for the request's strategy. */
+  compared?: Recommendation[];
   pass: { id: string; remaining_minor: number; calls_last_minute: number; controls: PassControls; frozen: boolean };
   live_quotes: boolean;
   at: string;
@@ -112,4 +143,25 @@ export type SimulateBody = {
   constraints?: { allowed_networks?: string[] };
   provider_policy?: { strategy?: string };
   live_quotes?: boolean;
+};
+
+/** One priced offer as a person compares it (backend/internal/app/policy_simulate.go). */
+export type Recommendation = {
+  strategy?: "cheapest" | "balanced" | "fastest";
+  rank?: number;
+  provider: string;
+  candidate_id: string;
+  network?: string;
+  total_minor: number;
+  price_source: "live" | "listed" | "unlisted";
+  latency_ms?: number;
+  latency_source?: string;
+  reliability: number;
+  calls?: number;
+  score: number;
+  decision: Decision;
+  reasons?: string[];
+  seller: Seller;
+  notes?: string[];
+  test?: boolean;
 };

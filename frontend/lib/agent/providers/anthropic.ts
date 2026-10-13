@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { MessageParam, TextBlock, Tool, ToolResultBlockParam, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 import { AGENT_TOOLS, type AgentTool } from "../tools";
-import { questionsAsText, runRound, runTool } from "../run-tool";
+import { optionsAsText, questionsAsText, runRound, runTool } from "../run-tool";
+import type { OptionGroup } from "../events";
 import type { PendingApproval } from "../pending-approval";
 import { MAX_TOOL_ROUNDS, TOO_MANY_ROUNDS_REPLY, type ProviderTurnInput, type ProviderTurnResult } from "./types";
 
@@ -60,18 +61,22 @@ export async function runTurn({
 
     const results: ToolResultBlockParam[] = [];
     let asked = "";
+    const shown: OptionGroup[] = [];
     const outcomes = await runRound(
       toolUses,
       (u) => u.name,
       (u) => runTool(u.name, (u.input ?? {}) as Record<string, unknown>, identity, emit, execute)
     );
     for (const [i, use] of toolUses.entries()) {
-      const { result, pendingApproval: pa, questions } = outcomes[i];
+      const { result, pendingApproval: pa, questions, options } = outcomes[i];
+      if (options) shown.push(options);
       pendingApproval = pa ?? pendingApproval;
       if (questions) asked = questionsAsText(questions);
       results.push({ type: "tool_result", tool_use_id: use.id, content: JSON.stringify(result), is_error: !result.ok });
     }
     messages.push({ role: "user", content: results });
+    // Cards end the turn too: the person chooses, and their click is the next message.
+    if (shown.length > 0) asked = [asked, optionsAsText(shown)].filter(Boolean).join("\n");
     if (asked) {
       messages.push({ role: "assistant", content: asked });
       return { reply: "", history: messages, pendingApproval };

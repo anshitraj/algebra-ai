@@ -251,6 +251,17 @@ func (s *ExecutionService) Quote(ctx context.Context, agentID, intentID string, 
 	return s.quote(ctx, view, c)
 }
 
+// priceCheckStep is how finely a price check's round trip is measured. One
+// request's time is noisy: a few milliseconds either way says nothing about a
+// provider, and must not reorder two that are otherwise equal.
+const priceCheckStep = 25 * time.Millisecond
+
+// priceCheckBucket rounds a price check's round trip up to priceCheckStep.
+func priceCheckBucket(d time.Duration) int {
+	steps := (d + priceCheckStep - 1) / priceCheckStep
+	return int((max(steps, 1) * priceCheckStep).Milliseconds())
+}
+
 func (s *ExecutionService) quote(ctx context.Context, view *IntentView, c routing.Candidate) (routing.Quote, error) {
 	if c.Capability != view.Capability {
 		return routing.Quote{}, fmt.Errorf("%w: the candidate does %q but the intent wants %q", shared.ErrConflict, c.Capability, view.Capability)
@@ -263,9 +274,15 @@ func (s *ExecutionService) quote(ctx context.Context, view *IntentView, c routin
 	if err != nil {
 		return routing.Quote{}, fmt.Errorf("%w: the input doesn't fit %s: %s", shared.ErrConflict, c.Provider, err)
 	}
+	// The price check is a real request to the provider, so its round trip is
+	// a measured speed for one Algebra has never paid (see routing.Rank).
+	started := time.Now()
 	q, err := runner.Quote(ctx, c, input)
 	if err != nil {
 		return routing.Quote{}, err
+	}
+	if q.PriceCheckMS == 0 {
+		q.PriceCheckMS = priceCheckBucket(time.Since(started))
 	}
 	q.Input = c.Input
 	now := s.now().UTC()
@@ -705,6 +722,8 @@ func skippable(err error) (string, bool) {
 			return routing.RejectOverBudget, true
 		case RejectNewProvider:
 			return RejectNewProviderGate, true
+		case RejectUnverifiedProvider:
+			return RejectUnverifiedGate, true
 		case RejectProviderRateLimited:
 			return RejectProviderRateLimited, true
 		}

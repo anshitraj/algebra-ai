@@ -3,6 +3,17 @@
 import { useState } from "react";
 import { ProviderMark } from "./provider-mark";
 
+const HOSTING_DOMAINS = [
+  "vercel.app",
+  "netlify.app",
+  "pages.dev",
+  "workers.dev",
+  "github.io",
+  "replit.app",
+  "onrender.com",
+  "railway.app",
+];
+
 // Some catalogs list a provider at a gateway or a proxy rather than its own
 // site. Their icons are the gateway's, so the brand's own domain is named here.
 const GATEWAY_BRANDS: Record<string, string> = {
@@ -24,15 +35,26 @@ const PROXIED_BRANDS: Record<string, string> = {
 };
 
 /** The domain whose icon stands for a provider. */
-export function brandDomain(host: string | undefined, fqn?: string): string | undefined {
+export function brandDomain(
+  host: string | undefined,
+  fqn?: string,
+): string | undefined {
   if (!host) return undefined;
-  const h = host.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  const h = host
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "");
   const gateway = h.match(/^[a-z0-9-]+\.([a-z0-9-]+)\.gateway-402\.com$/);
   if (gateway && GATEWAY_BRANDS[gateway[1]]) return GATEWAY_BRANDS[gateway[1]];
   if (h.endsWith("paysponge.com") && fqn) {
     const brand = PROXIED_BRANDS[fqn.split("/").pop() ?? ""];
     if (brand) return brand;
   }
+  // A deployment host's favicon identifies its hosting platform, not the API operator.
+  if (
+    HOSTING_DOMAINS.some((domain) => h === domain || h.endsWith(`.${domain}`))
+  )
+    return undefined;
   const parts = h.split(".");
   return parts.length > 2 ? parts.slice(-2).join(".") : h;
 }
@@ -50,6 +72,7 @@ export function ProviderLogo({
   fqn,
   size = 28,
   className = "",
+  fallback,
 }: {
   name: string;
   logo?: string;
@@ -58,12 +81,21 @@ export function ProviderLogo({
   fqn?: string;
   size?: number;
   className?: string;
+  fallback?: React.ReactNode;
 }) {
   const domain = brandDomain(website || host, fqn) ?? brandDomain(host, fqn);
-  const sources = [logo, domain ? `https://www.google.com/s2/favicons?sz=64&domain=${domain}` : undefined].filter((s): s is string => !!s);
+  const sources = [
+    logo,
+    domain
+      ? `https://www.google.com/s2/favicons?sz=64&domain=${domain}`
+      : undefined,
+  ].filter((s): s is string => !!s);
   const [failed, setFailed] = useState(0);
 
-  if (failed >= sources.length) return <ProviderMark name={name} size={size} className={className} />;
+  if (failed >= sources.length)
+    return (
+      fallback ?? <ProviderMark name={name} size={size} className={className} />
+    );
   return (
     // Remote logos from many hosts: a plain img, with the next source on error.
     // eslint-disable-next-line @next/next/no-img-element
@@ -77,7 +109,12 @@ export function ProviderLogo({
       referrerPolicy="no-referrer"
       onError={() => setFailed((n) => n + 1)}
       className={`shrink-0 border border-border bg-white object-contain ${className}`}
-      style={{ width: size, height: size, borderRadius: Math.round(size * 0.28), padding: Math.round(size * 0.12) }}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.round(size * 0.28),
+        padding: Math.round(size * 0.12),
+      }}
     />
   );
 }

@@ -13,6 +13,26 @@ const (
 	ReasonNewProviderOverCap    = "PASS_NEW_PROVIDER_OVER_CAP"
 	ReasonNewProviderApproval   = "PASS_NEW_PROVIDER_NEEDS_APPROVAL"
 	ReasonNewProviderNotAllowed = "PASS_NEW_PROVIDER_BLOCKED"
+	// The unverified-provider rule: the provider's identity hasn't been
+	// verified in Algebra's registry (a listing, a quote or a payment that
+	// worked never verifies it).
+	ReasonUnverifiedNeedsApproval = "PASS_UNVERIFIED_PROVIDER_NEEDS_APPROVAL"
+	ReasonUnverifiedNotAllowed    = "PASS_UNVERIFIED_PROVIDER_BLOCKED"
+)
+
+// UnverifiedRule is how a pass treats a provider whose identity no person has
+// verified in the provider registry. Almost every listed provider is
+// unverified, so "approve" and "deny" are opt-in: they suit a pass that moves
+// real money.
+type UnverifiedRule string
+
+const (
+	// UnverifiedAllow (the default): verification is shown, not required.
+	UnverifiedAllow UnverifiedRule = "allow"
+	// UnverifiedApprove: paying an unverified provider waits for the person.
+	UnverifiedApprove UnverifiedRule = "approve"
+	// UnverifiedDeny: only identity-verified providers are paid.
+	UnverifiedDeny UnverifiedRule = "deny"
 )
 
 // NewProviderRule is how a pass treats a provider its person has never paid.
@@ -50,6 +70,8 @@ type Controls struct {
 	// NewProviders and NewProviderCapMinor: see NewProviderRule.
 	NewProviders        NewProviderRule `json:"new_providers"`
 	NewProviderCapMinor int64           `json:"new_provider_cap_minor_units"`
+	// UnverifiedProviders: see UnverifiedRule.
+	UnverifiedProviders UnverifiedRule `json:"unverified_providers"`
 }
 
 // Normalize fills in the defaults and refuses limits that make no sense.
@@ -70,6 +92,11 @@ func (c Controls) Normalize(currency string) (Controls, error) {
 	if c.NewProviderCapMinor < 0 {
 		return c, fmt.Errorf("the new-provider cap can't be negative")
 	}
+	switch c.UnverifiedProviders {
+	case UnverifiedAllow, UnverifiedApprove, UnverifiedDeny:
+	default:
+		return c, fmt.Errorf("unverified providers must be allow, approve or deny, not %q", c.UnverifiedProviders)
+	}
 	return c, nil
 }
 
@@ -89,7 +116,32 @@ func (c Controls) Effective() Controls {
 	if c.NewProviderCapMinor == 0 && c.NewProviders == NewProvidersCap {
 		c.NewProviderCapMinor = DefaultNewProviderCapMinor
 	}
+	c.UnverifiedProviders = UnverifiedRule(strings.ToLower(strings.TrimSpace(string(c.UnverifiedProviders))))
+	if c.UnverifiedProviders == "" {
+		c.UnverifiedProviders = UnverifiedAllow
+	}
 	return c
+}
+
+// Unverified decides a call to a provider whose identity is or isn't
+// verified; approved says the person already said yes to this outcome. It
+// returns "" when the call may go ahead, otherwise the reason and whether a
+// person's approval would let it.
+func (c Controls) Unverified(verified, approved bool) (reason string, approvable bool) {
+	c = c.Effective()
+	if verified {
+		return "", false
+	}
+	switch c.UnverifiedProviders {
+	case UnverifiedApprove:
+		if approved {
+			return "", false
+		}
+		return ReasonUnverifiedNeedsApproval, true
+	case UnverifiedDeny:
+		return ReasonUnverifiedNotAllowed, false
+	}
+	return "", false
 }
 
 // Velocity checks the calls made in the last minute, across the pass and to

@@ -10,6 +10,7 @@ import type {
   IssuedPass,
   KeptResult,
   NewPass,
+  NotificationSettings,
   OnboardingAnswers,
   PassConnect,
   ProviderDetail,
@@ -164,6 +165,31 @@ export const DATA_EXPORT_URL = "/api/v1/me/export";
 
 export function listSessions() {
   return apiFetch<SessionInfo[]>("/api/v1/me/sessions");
+}
+
+// --- email notifications: sign-in alerts and receipts ---
+
+export function getNotifications() {
+  return apiFetch<NotificationSettings>("/api/v1/me/notifications");
+}
+
+/** Turns each kind of email on or off; a kind left out stays as it is. */
+export function setNotificationKinds(kinds: { sign_ins?: boolean; receipts?: boolean }) {
+  return apiFetch<NotificationSettings>("/api/v1/me/notifications", { method: "PUT", body: kinds });
+}
+
+/** Asks for notifications to go to an address: a confirmation link is emailed there, and nothing else until it is opened. */
+export function setNotificationEmail(email: string) {
+  return apiFetch<NotificationSettings>("/api/v1/me/notifications/email", { method: "POST", body: { email } });
+}
+
+/** Confirms the address with the token from its link. */
+export function confirmNotificationEmail(token: string) {
+  return apiFetch<NotificationSettings>("/api/v1/me/notifications/email/confirm", { method: "POST", body: { token } });
+}
+
+export function removeNotificationEmail() {
+  return apiFetch<NotificationSettings>("/api/v1/me/notifications/email", { method: "DELETE" });
 }
 
 export function revokeSession(id: string) {

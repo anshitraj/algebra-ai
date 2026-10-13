@@ -149,6 +149,23 @@ func (e Endpoint) Levels() Levels {
 	}
 }
 
+// ProviderTrust sums what the registry knows about one provider's listed
+// endpoints. The counts are separate facts and none implies another: an
+// endpoint that was quoted, or even paid, is not thereby verified.
+type ProviderTrust struct {
+	Endpoints   int `json:"endpoints"`
+	Quoted      int `json:"quoted"`
+	Tested      int `json:"payment_tested"`
+	Verified    int `json:"verified"`
+	Blocked     int `json:"blocked"`
+	PayeePinned int `json:"payee_pinned"`
+}
+
+// IdentityVerified reports whether a person has verified at least one of the
+// provider's endpoints (see SetTrust). It is what a Spend Pass's
+// unverified-provider rule asks.
+func (t ProviderTrust) IdentityVerified() bool { return t.Verified > 0 }
+
 // Key is what identifies an endpoint across refreshes: provider, URL (the
 // template, before path parameters are filled) and network.
 func Key(provider, url, network string) string {

@@ -27,6 +27,8 @@ Evidence comes in four kinds, and they are not interchangeable:
 | Nothing of one person's is visible to another: organizations, projects, keys, passes, events, usage | HTTP tests `TestTenancyOverHTTP_NothingCrossesBetweenPeople`, `TestUsageOverHTTP_*`, `TestTrialOverHTTP_*` |
 | Free includes one project, enforced; the trial lifts it at once | HTTP test `TestTrialOverHTTP_SevenDaysOfStartupOncePerOrganization` |
 | The Startup trial lasts seven days, is one per organization, asks for no card, and ends on its own | HTTP test, same; unit test `TestATrialGivesItsPlanOnlyWhileItRuns` |
+| One account owns at most three organizations and gets one trial, whichever organization takes it | HTTP test `TestLimitsOverHTTP_OrganizationsPerPersonAndOneTrialEach` |
+| Each new Book a Demo enquiry is emailed to the operator when `LEADS_NOTIFY_EMAIL` is set, after it is stored | Unit tests `TestLeads_TheOperatorIsEmailedAfterTheEnquiryIsStored`, `TestLeads_NoNotificationWithoutAnAddress`. **No email has been sent through Resend from this build** |
 | A project's use is metered: requests by state, committed executions and spend by network; sandbox runs are counted but not as managed executions; a repeat is counted once | HTTP test `TestUsageOverHTTP_AProjectsSandboxRunsAreCountedButNotBilled` |
 | A Book a Demo enquiry is validated, stored, and readable only with the operator token | HTTP test `TestLeadsOverHTTP_AnEnquiryIsStoredAndOnlyTheOperatorReadsIt`; Browser 2026-10-12 |
 | The pricing API says billing is not live | HTTP test `TestPlansOverHTTP_ThePricingPageNeverClaimsLiveBilling` |
@@ -47,6 +49,12 @@ Evidence comes in four kinds, and they are not interchangeable:
 | A provider that is down, asks more than it lists, or is priced like a trap is refused before payment | Unit tests `TestGuardRefusesALivePriceAboveTheListing`, `TestGuardRefusesHoneypotPrices`, `TestGuardSkipsDownProvidersAndOtherNetworks`; Chain (DEMO.md) |
 | A dry run answers without creating, reserving or paying | HTTP test `TestSimulateOverHTTP_AnswersWithoutPaying` |
 | Cheapest, fastest and auto rank differently and the strategy is respected | `internal/domain/routing` unit tests, `internal/app/execution_router_test.go` |
+| Fastest ranks on measured speed: Algebra's own paid calls when it has them, else the time of the unpaid price check; with no speed known it ranks by price and says so | Unit tests `TestRankFastestPrefersPaidCallsOverAPriceCheck`, `TestRankFastestTimesANewProviderByItsPriceCheck`, `TestRankFastestSaysWhenNoSpeedIsKnown` |
+| A dry run ranks on the same record as the execution, stays in a project pass's environment, and never shows an unlisted price as free | Unit tests `TestSimulate_RanksOnTheSameRecordAsTheExecution`, `TestSimulate_AProjectPassStaysInItsEnvironment`, `TestSimulate_AnUnlistedPriceIsNotFree` |
+| The chat never pays on the model's say: it shows the compared offers as cards (the best each way: cheapest, balanced, fastest), several pieces of work at once, and pays only the cards the person picks. Their press is recorded as their approval | Browser 2026-10-13, sandbox (two pieces of work compared, both paid with one press, "approved by the account owner" on each receipt); Chain 2026-10-13: the chat route on devnet, one card chosen, tx `5z5S2V9kV8Mp9hU6Gf57DUH3diwXv1PAj2hsVDQZxs1gW5ivYpfiCAe86Xx6KUSxZnDSzBfs93zebh5UMo27r1ym` (finalized; the seller is Algebra's own demo provider). The same card sent twice paid once |
+| A paid call has a PDF receipt, made from the signed receipt and readable only by its owner, with the transaction linked on Solana Explorer and Solscan | HTTP test `TestReceiptPDFOverHTTP`; unit test `TestDocumentIsAWellFormedPDF`; Browser 2026-10-13 (sandbox); the devnet payment above (PDF read by hand) |
+| The production build sends its Content-Security-Policy and the policy lets the browser reach the Solana RPC endpoints, Jupiter and Privy; every page renders from the build; the console is closed without a session | `frontend/scripts/smoke.mjs` (`pnpm build && pnpm smoke`, in CI): 52 checks against the standalone server with a stub API. **No browser runs in it: a page's own JavaScript is not exercised** |
+| An API key authenticates REST and MCP: `/execute`, `/pass`, `/providers` and the MCP handshake, as the Connect page shows them | HTTP tests `TestTenancyOverHTTP_*`; by hand 2026-10-13 with a sandbox key (delivered, signed receipt; key revoked after) |
 
 ### Policy
 
@@ -67,6 +75,8 @@ Evidence comes in four kinds, and they are not interchangeable:
 | Claim | Evidence |
 |---|---|
 | A new listing is unverified, with its payee pinned | Unit test `TestMerge_NewEndpointIsUnverifiedWithItsPayeePinned` |
+| A pass can hold or refuse a provider whose identity is unverified: "ask me first" waits for a yes and falls back to a verified provider, "never" pays none | Unit tests `TestUnverifiedRule`, `TestUnverifiedRule_ApproveHoldsAndFallsBackToAVerifiedProvider`, `TestUnverifiedRule_DenyNeverPaysAnUnverifiedProvider` |
+| Every provider and endpoint shows what the registry knows about it (verified, unverified, blocked, payment tested, payee pinned): on the Providers pages, in the chat's search results and on each compared offer | Browser 2026-10-13 (Providers list: 99 of the first 100 rows unverified, 69 with a pinned payee, none verified; chat cards in the sandbox) |
 | A provider that changes its payee is refused at payment time with `PAYEE_CHANGED`, then blocked | HTTP test `TestProviderTrustOverHTTP_APayeeChangeIsRefusedThenBlocked`; unit test `TestMerge_ListingPayeeChangeBlocks`; Browser 2026-10-12 (reason shown in Quickstart and Provider intelligence) |
 | A paid delivery makes an endpoint payment tested and never verifies it, however many times it delivers | Unit test `TestEndpoint_ADeliveryTestsItAndNeverVerifiesIt`; HTTP test `TestProviderTrustOverHTTP_APaidDeliveryTestsASellerAndOnlyAReviewVerifiesIt` |
 | Verifying needs all six checks of the standard (listed, HTTPS named host, quoted, payee pinned and consistent, payment tested, not blocked) and a person's written evidence; each check failing on its own refuses it | Unit test `TestSetTrust_VerifyingNeedsEveryCheckAndTheEvidenceReviewed`; the HTTP test above; Postgres test `TestIntelRefresh_*` |
@@ -87,6 +97,18 @@ Evidence comes in four kinds, and they are not interchangeable:
 | At most one live attempt and one commitment per intent, enforced by the database | `internal/platform/postgres` integration tests; `internal/app/economic_service_test.go`, `economic_gaps_test.go` |
 | An ambiguous outcome freezes and is settled from the rail's evidence | `internal/app/economic_service_test.go`; `providers/solanax402` tests |
 | Every committed outcome has an Ed25519 receipt anyone can verify | HTTP tests above; the devnet receipt of 2026-10-12 verified at `POST /api/v1/receipts/verify` |
+
+### Email notifications
+
+| Claim | Evidence |
+|---|---|
+| A sign-in is emailed to the address the person signs in with: when, which device and IP, and how to sign that device out. A first sign-in gets a welcome instead. At most one a minute per account | Unit test `TestNotifications_ASignInIsEmailedToTheAddressTheySignInWith`; HTTP test `TestNotificationsOverHTTP_SignInAlertsAndAConfirmedAddress` |
+| A payment that lands on a chain is emailed to its person with the transaction, both explorer links and the PDF receipt attached. A sandbox call, a free call and a demo account send nothing. At most 20 an hour per account | Unit tests `TestNotifications_AReceiptIsEmailedForAPaymentOnAChain`, `TestNotifications_ReceiptEmailsStopAtTheHourlyCap`; by hand 2026-10-13: a devnet payment (tx `5KZ98M2ZZx4XLD3JvpJTHhGtETPqFRWizT613eNvfcJNApyMRNrU499djRnFijsmi3HsETwgJjtwNAvsFFToBeCZ`) produced the email with a 9 KB PDF, on a server whose mailer writes to its log |
+| An account that signed in with a wallet has nowhere to be written to and is told so on every screen. An address it adds gets only a confirmation link until the same account opens it; a link works once, lasts a day, and one is sent a minute at most | Unit tests `TestNotifications_AWalletAccountGetsNothingUntilItConfirmsAnAddress`, `TestNotifications_ConfirmationLinksAreRateLimitedExpireAndReplaceEachOther`; HTTP test `TestNotificationsOverHTTP_AWalletAccountIsAskedForAnEmail`; Browser 2026-10-13 (banner, add, confirm from the link, banner gone) |
+| An email a wallet account's person later verifies with Privy is used without a second confirmation | HTTP test `TestNotificationsOverHTTP_AWalletAccountIsAskedForAnEmail` |
+| Where someone's mail goes is theirs alone: no session, no answer; an API key reads and changes nothing. Each kind of email can be turned off | HTTP test `TestNotificationsOverHTTP_SignInAlertsAndAConfirmedAddress`; unit test `TestNotifications_EachKindCanBeTurnedOff` |
+| What Resend is sent: the sender, one recipient, the HTML with the plain text beside it, and the PDF as base64 | Unit tests `TestResendMailerSendsTextAndAnAttachment`, `TestResendMailerSendsHTMLBesideTheText`, **against a stand-in for Resend** |
+| Every email is one layout (the mark, a card, facts, one button), laid out with tables and inline styles in a single fluid column up to 560px, so it is the same email on a phone and on a desktop; the HTML and the plain text say the same thing; nothing someone else wrote reaches the HTML as markup | Unit tests `TestEmailDoc_HTMLAndTextSayTheSameThing`, `TestEmailDoc_LaysOutForMailClients`, `TestEmailDoc_OtherPeoplesTextNeverBecomesMarkup`, `TestSendEmail_UsesTheBestTheMailerCanCarry`; Browser 2026-10-13 (receipt and sign-in emails at 390px and 1280px wide). **Not looked at in Gmail, Outlook or Apple Mail themselves** |
 
 ### Solana
 
@@ -122,12 +144,12 @@ Evidence comes in four kinds, and they are not interchangeable:
 | "Team seats" | Roles exist in the schema; there is no way to invite a second person |
 | "Wallet connect tested" for Demo B | The owner's transaction was signed from a keypair file, not a browser wallet extension |
 | "Every listed API is executable" | Listed is not executable. Base-only and fiat-billed providers are listed and cannot be paid |
+| "Sign-in and receipt emails are delivered" | No email has been sent through Resend from this build: the emails were read from a server's log and from a stand-in for Resend. Delivery needs `RESEND_API_KEY` and an `EMAIL_FROM` on a domain verified in Resend |
 
 ## Planned, not built
 
 - A payment processor for the five plans, and refusing requests past a plan's allowance
 - Inviting members into an organization
-- PDF receipts (the signed JSON receipt is the record)
 - A TypeScript SDK (REST and MCP are the interfaces)
 - Customer webhooks for execution events on the new platform
 - A provider credential vault, and calling fiat-billed APIs with the customer's own key

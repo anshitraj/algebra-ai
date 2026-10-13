@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/mail"
 	"net/url"
 	"os"
 	"slices"
@@ -237,6 +238,10 @@ type AuthConfig struct {
 	// them, reset links are written to the API's log (development only).
 	ResendAPIKey string
 	EmailFrom    string
+	// LeadsNotifyEmail (LEADS_NOTIFY_EMAIL) is where each new Book a Demo
+	// enquiry is emailed, through the same mailer. Unset: enquiries are only
+	// stored, and read with GET /api/v1/leads and the operator token.
+	LeadsNotifyEmail string
 
 	SessionTTL time.Duration
 
@@ -255,11 +260,12 @@ type AuthConfig struct {
 	// only way into a real account.
 	PasswordLogin bool
 
-	// OperatorToken (ALGEBRA_OPERATOR_TOKEN) gates B2B registration —
-	// POST /tenants and POST /integrators — and lets the operator revoke any
-	// tenant or integrator. Sent as the X-Algebra-Operator-Token header.
-	// Unset: registration stays open in development and is closed in
-	// production.
+	// OperatorToken (ALGEBRA_OPERATOR_TOKEN) is the operator's own key, sent
+	// as the X-Algebra-Operator-Token header. It is needed to read Book a
+	// Demo enquiries (GET /leads), to change a provider's trust (verify,
+	// block, unblock) and refresh the registry on demand, and for B2B
+	// registration (POST /tenants, /integrators). Unset: those stay open in
+	// development and are closed to everyone in production.
 	OperatorToken string
 	// Production mirrors APP_ENV=production for handlers that behave
 	// differently there.
@@ -410,6 +416,10 @@ func FromEnv() (*Config, error) {
 		"zepto.co.in,zeptonow.com,swiggy.com,amazon.in,flipkart.com,blinkit.com"))
 
 	cfg.CORSAllowedOrigins = splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"))
+	// A browser's Origin never ends in a slash; an address pasted from one often does.
+	for i, o := range cfg.CORSAllowedOrigins {
+		cfg.CORSAllowedOrigins[i] = strings.TrimRight(o, "/")
+	}
 
 	cfg.GoogleSearchAPIKey = os.Getenv("GOOGLE_SEARCH_API_KEY")
 	cfg.GoogleSearchEngineID = os.Getenv("GOOGLE_SEARCH_ENGINE_ID")
@@ -496,6 +506,7 @@ func FromEnv() (*Config, error) {
 		PrivyVerificationKey: os.Getenv("PRIVY_VERIFICATION_KEY"),
 		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
 		EmailFrom:            getEnv("EMAIL_FROM", "Algebra <no-reply@algebra.local>"),
+		LeadsNotifyEmail:     strings.TrimSpace(os.Getenv("LEADS_NOTIFY_EMAIL")),
 		SessionTTL:           sessionTTL,
 		DevHeaderAuth:        os.Getenv("ALGEBRA_DEV_AUTH") == "true",
 		DemoAccounts:         !strings.EqualFold(os.Getenv("DEMO_ACCOUNTS"), "off"),
@@ -592,6 +603,11 @@ func (c *Config) ValidateProduction() error {
 	}
 	if t := c.Auth.OperatorToken; t != "" && len(t) < 32 {
 		problems = append(problems, "ALGEBRA_OPERATOR_TOKEN must be at least 32 characters (openssl rand -hex 32)")
+	}
+	if e := c.Auth.LeadsNotifyEmail; e != "" {
+		if a, err := mail.ParseAddress(e); err != nil || a.Address != e {
+			problems = append(problems, fmt.Sprintf("LEADS_NOTIFY_EMAIL %q must be a plain email address", e))
+		}
 	}
 	for _, o := range c.CORSAllowedOrigins {
 		if !strings.HasPrefix(o, "https://") {

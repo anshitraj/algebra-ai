@@ -9,6 +9,7 @@ import { formatMoney, formatUSDC } from "@/lib/money";
 import { catalogName, joinNames } from "@/lib/paysh";
 import { ErrorNote, Skeleton, StatusBadge, timeAgo } from "@/components/console/ui";
 import { IconArrowRight, IconCheck, IconInbox, IconPlug, IconShield, IconStore } from "@/components/icons";
+import { OverviewCharts } from "@/components/console/overview-charts";
 
 function greeting() {
   const h = new Date().getHours();
@@ -24,7 +25,7 @@ export default function OverviewPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.listMyEconomicIntents(8), api.getMyEconomicStats(30), api.listPasses()])
+    Promise.all([api.listMyEconomicIntents(200), api.getMyEconomicStats(30), api.listPasses()])
       .then(([l, s, p]) => {
         setIntents(l.intents ?? []);
         setStats(s.stats);
@@ -85,13 +86,15 @@ export default function OverviewPage() {
         <Stat label="Active passes" value={passes ? String(active.length) : null} />
       </dl>
 
+      <OverviewCharts intents={intents} error={error} />
+
       {passes && active.length > 0 && <section className="live-budget-panel" aria-labelledby="budget-heading"><div className="live-budget-heading"><h2 id="budget-heading">Spending authority</h2><span>Live spend pass balances</span></div><div className="live-budget-bars">{active.slice(0, 4).map((pass) => {
         const used = pass.budget_minor_units > 0 ? Math.min(pass.spent_minor_units / pass.budget_minor_units * 100, 100) : 0;
         return <div className="live-budget-row" key={pass.id}><div><strong>{pass.label}</strong><span>{formatMoney(pass.spent_minor_units, pass.currency)} / {formatMoney(pass.budget_minor_units, pass.currency)}</span></div><div className="live-budget-track" role="meter" aria-label={`${pass.label} budget used`} aria-valuenow={Math.round(used)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${used}%` }} /></div></div>;
       })}</div><p>Each agent can spend only within its pass. <Link href="/console/passes" className="font-medium text-foreground underline">Manage spending limits</Link></p></section>}
 
-      <div className="mt-8 grid gap-6 md:grid-cols-[1.3fr_1fr]">
-        <section aria-labelledby="recent-heading">
+      <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+        <section className="min-w-0" aria-labelledby="recent-heading">
           <div className="flex items-baseline justify-between">
             <h2 id="recent-heading" className="font-display text-base font-semibold text-foreground">
               Recent executions
@@ -120,7 +123,7 @@ export default function OverviewPage() {
           </div>
         </section>
 
-        <section aria-labelledby="passes-heading">
+        <section className="min-w-0" aria-labelledby="passes-heading">
           <div className="flex items-baseline justify-between">
             <h2 id="passes-heading" className="font-display text-base font-semibold text-foreground">
               Spend passes

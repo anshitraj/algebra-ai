@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -137,6 +138,9 @@ type IntelStore interface {
 	EndpointsBySource(ctx context.Context, source string) ([]intel.Endpoint, error)
 	Endpoint(ctx context.Context, id string) (*intel.Endpoint, error)
 	EndpointsByID(ctx context.Context, ids []string) (map[string]intel.Endpoint, error)
+	// ProviderTrust sums each provider's listed (not removed) endpoints, by
+	// provider ID. A provider the registry doesn't know is absent.
+	ProviderTrust(ctx context.Context, providerIDs []string) (map[string]intel.ProviderTrust, error)
 	// SaveEndpoints writes endpoints and their changes in one transaction.
 	SaveEndpoints(ctx context.Context, eps []intel.Endpoint, changes []intel.Change) error
 	ListEndpoints(ctx context.Context, f IntelFilter) ([]intel.Endpoint, int, error)
@@ -557,6 +561,30 @@ type TrustRefused struct {
 
 func (e *TrustRefused) Error() string {
 	return fmt.Sprintf("%s refused (%s): %s", e.Provider, e.Code, e.Detail)
+}
+
+// ProviderTrust sums each provider's listed endpoints in the registry: how
+// many are quoted, payment tested, identity verified and blocked. A provider
+// the registry doesn't know is absent from the answer.
+func (s *IntelService) ProviderTrust(ctx context.Context, providerIDs []string) (map[string]intel.ProviderTrust, error) {
+	if s == nil {
+		return map[string]intel.ProviderTrust{}, nil
+	}
+	ids := make([]string, 0, len(providerIDs))
+	for _, id := range providerIDs {
+		if id = strings.TrimSpace(id); id != "" && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	return s.store.ProviderTrust(ctx, ids)
+}
+
+// EndpointsByID returns the registry rows with these IDs (see intel.ID).
+func (s *IntelService) EndpointsByID(ctx context.Context, ids []string) (map[string]intel.Endpoint, error) {
+	if s == nil {
+		return map[string]intel.Endpoint{}, nil
+	}
+	return s.store.EndpointsByID(ctx, ids)
 }
 
 // known returns the registry rows of these candidates, by candidate ID.

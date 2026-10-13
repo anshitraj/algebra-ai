@@ -41,11 +41,13 @@ export function reasonText(code: string) {
 }
 
 const TITLES: Record<string, string> = {
-  route_work: "Routing across providers",
+  find_options: "Comparing providers",
+  pay_choice: "Paying the card you chose",
+  route_work: "Comparing providers",
   check_policy: "Checking the spend firewall",
   search_providers: "Searching the catalogs",
   get_provider_endpoints: "Reading the endpoints",
-  pay_and_call: "Paying for the call",
+  pay_and_call: "Comparing the endpoint",
   run_approved_intent: "Running the approved call",
   execution_status: "Checking the payment",
 };
@@ -56,8 +58,10 @@ function shortId(id: string) {
 }
 
 export function stepTitle(tool: string, input: Record<string, unknown>): string {
-  if ((tool === "route_work" || tool === "check_policy") && typeof input.work === "string") {
-    return tool === "route_work" ? `Routing ${input.work} across providers` : `Would ${input.work} pass?`;
+  if (tool === "pay_choice" && typeof input.provider === "string") return `Paying ${shortId(input.provider)}`;
+  if (tool === "find_options" || tool === "route_work" || tool === "check_policy" || tool === "pay_and_call") {
+    const what = typeof input.work === "string" ? input.work : typeof input.provider_id === "string" ? shortId(input.provider_id) : "";
+    return what ? `Comparing providers for ${what}` : TITLES.find_options;
   }
   if (tool === "search_providers" && typeof input.query === "string" && input.query) return `${TITLES[tool]} for “${input.query}”`;
   if ((tool === "get_provider_endpoints" || tool === "pay_and_call") && typeof input.provider_id === "string") {
@@ -115,7 +119,8 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
   // A sandbox payment has no chain transaction to look at.
   const onChain = !!tx && (network === "solana" || network === "solana-devnet");
   const links = [
-    ...(intentId && d._receipt ? [{ title: "Invoice, signed by Algebra", url: `/console/executions/${encodeURIComponent(intentId)}/invoice` }] : []),
+    ...(intentId && d._receipt ? [{ title: "Receipt (PDF)", url: `/api/v1/economic-intents/${encodeURIComponent(intentId)}/receipt.pdf` }] : []),
+    ...(intentId && d._receipt ? [{ title: "Receipt, signed by Algebra", url: `/console/executions/${encodeURIComponent(intentId)}/invoice` }] : []),
     ...(onChain && pullTx ? [{ title: `Spend Pass pull (on-chain program) on Solana Explorer${where}`, url: explorerTx(pullTx, network) }] : []),
     ...(onChain ? [{ title: `Payment to the provider on Solana Explorer${where}`, url: explorerTx(tx, network) }] : []),
     { title: "Every paid call, with its receipt", url: "/console/executions" },
@@ -126,7 +131,7 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
       return {
         status: "waiting",
         summary: `Waiting for your approval${typeof d.budget === "string" ? ` · up to ${d.budget}` : ""}`,
-        detail: { reasons: ["The Spend Pass asks you to approve calls at this price. Nothing has been paid."] },
+        detail: { reasons: ["Nothing has been paid. Approve or cancel it in the card below."] },
       };
     case "refused": {
       const codes = Array.isArray(d.reason_codes) ? (d.reason_codes as string[]) : [];
@@ -147,7 +152,9 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
     case "delivered":
       return {
         status: "done",
-        summary: `Delivered${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid}` : " · nothing to pay"}${network ? ` on ${networkWord(network)}` : ""}${d.test_money ? " (test money)" : ""}`,
+        summary: d.replayed
+          ? `Already paid: the kept answer, nothing paid again${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid} the first time` : ""}`
+          : `Delivered${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid}` : " · nothing to pay"}${network ? ` on ${networkWord(network)}` : ""}${d.test_money ? " (test money)" : ""}`,
         detail: { rows, links, response: pretty(d.response), note: "The response is the provider's own data, shown as received.", policy: d._policy as PolicyReport | undefined },
       };
     case "being_confirmed":
@@ -190,6 +197,7 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
         logo: typeof p.logo_url === "string" ? p.logo_url : undefined,
         fqn: typeof p.fqn === "string" ? p.fqn : undefined,
         url: typeof p.page_url === "string" ? p.page_url : undefined,
+        trust: p.trust && typeof p.trust === "object" ? (p.trust as ProviderCard["trust"]) : undefined,
       }));
       const total = typeof data.total === "number" ? data.total : providers.length;
       return {
@@ -222,15 +230,22 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
           : undefined,
       };
     }
-    case "pay_and_call":
+    case "pay_choice":
     case "run_approved_intent":
-    case "route_work":
       return paidOutcome(data);
-    case "check_policy": {
-      const wp = data.would_pay as { provider?: string; price?: string } | undefined;
+    case "find_options":
+    case "route_work":
+    case "check_policy":
+    case "pay_and_call": {
+      const n = typeof data.compared === "number" ? data.compared : 0;
+      const refused = Array.isArray(data.refused) ? (data.refused as string[]) : [];
+      if (data.status === "nothing_payable") {
+        return { status: "blocked", summary: "No provider can do this within your limits", detail: refused.length ? { reasons: refused } : undefined };
+      }
       return {
         status: "done",
-        summary: [String(data.verdict ?? "").toLowerCase().replace(/_/g, " "), wp?.provider ? `would pay ${wp.provider} ${wp.price ?? ""}`.trim() : ""].filter(Boolean).join(" · "),
+        summary: `${n} offer${n === 1 ? "" : "s"} compared · choose a card below${refused.length ? ` · ${refused.length} left out` : ""}`,
+        detail: refused.length ? { reasons: refused, note: "Left out before any price was paid. Nothing is paid until you choose a card." } : undefined,
       };
     }
     case "execution_status": {

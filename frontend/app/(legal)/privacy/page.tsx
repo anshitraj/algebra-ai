@@ -74,7 +74,10 @@ export default function PrivacyPage() {
         <ul>
           <li>to run your account and keep it secure;</li>
           <li>to find providers, apply your limits, ask for your approval, pay, and prove what happened;</li>
-          <li>to send account emails such as password resets;</li>
+          <li>
+            to send account emails: password resets, an alert after each sign-in, and a receipt for each payment that lands on a chain. They go to the
+            address you sign in with, or to one you add and confirm in your account; you can turn the alerts and the receipts off there;
+          </li>
           <li>to prevent abuse and fraud, and to meet legal and accounting obligations.</li>
         </ul>
         <p>We process your data on the basis of your consent, given when you create an account, and for the legitimate uses the law allows.</p>
