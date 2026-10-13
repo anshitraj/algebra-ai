@@ -108,7 +108,10 @@ func (t *RawTransaction) Sign(k *Keypair) (signed []byte, signature [64]byte, er
 	if !ok {
 		return nil, signature, errors.New("solana: this key is not a required signer of the transaction")
 	}
-	signature = k.Sign(t.Message())
+	signature, err = k.SignChecked(t.Message())
+	if err != nil {
+		return nil, [64]byte{}, err
+	}
 	signed = append([]byte(nil), t.raw...)
 	copy(signed[t.sigStart+64*i:], signature[:])
 	return signed, signature, nil

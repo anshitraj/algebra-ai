@@ -153,7 +153,10 @@ func main() {
 	// 5. The work cost 0.012345: the provider settles that from its voucher;
 	// distribute pays it and refunds the rest in the same transaction.
 	actual := uint64(12_345)
-	v := paychan.SignVoucher(sponsor, ch, actual, time.Unix(payload.ExpiresAt, 0))
+	v, err := paychan.SignVoucher(sponsor, ch, actual, time.Unix(payload.ExpiresAt, 0))
+	if err != nil {
+		log.Fatal(err)
+	}
 	bh, _ = rpc.GetLatestBlockhash(ctx, solana.Confirmed)
 	msg, err := paychan.SettleUptoTx("solana-devnet", terms, A, ch, &v, bh.Blockhash)
 	if err != nil {

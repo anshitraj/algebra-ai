@@ -46,7 +46,26 @@ func (p PublicKey) IsZero() bool { return p == PublicKey{} }
 // Keypair signs for one address. Its secret never prints: every formatting
 // verb shows the public key only, and it can't be marshalled to JSON, so a
 // stray log line or a debug dump can't leak it.
-type Keypair struct{ priv ed25519.PrivateKey }
+//
+// The secret may not be in this process at all: NewRemoteSigner makes a Keypair
+// whose signatures come from elsewhere (a Cloud KMS key), which can fail.
+// Everything that signs a transaction therefore uses SignChecked.
+type Keypair struct {
+	priv         ed25519.PrivateKey
+	remotePublic PublicKey
+	remoteSign   func([]byte) ([64]byte, error)
+}
+
+// NewRemoteSigner holds only a public key and an external signing operation.
+// Every signature it returns is verified here before it can be used, so a
+// wrong or corrupted answer from the signing service is an error, never a
+// transaction that fails on chain.
+func NewRemoteSigner(public PublicKey, sign func([]byte) ([64]byte, error)) *Keypair {
+	return &Keypair{remotePublic: public, remoteSign: sign}
+}
+
+// IsRemote reports a key whose secret is held outside this process.
+func (k *Keypair) IsRemote() bool { return k.remoteSign != nil }
 
 // NewKeypair makes a random keypair (tests, and throwaway devnet wallets).
 func NewKeypair() (*Keypair, error) {
@@ -94,16 +113,41 @@ func ParseKeypair(s string) (*Keypair, error) {
 
 // PublicKey is the address this keypair signs for.
 func (k *Keypair) PublicKey() PublicKey {
+	if k.remoteSign != nil {
+		return k.remotePublic
+	}
 	var pk PublicKey
 	copy(pk[:], k.priv.Public().(ed25519.PublicKey))
 	return pk
 }
 
-// Sign signs a message.
+// Sign signs a message with a key held in this process. A key held elsewhere
+// can fail to sign, and Sign has no way to say so: it refuses such a key (a
+// programming error, since nothing that signs for a payer calls it). Use
+// SignChecked for anything that might be one.
 func (k *Keypair) Sign(msg []byte) [64]byte {
+	if k.remoteSign != nil {
+		panic("solana: this key is held outside the process; sign with SignChecked")
+	}
 	var sig [64]byte
 	copy(sig[:], ed25519.Sign(k.priv, msg))
 	return sig
+}
+
+// SignChecked signs a message with any Keypair, local or remote, and says when
+// it could not.
+func (k *Keypair) SignChecked(msg []byte) ([64]byte, error) {
+	if k.remoteSign == nil {
+		return k.Sign(msg), nil
+	}
+	sig, err := k.remoteSign(msg)
+	if err != nil {
+		return [64]byte{}, err
+	}
+	if !ed25519.Verify(k.remotePublic[:], msg, sig[:]) {
+		return [64]byte{}, errors.New("solana: the remote signer returned a signature that does not verify")
+	}
+	return sig, nil
 }
 
 // ExportKeygenJSON returns the secret in the JSON-array form `solana-keygen`
@@ -111,6 +155,9 @@ func (k *Keypair) Sign(msg []byte) [64]byte {
 // is named so that it can't be called by accident. Never log, print or send
 // its result.
 func (k *Keypair) ExportKeygenJSON() string {
+	if k.remoteSign != nil {
+		panic("solana: a key held outside the process cannot be exported")
+	}
 	nums := make([]string, len(k.priv))
 	for i, b := range k.priv {
 		nums[i] = strconv.Itoa(int(b))

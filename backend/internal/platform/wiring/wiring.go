@@ -37,6 +37,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/platform/bankoffers"
 	"github.com/project-algebra/algebra/internal/platform/config"
+	"github.com/project-algebra/algebra/internal/platform/gcpkms"
 	"github.com/project-algebra/algebra/internal/platform/identity"
 	"github.com/project-algebra/algebra/internal/platform/payersigner"
 	"github.com/project-algebra/algebra/internal/platform/postgres"
@@ -595,6 +596,9 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 			mainnet.RailConfigured, mainnet.Payer = true, r.Address().String()
 		}
 	}
+	if sg := signers["mainnet"]; sg != nil && sg.Mode == payersigner.ModeKMS {
+		mainnet.SignerExternal = true
+	}
 	if st := onchainPasses.ProgramStatus(chain.Solana); st != nil {
 		mainnet.ProgramDeployed, mainnet.ProgramID = true, st.ProgramID
 		mainnet.AuthorityKnown, mainnet.Immutable, mainnet.UpgradeAuthority = st.AuthorityKnown, st.Immutable, st.UpgradeAuthority
@@ -952,6 +956,18 @@ func solanaRPCURL(sc config.SolanaConfig) string {
 	return defaultSolanaRPC[clusterOf(sc)]
 }
 
+// kmsSigner is the payer key held in Cloud KMS, from the host's application
+// default credentials.
+func kmsSigner(ctx context.Context, keyVersion string) (*solana.Keypair, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	c, err := gcpkms.New(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.Signer(ctx, keyVersion)
+}
+
 // resolveSigners picks every configured cluster's payer key, once, so the
 // rail, the vault service and Jupiter all sign with the same one. A key that
 // can't be had stops startup: a server never carries on with a different payer
@@ -965,7 +981,7 @@ func resolveSigners(ctx context.Context, cfg *config.Config, db *postgres.DB, ma
 	if err != nil {
 		return nil, fmt.Errorf("payer keys: %w", err)
 	}
-	deps := payersigner.Deps{Store: postgres.NewSignerRepo(db), Enc: enc}
+	deps := payersigner.Deps{Store: postgres.NewSignerRepo(db), Enc: enc, KMS: kmsSigner}
 	for _, sc := range cfg.SolanaRails {
 		cluster := clusterOf(sc)
 		network := chain.Solana
@@ -974,7 +990,7 @@ func resolveSigners(ctx context.Context, cfg *config.Config, db *postgres.DB, ma
 		}
 		sig, err := payersigner.Resolve(ctx, payersigner.Source{
 			Cluster: cluster, Network: network, Keypair: sc.Keypair, KeypairFile: sc.KeypairFile,
-			Generate: sc.Signer == "generated", ExpectPubkey: sc.SignerPubkey,
+			Generate: sc.Signer == "generated", KMSKeyVersion: sc.KMSKeyVersion, ExpectPubkey: sc.SignerPubkey,
 		}, deps)
 		if err != nil {
 			return nil, err

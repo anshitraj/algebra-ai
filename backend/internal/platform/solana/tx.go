@@ -137,7 +137,11 @@ func (t *Transaction) PartialSign(k *Keypair) error {
 	pk := k.PublicKey()
 	for i := 0; i < int(t.Message.NumRequiredSignatures) && i < len(t.Message.AccountKeys); i++ {
 		if t.Message.AccountKeys[i] == pk {
-			t.Signatures[i] = k.Sign(t.Message.Serialize())
+			sig, err := k.SignChecked(t.Message.Serialize())
+			if err != nil {
+				return err
+			}
+			t.Signatures[i] = sig
 			return nil
 		}
 	}

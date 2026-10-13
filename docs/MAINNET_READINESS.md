@@ -102,10 +102,13 @@ them in.
       on-chain pass bounds what that key can pull from each vault, which is the
       main protection; but between a pull and its payment the money sits in the
       payer's account for a few seconds.
-- [ ] A KMS-backed signer exists as unmerged local work (branch
-      `local/wip-2026-10-12`, `backend/internal/platform/gcpkms`). It has not
-      been reviewed, tested against real KMS, or merged. Until it or an
-      equivalent is, there is no hardware-backed key.
+- [ ] **Use the Cloud KMS signer.** It is built (`backend/internal/platform/gcpkms`,
+      `SOLANA_MAINNET_KMS_KEY_VERSION`; setup in [SIGNER.md](SIGNER.md#cloud-kms)):
+      the private key never enters the server, and with `APP_ENV=production` the
+      server refuses to start on mainnet with any other source. **It has been tested
+      against a fake KMS only, never against real Cloud KMS**; a first run on a
+      real key (devnet is enough to try it) is part of this item. The readiness
+      report's `signer` gate passes when the payer is a KMS key.
 - [ ] Decide between one payer per organization and one shared payer with
       `SPEND_PASS_REQUIRED=mainnet`. The second is the minimum: with it, the
       payer never holds money that is not a pass's.

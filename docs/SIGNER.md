@@ -30,7 +30,7 @@ Exactly one source per cluster. Set in the environment of the API.
 |---|---|---|
 | **Generated** | `SOLANA_DEVNET_SIGNER=generated` | The hosted devnet site and local testing. **Devnet only**: refused on mainnet at start, and by the table's `CHECK`. |
 | **A keypair** | `SOLANA_<CLUSTER>_KEYPAIR_FILE` (or `_KEYPAIR`) | Local development; an operator who holds the key. |
-| **Cloud KMS** | planned: [MAINNET_READINESS.md](MAINNET_READINESS.md#2-the-signer) | Mainnet. The key never enters the server. |
+| **Cloud KMS** | `SOLANA_<CLUSTER>_KMS_KEY_VERSION` | Mainnet (required there with `APP_ENV=production`). The key never enters the server. |
 
 `backend/start.sh` (the single-container image) sets `SOLANA_DEVNET_SIGNER=generated`
 and `SPEND_PASS_REQUIRED=devnet` unless the operator set a wallet or another value, so
@@ -52,6 +52,38 @@ the hosted devnet site needs no wallet in its settings.
   funded at <https://faucet.solana.com>.
 * The log line `GENERATED the devnet payer key …` names the address. **Pin it**
   with `SOLANA_DEVNET_SIGNER_PUBKEY=<address>`.
+
+### Cloud KMS
+
+The payer is a Cloud KMS **Ed25519** key (algorithm `EC_SIGN_ED25519`); its private
+half cannot be read by anyone, Algebra included, and each signature is a KMS call
+(logged by Google). The server holds only the key's address.
+
+1. Create a key ring and an asymmetric signing key, purpose `asymmetric-signing`,
+   algorithm `ec-sign-ed25519`, protection level `hsm` for mainnet.
+2. Give the service account the server runs as the role `roles/cloudkms.signerVerifier`
+   **on that key only**: not on the project.
+3. Set `SOLANA_MAINNET_KMS_KEY_VERSION=projects/…/locations/…/keyRings/…/cryptoKeys/…/cryptoKeyVersions/N`
+   (one exact version; not a key, not "primary"), `SOLANA_ALLOW_MAINNET=yes`, and
+   `SPEND_PASS_REQUIRED=mainnet`. The server logs the key's address at start
+   (`mainnet payer key … (kms)`). Fund it with a little SOL for fees and set
+   `SOLANA_MAINNET_SIGNER_PUBKEY` to it.
+4. Credentials are the host's application default credentials: automatic on Google
+   Cloud (the service account), or on another host a credentials file at
+   `GOOGLE_APPLICATION_CREDENTIALS`. `backend/start.sh` writes `GOOGLE_CREDENTIALS_JSON`
+   (a service-account key limited to step 2's role) to a private file for hosts that
+   only offer environment variables; where the host supports workload identity
+   federation, prefer it, because a service-account key is itself a long-lived secret.
+
+What this does and does not protect. KMS stops the key being stolen and used from
+somewhere else later; it does not stop a **compromised server** asking KMS to sign
+the wrong things while it is compromised. What bounds that is the Spend Pass
+program (a vault pays out only what its owner allowed, and the owner can freeze it),
+the service account's single-key permission, and KMS's audit log. Changing the key
+version is changing the payer: it strands existing vaults like any other new key.
+
+A KMS error or outage stops a payment (nothing is signed) and a start (no other payer
+is made up). Signing is retried briefly on 429 and 5xx; a refusal is not retried.
 
 ### What the server will not do
 

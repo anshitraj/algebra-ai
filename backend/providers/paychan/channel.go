@@ -114,13 +114,17 @@ type Voucher struct {
 }
 
 // SignVoucher signs a voucher with the channel's authorized signer.
-func SignVoucher(k *solana.Keypair, channel solana.PublicKey, cumulative uint64, expiresAt time.Time) Voucher {
+func SignVoucher(k *solana.Keypair, channel solana.PublicKey, cumulative uint64, expiresAt time.Time) (Voucher, error) {
 	var exp int64
 	if !expiresAt.IsZero() {
 		exp = expiresAt.Unix()
 	}
 	msg := VoucherMessage(channel, cumulative, exp)
-	return Voucher{Channel: channel, Cumulative: cumulative, ExpiresAt: exp, Signer: k.PublicKey(), Signature: k.Sign(msg)}
+	sig, err := k.SignChecked(msg)
+	if err != nil {
+		return Voucher{}, err
+	}
+	return Voucher{Channel: channel, Cumulative: cumulative, ExpiresAt: exp, Signer: k.PublicKey(), Signature: sig}, nil
 }
 
 // Verify checks the voucher's signature.
