@@ -1,6 +1,8 @@
 package app
 
 import (
+	"cmp"
+
 	"github.com/project-algebra/algebra/internal/domain/routing"
 )
 
@@ -20,11 +22,16 @@ type RoutingSummary struct {
 
 // RoutedOffer is one ranked step.
 type RoutedOffer struct {
-	Rank       int                `json:"rank"`
-	Provider   string             `json:"provider"`
-	Network    string             `json:"network,omitempty"`
-	CostMinor  int64              `json:"cost_minor"`
-	LatencyMS  int                `json:"expected_latency_ms,omitempty"`
+	Rank      int    `json:"rank"`
+	Provider  string `json:"provider"`
+	Network   string `json:"network,omitempty"`
+	CostMinor int64  `json:"cost_minor"`
+	LatencyMS int    `json:"expected_latency_ms,omitempty"`
+	// LatencySource says what LatencyMS is: "observed" (Algebra's own paid
+	// calls), "estimate", "price_check" (the unpaid price request), or empty.
+	LatencySource string `json:"latency_source,omitempty"`
+	// Calls is how many of Algebra's own calls its reliability rests on.
+	Calls      int                `json:"calls,omitempty"`
 	Trust      string             `json:"trust"`
 	Score      float64            `json:"score"`
 	Components map[string]float64 `json:"components,omitempty"`
@@ -41,7 +48,8 @@ func SummarizePlan(p *routing.ExecutionPlan) *RoutingSummary {
 	for _, st := range p.Steps {
 		out.Offers = append(out.Offers, RoutedOffer{
 			Rank: st.Rank, Provider: st.Quote.Provider, Network: st.Quote.Network, CostMinor: st.Quote.Cost.Total(),
-			LatencyMS: st.Quote.EstimatedLatencyMS, Trust: string(st.Trust), Score: st.Score.Total,
+			LatencyMS: cmp.Or(st.Score.LatencyMS, st.Quote.EstimatedLatencyMS), LatencySource: st.Score.LatencySource, Calls: st.Score.Calls,
+			Trust: string(st.Trust), Score: st.Score.Total,
 			Components: st.Score.Components, Notes: st.Score.Notes, Test: st.Quote.Test,
 		})
 	}

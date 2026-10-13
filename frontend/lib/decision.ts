@@ -23,6 +23,8 @@ const REASONS: Record<string, string> = {
   PASS_RATE_LIMITED: "the pass made as many paid calls this minute as it may",
   PASS_NEW_PROVIDER_NEEDS_APPROVAL: "a provider you've never paid needs your approval",
   PASS_NEW_PROVIDER_OVER_CAP: "a provider you've never paid asks more than your cap",
+  PASS_UNVERIFIED_PROVIDER_NEEDS_APPROVAL: "the provider's identity isn't verified, and your pass asks you first",
+  PASS_UNVERIFIED_PROVIDER_BLOCKED: "the provider's identity isn't verified, and your pass pays verified providers only",
   PASS_BUDGET_EXCEEDED: "over the pass's budget",
   PASS_PER_PURCHASE_LIMIT: "over the pass's per-call limit",
   PASS_APPROVAL_REQUIRED: "at or above your ask-me line",

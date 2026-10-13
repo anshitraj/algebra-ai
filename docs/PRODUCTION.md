@@ -45,7 +45,7 @@ ALGEBRA_MASTER_KEY=<32 random bytes, base64>         # openssl rand -base64 32; 
 PUBLIC_WEB_URL=https://app.yourdomain.com            # must be https
 CORS_ALLOWED_ORIGINS=https://app.yourdomain.com
 ENABLED_MERCHANTS=none                               # API-only; there is no shopping connector to run
-RESEND_API_KEY=re_...                                # required in production
+RESEND_API_KEY=re_...                                # required in production: password resets, sign-in alerts, receipts
 EMAIL_FROM=Algebra <no-reply@yourdomain.com>         # a sender on a Resend-verified domain
 PRIVY_APP_ID=...                                     # optional: sign-in with Privy (wallets, email codes)
 PRIVY_VERIFICATION_KEY="-----BEGIN PUBLIC KEY-----
@@ -68,7 +68,13 @@ GEMINI_API_KEY=...                                   # web discovery of provider
 JUPITER_SWAP_ENABLED=on                              # swaps; JUPITER_API_KEY, JUPITER_MAX_SWAP_USDC, JUPITER_MAX_SLIPPAGE_BPS
 RESULT_RETENTION=24h                                 # how long answers are kept for replay; off keeps none
 CDP_BAZAAR_ENABLED=on                                # reads about 15 MB from Coinbase at most twice an hour; off if that is too much
-ALGEBRA_OPERATOR_TOKEN=<openssl rand -hex 32>        # only if you onboard B2B tenants or integrators
+LEADS_NOTIFY_EMAIL=sales@example.com                 # emails each Book a Demo enquiry (through Resend)
+```
+
+Required for a server that takes customers (the API warns at startup without it):
+
+```bash
+ALGEBRA_OPERATOR_TOKEN=<openssl rand -hex 32>        # read leads, verify/block/unblock providers, refresh the registry, B2B registration
 ```
 
 Web (`frontend/.env.production` or runtime env):

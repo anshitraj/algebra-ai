@@ -144,6 +144,12 @@ jobs:
         env:
           ALGEBRA_API_URL: http://localhost:8080
           NEXT_TELEMETRY_DISABLED: "1"
+      # The built server, as the image runs it, next to a stub of the API: every
+      # page renders, the security headers and CSP are sent (a dev server sends
+      # neither), the console is closed without a session, the rewrites reach the API.
+      - run: pnpm smoke
+        env:
+          ALGEBRA_API_URL: http://localhost:8080
 
   program:
     name: Spend Pass program (Rust) unit tests

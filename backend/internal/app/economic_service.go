@@ -80,6 +80,10 @@ type EconomicService struct {
 	receipts *IntentReceiptService
 	log      *slog.Logger
 	now      func() time.Time
+	// trust is the provider registry, for the unverified-provider rule.
+	trust ProviderTrustReader
+	// receiptNotifier hears of each receipt as it is signed.
+	receiptNotifier ReceiptNotifier
 
 	leaseTTL    time.Duration
 	execTimeout time.Duration
@@ -475,6 +479,8 @@ func (s *EconomicService) Reserve(ctx context.Context, agentID, intentID string,
 	if err != nil {
 		return nil, err
 	}
+	// Read before the intent is locked: the registry is another table.
+	verified := s.providerVerified(ctx, p, req.ProviderID)
 
 	var granted *econ.Reservation
 	var rejected *ReservationRejected
@@ -547,7 +553,7 @@ func (s *EconomicService) Reserve(ctx context.Context, agentID, intentID string,
 		}
 		// The pass's controls: how fast its agent may spend, and how it may
 		// treat a provider its person has never paid (policy_controls.go).
-		if reason, codes, err := s.passControls(u, p, in, req.ProviderID, hold, now); err != nil {
+		if reason, codes, err := s.passControls(u, p, in, req.ProviderID, verified, hold, now); err != nil {
 			return err
 		} else if reason != "" {
 			return reject(reason, false, codes, "")
@@ -1393,7 +1399,20 @@ func (s *EconomicService) maybeSign(ctx context.Context, intentID string) {
 		return
 	}
 	s.event(ctx, EconEvent{IntentID: intentID, Event: "receipt.signed", Data: map[string]any{"receipt_id": id}})
+	if s.receiptNotifier != nil {
+		v.Receipt = jws
+		s.receiptNotifier.ReceiptSigned(ctx, v)
+	}
 }
+
+// ReceiptNotifier is told once about each receipt, right after it is signed
+// and stored. It must not block: the payment it reports is already done.
+type ReceiptNotifier interface {
+	ReceiptSigned(ctx context.Context, v *IntentView)
+}
+
+// SetReceiptNotifier has n told about each new receipt (the email to its person).
+func (s *EconomicService) SetReceiptNotifier(n ReceiptNotifier) { s.receiptNotifier = n }
 
 func (s *EconomicService) newEvent(e EconEvent) EconEvent {
 	e.ID = newID("eev")

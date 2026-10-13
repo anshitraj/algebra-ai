@@ -118,6 +118,34 @@ export type ProviderListing = {
   count: number;
   categories: ProviderCategory[];
   providers: ProviderSummary[];
+  /** What Algebra's own registry knows about each listed provider, by provider ID. Absent: no record. */
+  trust?: Record<string, ProviderTrust>;
+};
+
+/**
+ * A provider's endpoints in Algebra's registry, counted as separate facts.
+ * Quoted and payment tested say a price request and a payment worked; only
+ * "verified" is identity, and only a person's review grants it.
+ */
+export type ProviderTrust = {
+  endpoints: number;
+  quoted: number;
+  payment_tested: number;
+  verified: number;
+  blocked: number;
+  payee_pinned: number;
+};
+
+/** One endpoint on one network, as the registry knows it. */
+export type EndpointTrust = {
+  network?: string;
+  known: boolean;
+  trust?: "verified" | "unverified" | "blocked";
+  quoted: boolean;
+  payment_tested: boolean;
+  verified: boolean;
+  payee_pinned: boolean;
+  executable: boolean;
 };
 
 export type ProviderEndpoint = {
@@ -148,6 +176,9 @@ export type ProviderDetail = ProviderSummary & {
   endpoints: ProviderEndpoint[];
   fetched_at: string;
   stale?: boolean;
+  /** The registry's facts for the whole provider, and per endpoint capability for each network. */
+  trust?: ProviderTrust;
+  endpoint_trust?: Record<string, EndpointTrust[]>;
 };
 
 // --- economic intents: what an agent asked Algebra to get done and pay for ---
@@ -298,6 +329,27 @@ export type User = {
   created_at: string;
   /** "demo": shops real listings with a simulated checkout (fake money). */
   mode: "live" | "demo";
+  /** Where sign-in alerts and receipts are emailed; empty when nowhere. */
+  notification_email?: string;
+  /** Signed in with a wallet, with no address mail can reach and none confirmed. */
+  needs_notification_email?: boolean;
+};
+
+/** A person's email notifications (GET /api/v1/me/notifications). */
+export type NotificationSettings = {
+  /** Where notifications go now; empty when nowhere. */
+  address: string;
+  /** "account": the address they sign in with. "added": one they confirmed. "": none. */
+  source: "account" | "added" | "";
+  /** An address waiting for its confirmation link. */
+  pending_email?: string;
+  sign_ins: boolean;
+  receipts: boolean;
+  needs_email: boolean;
+  /** False for a demo account. */
+  can_add: boolean;
+  /** False when the server has no mail provider: emails are written to its log. */
+  sending: boolean;
 };
 
 export type UserWallet = {

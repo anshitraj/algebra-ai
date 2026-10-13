@@ -82,6 +82,36 @@ func (r *IntelRepo) EndpointsByID(ctx context.Context, ids []string) (map[string
 	return out, nil
 }
 
+func (r *IntelRepo) ProviderTrust(ctx context.Context, providerIDs []string) (map[string]intel.ProviderTrust, error) {
+	out := map[string]intel.ProviderTrust{}
+	if len(providerIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.db.Pool.Query(ctx, `
+		SELECT provider_id, count(*),
+		       count(*) FILTER (WHERE quoted_at IS NOT NULL),
+		       count(*) FILTER (WHERE tested_at IS NOT NULL),
+		       count(*) FILTER (WHERE trust = 'verified'),
+		       count(*) FILTER (WHERE trust = 'blocked'),
+		       count(*) FILTER (WHERE pinned_pay_to <> '')
+		FROM provider_endpoints
+		WHERE provider_id = ANY($1) AND status <> 'removed'
+		GROUP BY provider_id`, providerIDs)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: summing provider trust: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var t intel.ProviderTrust
+		if err := rows.Scan(&id, &t.Endpoints, &t.Quoted, &t.Tested, &t.Verified, &t.Blocked, &t.PayeePinned); err != nil {
+			return nil, fmt.Errorf("postgres: reading provider trust: %w", err)
+		}
+		out[id] = t
+	}
+	return out, rows.Err()
+}
+
 func (r *IntelRepo) SaveEndpoints(ctx context.Context, eps []intel.Endpoint, changes []intel.Change) error {
 	if len(eps) == 0 && len(changes) == 0 {
 		return nil

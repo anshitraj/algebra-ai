@@ -5,14 +5,13 @@ import { Logo } from "@/components/logo";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import type { AgentEvent, AskedQuestion } from "@/lib/agent/events";
+import type { AgentEvent, AskedQuestion, Choice, OptionGroup, ReceiptInfo } from "@/lib/agent/events";
 import { chatKey } from "@/lib/agent/chat-store";
 import { firstName, useSession } from "@/lib/session";
 import * as api from "@/lib/api-client";
 import type { SpendPass } from "@/lib/types";
 import { formatUSDC } from "@/lib/money";
 import { getOnchainPass } from "@/lib/onchain-pass";
-import { PICKS, isPick, type Pick } from "@/lib/strategy";
 import type { Simulation } from "@/lib/routing-types";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { IconArrowUp, IconRefresh, IconShield, IconStop } from "@/components/icons";
@@ -20,6 +19,8 @@ import { useConsoleData } from "../console-data";
 import { ApprovalCard, type ApprovalOutcome } from "./approval-card";
 import { ModelPicker, type ModelChoice, type ProviderEntry } from "./model-picker";
 import { answerText, QuestionCard } from "./question-card";
+import { OptionsBoard } from "./options-card";
+import { ReceiptCard } from "./receipt-card";
 import { ThinkingLine } from "./live-activity";
 import { RichText } from "./rich-text";
 import { PassPanel, RecentCallsPanel } from "./side-panels";
@@ -34,6 +35,11 @@ type Turn = {
   /** Clarifying questions the agent asked (ask_user), and the picks sent back. */
   questions?: AskedQuestion[];
   answered?: string[];
+  /** Comparisons shown as cards, and the ones the person has since paid for (or sent to pay). */
+  options?: OptionGroup[];
+  paidGroups?: string[];
+  /** Receipts of the calls paid in this turn. */
+  receipts?: ReceiptInfo[];
   reply?: string;
   error?: string;
   status: "running" | "done" | "error" | "stopped";
@@ -68,8 +74,6 @@ const MIN_VISIBLE_MS: Record<string, number> = { search_providers: 3000, get_pro
 
 const MODEL_KEY = "algebra:agent-model";
 const PASS_KEY = "algebra:agent-pass";
-const ASK_KEY = "algebra:agent-ask-first";
-const PICK_KEY = "algebra:agent-pick";
 // Provider history carries every tool result, so a long chat can get big.
 // Keep the newest turns that fit; the conversation matters more than its tail.
 const CHAT_MAX_BYTES = 400_000;
@@ -116,6 +120,16 @@ function saveChat(key: string, chat: SavedChat) {
   }
 }
 
+/**
+ * Whether a pass can pay on the chat's network: a project's pass pays only in
+ * its own environment (the server refuses anything else), a personal pass anywhere.
+ */
+function passFits(p: SpendPass, network: string) {
+  if (!p.environment) return true;
+  const env = network === "sandbox" ? "sandbox" : network === "solana-devnet" ? "devnet" : "mainnet";
+  return p.environment === env;
+}
+
 function uid() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Math.random());
 }
@@ -141,73 +155,6 @@ export function AgentWorkspace() {
   // What each pass has locked in its Solana vault on the chosen network; a pass with none isn't a key.
   const [vaults, setVaults] = useState<Record<string, number>>({});
   const [passId, setPassId] = useState("");
-  // "Ask me before every payment": on unless the person turned it off in this browser.
-  const [askFirst, setAskFirst] = useState(true);
-  // How providers are picked. Their own choice (saved in this browser) wins, then the default of the
-  // pass's project; with neither, they are asked once before the first request, never again.
-  const [pick, setPick] = useState<Pick | null>(null);
-  const [projectPick, setProjectPick] = useState<Pick | null>(null);
-  const [askingPick, setAskingPick] = useState<string | null>(null);
-  const pickRef = useRef<Pick | null>(null);
-  const effectivePick = pick ?? projectPick;
-  useEffect(() => {
-    pickRef.current = effectivePick;
-  }, [effectivePick]);
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(ASK_KEY) === "off") setAskFirst(false);
-      const saved = window.localStorage.getItem(PICK_KEY);
-      if (isPick(saved)) setPick(saved);
-    } catch {
-      // storage blocked: ask first
-    }
-  }, []);
-  // The default of the pass's project, when it has one.
-  const passProject = passes?.find((p) => p.id === passId)?.project_id;
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      let found: Pick | null = null;
-      if (passProject) {
-        try {
-          for (const org of (await api.listOrgs()).organizations) {
-            const proj = (await api.listProjects(org.id)).projects.find((x) => x.id === passProject);
-            if (proj) {
-              found = isPick(proj.default_strategy) ? proj.default_strategy : null;
-              break;
-            }
-          }
-        } catch {
-          // the default is a convenience: without it the person is asked
-        }
-      }
-      if (live) setProjectPick(found);
-    })();
-    return () => {
-      live = false;
-    };
-  }, [passProject]);
-
-  function choosePick(p: Pick) {
-    pickRef.current = p;
-    setPick(p);
-    try {
-      window.localStorage.setItem(PICK_KEY, p);
-    } catch {
-      // storage blocked: applies to this page only
-    }
-  }
-  function toggleAskFirst() {
-    setAskFirst((on) => {
-      try {
-        window.localStorage.setItem(ASK_KEY, on ? "off" : "on");
-      } catch {
-        // storage blocked: applies to this page only
-      }
-      return !on;
-    });
-  }
-
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
@@ -316,15 +263,9 @@ export function AgentWorkspace() {
   }, []);
 
   const send = useCallback(
-    async (raw: string) => {
+    async (raw: string, choices?: Choice[]) => {
       const text = raw.trim();
       if (!text || running) return;
-      // No choice and no project default: ask how to pick providers, once, then send.
-      if (!pickRef.current) {
-        setAskingPick(text);
-        setInput("");
-        return;
-      }
       const id = uid();
       setTurns((ts) => [...ts, { id, user: text, steps: [], notes: [], approvals: [], status: "running" }]);
       setInput("");
@@ -361,6 +302,12 @@ export function AgentWorkspace() {
           case "question":
             updateTurn(id, (t) => ({ ...t, questions: e.questions }));
             break;
+          case "options":
+            updateTurn(id, (t) => ({ ...t, options: [...(t.options ?? []).filter((g) => g.id !== e.group.id), e.group] }));
+            break;
+          case "receipt":
+            updateTurn(id, (t) => ({ ...t, receipts: [...(t.receipts ?? []).filter((r) => r.intentId !== e.receipt.intentId), e.receipt] }));
+            break;
           case "approval":
             updateTurn(id, (t) =>
               t.approvals.some((a) => a.intentId === e.intentId)
@@ -396,10 +343,9 @@ export function AgentWorkspace() {
             model: choice?.model,
             message: text,
             history,
-            spend_pass_id: passId || undefined,
+            spend_pass_id: (passId && passes?.some((p) => p.id === passId && passFits(p, network)) ? passId : "") || undefined,
             network,
-            ask_first: askFirst,
-            pick: pickRef.current ?? undefined,
+            choices,
           }),
           signal: ctrl.signal,
         });
@@ -444,7 +390,7 @@ export function AgentWorkspace() {
         inputRef.current?.focus();
       }
     },
-    [running, choice, history, passId, network, askFirst, updateTurn, refreshConsole]
+    [running, choice, history, passId, passes, network, updateTurn, refreshConsole]
   );
 
   function newChat() {
@@ -461,6 +407,15 @@ export function AgentWorkspace() {
   function onAsk(text: string) {
     if (running) return;
     send(text);
+  }
+
+  // The person picked cards in a comparison and pressed Pay: the cards are sent with the message,
+  // and the server pays each one (their press is the approval) before the agent explains the results.
+  function onPay(turnId: string, choices: Choice[], text: string) {
+    if (running || choices.length === 0) return;
+    const groups = [...new Set(choices.map((c) => c.group))];
+    updateTurn(turnId, (t) => ({ ...t, paidGroups: [...(t.paidGroups ?? []), ...groups] }));
+    void send(text, choices);
   }
 
   function onAnswered(turnId: string, picks: string[]) {
@@ -508,7 +463,9 @@ export function AgentWorkspace() {
   }
 
   const title = turns[0]?.user ?? "New chat";
-  const pass = passes === null ? undefined : (passes.find((p) => p.id === passId) ?? null);
+  // Only the passes that can pay on this network are offered.
+  const fitting = passes === null ? null : passes.filter((p) => passFits(p, network));
+  const pass = fitting === null ? undefined : (fitting.find((p) => p.id === passId) ?? null);
   const rail = rails?.find((r) => r.network === network);
 
   return (
@@ -567,6 +524,7 @@ export function AgentWorkspace() {
                     onResolved={onApprovalResolved}
                     onAnswered={onAnswered}
                     onAsk={onAsk}
+                    onPay={onPay}
                     canAnswer={!running && i === turns.length - 1}
                     pass={pass ?? undefined}
                   />
@@ -577,43 +535,6 @@ export function AgentWorkspace() {
         </div>
 
         <div className="shrink-0 px-5 pb-5">
-          {askingPick !== null && (
-            <div role="group" aria-label="Choose how to pick providers" className="mx-auto mb-3 w-full max-w-[720px] rounded-2xl border border-accent/60 bg-accent-tint/40 p-4">
-              <p className="text-sm font-medium text-foreground">Before the first request: how should Algebra pick a provider?</p>
-              <p className="mt-0.5 text-xs text-muted">
-                Every provider that is down, overcharging or blocked is already out. This only ranks the rest. You can change it any time, and a project can set a
-                default so you are not asked.
-              </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                {PICKS.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => {
-                      const text = askingPick;
-                      setAskingPick(null);
-                      choosePick(p.id);
-                      void send(text);
-                    }}
-                    className="rounded-xl border border-border bg-surface px-3 py-2.5 text-left hover:border-primary"
-                  >
-                    <span className="block text-sm font-semibold text-foreground">{p.label}</span>
-                    <span className="mt-0.5 block text-xs text-muted">{p.hint}</span>
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setInput(askingPick);
-                  setAskingPick(null);
-                }}
-                className="mt-2 text-xs text-muted underline"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -652,9 +573,7 @@ export function AgentWorkspace() {
             />
             <div className="flex flex-wrap items-center gap-2 px-2.5 pt-1 pb-2.5">
               <ModelPicker providers={providers} value={choice} onChange={pickModel} lockedProvider={lockedProvider} />
-              <PassPicker passes={passes} vaults={vaults} value={passId} onChange={pickPass} disabled={running} />
-              {passId && <AskFirstSwitch on={askFirst} onToggle={toggleAskFirst} disabled={running} />}
-              <PickPicker value={effectivePick} fromProject={pick === null && projectPick !== null} onChange={choosePick} disabled={running} />
+              <PassPicker passes={fitting} vaults={vaults} value={pass ? passId : ""} onChange={pickPass} disabled={running} sandbox={network === "sandbox"} />
               <span className="hidden text-xs text-muted/80 xl:ml-auto xl:inline">
                 <kbd className="font-mono">Enter</kbd> to send
               </span>
@@ -680,7 +599,7 @@ export function AgentWorkspace() {
             </div>
           </form>
           <p className="mx-auto mt-2 max-w-[720px] text-center text-xs text-muted/80">
-            {network === "sandbox" ? "Simulated USDC in the sandbox" : `USDC on Solana ${networkLabel(network).toLowerCase()}`} · Spend Pass checked on every request · Approvals stay with you
+            {network === "sandbox" ? "Simulated USDC in the sandbox" : `USDC on Solana ${networkLabel(network).toLowerCase()}`} · You choose and approve every payment · Spend Pass checked on every request
           </p>
         </div>
       </section>
@@ -699,6 +618,7 @@ function TurnView({
   onResolved,
   onAnswered,
   onAsk,
+  onPay,
   canAnswer,
   pass,
 }: {
@@ -708,6 +628,7 @@ function TurnView({
   onResolved: (turnId: string, intentId: string, o: ApprovalOutcome) => void;
   onAnswered: (turnId: string, picks: string[]) => void;
   onAsk: (text: string) => void;
+  onPay: (turnId: string, choices: Choice[], text: string) => void;
   canAnswer: boolean;
 }) {
   const running = turn.status === "running";
@@ -741,6 +662,14 @@ function TurnView({
           onAnswer={(picks) => onAnswered(turn.id, picks)}
         />
       )}
+
+      {turn.options && turn.options.length > 0 && (
+        <OptionsBoard groups={turn.options} paid={turn.paidGroups} active={canAnswer && turn.status === "done"} onPay={(choices, text) => onPay(turn.id, choices, text)} />
+      )}
+
+      {turn.receipts?.map((r) => (
+        <ReceiptCard key={r.intentId} receipt={r} />
+      ))}
 
       {turn.approvals.map((a) => (
         <ApprovalCard
@@ -779,59 +708,13 @@ function TurnView({
 }
 
 /** Which Spend Pass the chat pays under. Only active USDC passes can pay for API calls. */
-/** How providers are picked: cheapest, balanced or fastest. Applies to every request the chat routes. */
-function PickPicker({ value, fromProject, onChange, disabled }: { value: Pick | null; fromProject: boolean; onChange: (p: Pick) => void; disabled: boolean }) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label="How to pick a provider"
-      title={fromProject ? "Your project default. Choose one here to use it in this browser instead." : value ? undefined : "Choose how Algebra picks among providers"}
-      className={`inline-flex h-8 shrink-0 items-center rounded-lg p-0.5 ${value ? "bg-primary-tint/50" : "border border-dashed border-border-strong"}`}
-    >
-      {PICKS.map((p) => (
-        <button
-          key={p.id}
-          type="button"
-          role="radio"
-          aria-checked={value === p.id}
-          title={p.hint}
-          disabled={disabled}
-          onClick={() => onChange(p.id)}
-          className={`h-7 rounded-md px-2 text-xs font-medium transition-colors disabled:opacity-60 ${value === p.id ? "bg-surface text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
-        >
-          {p.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** "Ask me before every payment": the agent proposes, the person says yes or no in a card before anything is paid. */
-function AskFirstSwitch({ on, onToggle, disabled }: { on: boolean; onToggle: () => void; disabled: boolean }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      onClick={onToggle}
-      disabled={disabled}
-      title={on ? "Every payment waits for your yes. Click to let the pass's rules decide." : "The pass's rules decide; you're asked only above its approval limit. Click to approve every payment."}
-      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-muted hover:bg-primary-tint/60 disabled:opacity-60"
-    >
-      <span className={`relative h-4 w-7 rounded-full transition-colors ${on ? "bg-primary" : "bg-border-strong"}`}>
-        <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-surface shadow-sm transition-[left] ${on ? "left-3.5" : "left-0.5"}`} />
-      </span>
-      <span className={on ? "text-foreground" : ""}>Ask before paying</span>
-    </button>
-  );
-}
-
 function PassPicker({
   passes,
   vaults,
   value,
   onChange,
   disabled,
+  sandbox,
 }: {
   passes: SpendPass[] | null;
   /** Vault balance by pass ID, for the passes that have a vault on this network. */
@@ -839,6 +722,8 @@ function PassPicker({
   value: string;
   onChange: (id: string) => void;
   disabled: boolean;
+  /** The sandbox has no chain, so no pass has a vault there: don't say it is missing. */
+  sandbox: boolean;
 }) {
   if (passes === null) return null;
   if (passes.length === 0) {
@@ -861,7 +746,7 @@ function PassPicker({
         <option value="">No pass: look, don&apos;t pay</option>
         {passes.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.label} · {p.id in vaults ? `vault ${formatUSDC(vaults[p.id])}` : `${formatUSDC(p.remaining_minor_units)} left, no vault`}
+            {p.label} · {p.id in vaults ? `vault ${formatUSDC(vaults[p.id])}` : `${formatUSDC(p.remaining_minor_units)} left${sandbox ? "" : ", no vault"}`}
           </option>
         ))}
       </select>

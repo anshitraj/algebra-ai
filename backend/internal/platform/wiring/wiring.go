@@ -99,6 +99,8 @@ type Bundle struct {
 	Tenancy *app.TenancyService
 	// Leads keeps Book a Demo enquiries from the public site.
 	Leads *app.LeadService
+	// Notifications emails people about their own account: sign-ins and receipts.
+	Notifications *app.NotificationService
 
 	// --- Spend Passes and signed receipts (internal/domain/spendpass, receipt) ---
 	SpendPasses *app.SpendPassService
@@ -402,6 +404,11 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	econSvc.SetMainnetExecution(cfg.MainnetExecution)
 	intentReceiptSvc := app.NewIntentReceiptService(signer, cfg.Auth.PublicWebURL, agents, econRepo)
 	econSvc.SetReceipts(intentReceiptSvc)
+	// A sign-in alert after each sign-in and the receipt of each payment that
+	// lands on a chain, through the same mailer as password resets.
+	notificationSvc := app.NewNotificationService(postgres.NewNotificationRepo(db), accountRepo, mailer, cfg.Auth.PublicWebURL, cfg.Auth.ResendAPIKey != "", slog.Default())
+	notificationSvc.SetReceipts(intentReceiptSvc)
+	econSvc.SetReceiptNotifier(notificationSvc)
 	var sandboxProvider *sandboxpay.Provider
 	var sandboxPersonas *sandboxpay.PersonaServer
 	if cfg.EconomicSandbox {
@@ -474,7 +481,17 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		}
 	}
 	intelSvc := app.NewIntelService(postgres.NewIntelRepo(db), intelSources...)
+	// Book a Demo enquiries: stored, and emailed to the operator when
+	// LEADS_NOTIFY_EMAIL is set (through the same mailer as password resets).
+	leadSvc := app.NewLeadService(postgres.NewLeadRepo(db))
+	if cfg.Auth.LeadsNotifyEmail != "" {
+		leadSvc.SetNotify(mailer, cfg.Auth.LeadsNotifyEmail, slog.Default())
+	}
+	if cfg.Auth.Production && cfg.Auth.OperatorToken == "" {
+		slog.Default().Warn("ALGEBRA_OPERATOR_TOKEN is not set: Book a Demo enquiries cannot be read and provider trust cannot be changed on this server")
+	}
 	execSvc.SetTrust(intelSvc)
+	econSvc.SetProviderTrust(intelSvc)
 	// The sandbox sellers are served by this process: list them now, so a
 	// seller whose payee changed is refused from the first request.
 	intelSvc.SeedLocal(ctx)
@@ -595,7 +612,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
-		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, Tenancy: tenancySvc, Leads: app.NewLeadService(postgres.NewLeadRepo(db)),
+		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, Tenancy: tenancySvc, Leads: leadSvc, Notifications: notificationSvc,
 		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders, Privy: privy,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,

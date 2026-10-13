@@ -11,7 +11,7 @@ import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import * as api from "@/lib/api-client";
 import type { SpendPass } from "@/lib/types";
-import type { NewProviderRule } from "@/lib/routing-types";
+import type { NewProviderRule, UnverifiedRule } from "@/lib/routing-types";
 import { formatUSDC } from "@/lib/money";
 import { hasOwnRules } from "@/lib/policy-check";
 import { IconArrowLeft, IconArrowRight, IconBan, IconCheck, IconGauge, IconShield, IconStore, IconTag, IconX, Spinner } from "@/components/icons";
@@ -37,6 +37,8 @@ type Draft = {
   picked: string[];
   newRule: NewProviderRule;
   newCap: string;
+  /** A provider whose identity no person has verified in Algebra's registry. */
+  unverified: UnverifiedRule;
   speed: Speed;
 };
 
@@ -52,6 +54,7 @@ function draftOf(p: SpendPass): Draft {
     picked: p.allowed_merchants,
     newRule: c?.new_providers ?? "cap",
     newCap: String((c?.new_provider_cap_minor_units ?? 50_000) / USDC),
+    unverified: c?.unverified_providers ?? "allow",
     speed,
   };
 }
@@ -80,6 +83,17 @@ function sentences(d: Draft, p: SpendPass): { icon: React.ReactNode; text: strin
               ? `Any provider; one you've never paid gets at most ${d.newCap} USDC a call until it has been paid once.`
               : "Any provider in the catalogs.",
     },
+    ...(d.unverified !== "allow"
+      ? [
+          {
+            icon: <IconShield size={15} />,
+            text:
+              d.unverified === "approve"
+                ? "A provider whose identity isn't verified waits for your yes."
+                : "Only providers whose identity is verified are paid.",
+          },
+        ]
+      : []),
     { icon: <IconGauge size={15} />, text: `${SPEEDS[d.speed].label} speed: ${SPEEDS[d.speed].hint}` },
   ];
 }
@@ -207,6 +221,7 @@ function Guide({ pass, onClose, onSaved }: { pass: SpendPass; onClose: () => voi
         max_calls_per_provider_per_minute: SPEEDS[d.speed].perProvider,
         new_providers: d.newRule,
         new_provider_cap_minor_units: d.newRule === "cap" ? toMinor(d.newCap) : 0,
+        unverified_providers: d.unverified,
       });
       onSaved();
     } catch (e) {
@@ -292,6 +307,20 @@ function Guide({ pass, onClose, onSaved }: { pass: SpendPass; onClose: () => voi
                               USDC
                             </span>
                           )}
+                        </label>
+                      ))}
+                      <p className="pt-2 text-xs font-medium text-foreground">A provider whose identity isn&apos;t verified:</p>
+                      <p className="text-[0.7rem] text-muted">Verified means a person reviewed who runs it. Most listed providers aren&apos;t; a payment that worked never verifies one.</p>
+                      {(
+                        [
+                          ["allow", "Pay it within the other rules"],
+                          ["approve", "Ask me first"],
+                          ["deny", "Never pay it"],
+                        ] as [UnverifiedRule, string][]
+                      ).map(([id, label]) => (
+                        <label key={id} className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
+                          <input type="radio" name={`unverified-${pass.id}`} checked={d.unverified === id} onChange={() => set({ unverified: id })} className="accent-[var(--color-primary)]" />
+                          {label}
                         </label>
                       ))}
                     </div>

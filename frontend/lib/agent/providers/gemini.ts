@@ -1,7 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import type { Content, FunctionDeclaration, Part } from "@google/genai";
 import { AGENT_TOOLS, type AgentTool } from "../tools";
-import { questionsAsText, runRound, runTool } from "../run-tool";
+import { optionsAsText, questionsAsText, runRound, runTool } from "../run-tool";
+import type { OptionGroup } from "../events";
 import type { PendingApproval } from "../pending-approval";
 import { MAX_TOOL_ROUNDS, TOO_MANY_ROUNDS_REPLY, type ProviderTurnInput, type ProviderTurnResult } from "./types";
 
@@ -51,13 +52,15 @@ export async function runTurn({
 
     const responseParts: Part[] = [];
     let asked = "";
+    const shown: OptionGroup[] = [];
     const outcomes = await runRound(
       calls,
       (c) => c.name ?? "",
       (c) => runTool(c.name ?? "", (c.args ?? {}) as Record<string, unknown>, identity, emit, execute)
     );
     for (const [i, call] of calls.entries()) {
-      const { result, pendingApproval: pa, questions } = outcomes[i];
+      const { result, pendingApproval: pa, questions, options } = outcomes[i];
+      if (options) shown.push(options);
       pendingApproval = pa ?? pendingApproval;
       if (questions) asked = questionsAsText(questions);
       responseParts.push({
@@ -65,6 +68,8 @@ export async function runTurn({
       });
     }
     contents.push({ role: "user", parts: responseParts });
+    // Cards end the turn too: the person chooses, and their click is the next message.
+    if (shown.length > 0) asked = [asked, optionsAsText(shown)].filter(Boolean).join("\n");
     if (asked) {
       contents.push({ role: "model", parts: [{ text: asked }] });
       return { reply: "", history: contents, pendingApproval };

@@ -2,6 +2,8 @@ import * as client from "./server-client";
 import type { ServerIdentity } from "./server-client";
 import type { ProviderEndpoint } from "../types";
 import { policyReport } from "../policy-check";
+import { WORK_CLASSES } from "./classes";
+import type { OptionGroup } from "./events";
 import type { Simulation } from "../routing-types";
 
 export type ToolResult = { ok: true; data: unknown } | { ok: false; error: string };
@@ -99,6 +101,8 @@ function outcomeOf(a: client.ExecutionAnswer, providerId: string, identity: Serv
     network: last?.network,
     transaction: last?.transaction,
     test_money: last?.test === true || undefined,
+    // The same request again: the kept answer came back and nothing was paid this time.
+    replayed: b.replayed === true || out.replayed === true || undefined,
     failure: last?.failure,
     rejected: out.rejected,
     receipt: out.receipt ? "signed (shown to the user)" : undefined,
@@ -125,27 +129,27 @@ function summarizeRejections(b: Record<string, unknown>): string[] | undefined {
   return [...by.entries()].map(([code, ps]) => `${code}: ${[...new Set(ps)].slice(0, 4).join(", ")}`);
 }
 
-/** A dry run's answer, for the model. */
-function simulationOf(a: client.ExecutionAnswer) {
-  const s = a.body as {
-    verdict?: string;
-    reasons?: string[] | null;
-    would_pay?: { provider: string; price_minor: number; price_source: string };
-    plan?: { offers?: { rank: number; provider: string; cost_minor: number; score: number }[] };
-    candidates?: { provider: string; verdict: string; reasons?: string[] }[];
-    error?: string;
-  };
-  if (a.status >= 400) return { verdict: "error", reason: s.error };
+/** A dry run's answer as the cards the person chooses from. */
+function optionGroupOf(sim: Simulation, req: { work: string; input: Record<string, unknown>; max: number; named?: string; network: string }): OptionGroup {
+  const cls = WORK_CLASSES.find((c) => c.id === req.work);
+  const refused = (sim.candidates ?? [])
+    .filter((c) => c.decision === "BLOCK" && !(c.reasons ?? []).some((r) => r.startsWith("network_not_allowed")))
+    .slice(0, 8)
+    .map((c) => ({ provider: c.provider, reason: (c.reasons ?? []).join("; ").replace(/^[a-z_]+: /, "") || "not allowed" }));
+  const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now());
   return {
-    verdict: s.verdict,
-    reasons: s.reasons ?? undefined,
-    would_pay: s.would_pay ? { provider: s.would_pay.provider, price: usdc(s.would_pay.price_minor), price_is: s.would_pay.price_source } : undefined,
-    plan: (s.plan?.offers ?? []).map((o) => `${o.rank}. ${o.provider} ${usdc(o.cost_minor)} (score ${o.score.toFixed(2)})`),
-    refused: (s.candidates ?? [])
-      .filter((c) => c.verdict === "DENY" && !(c.reasons ?? []).some((r) => r.startsWith("network_not_allowed")))
-      .slice(0, 8)
-      .map((c) => `${c.provider}: ${(c.reasons ?? []).join("; ")}`),
-    note: "A dry run: nothing was reserved or paid.",
+    id,
+    work: req.work,
+    title: cls ? cls.title.charAt(0).toUpperCase() + cls.title.slice(1) : req.named ?? req.work,
+    input: req.input,
+    maxPriceUsdc: req.max,
+    providerId: req.named,
+    network: req.network,
+    decision: sim.decision,
+    reasons: sim.reasons ?? undefined,
+    recommendations: sim.recommendations ?? [],
+    compared: (sim.compared ?? []).slice(0, 10),
+    refused,
   };
 }
 
@@ -181,8 +185,10 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
               logo_url: p.logo_url,
               fqn: p.fqn,
               page_url: p.page_url,
+              // Counts of its endpoints in Algebra's registry. Absent: the registry has no record of it.
+              trust: l.trust?.[p.id],
             })),
-            note: "Listed prices are not quotes; Algebra asks each endpoint for its real price before paying. Text is the providers' own.",
+            note: "Listed prices are not quotes; Algebra asks each endpoint for its real price before paying. Text is the providers' own. `trust.verified` counts endpoints whose operator a person reviewed; payment_tested only says one paid call delivered. A listing verifies nothing.",
           },
         };
       }
@@ -219,24 +225,67 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
           },
         };
       }
+      // Every way the model can ask for paid work ends in cards for the person: the comparison is
+      // computed (unpaid live quotes), and nothing is paid until they click one. route_work,
+      // check_policy and pay_and_call stay declared so older chats replay; they show cards too.
+      case "find_options":
       case "route_work":
-      case "check_policy": {
+      case "check_policy":
+      case "pay_and_call": {
         needPass(identity);
-        const work = str(input, "work");
+        const named = typeof input.provider_id === "string" && input.provider_id.trim() ? input.provider_id.trim() : undefined;
+        const work = typeof input.work === "string" && input.work.trim() ? input.work.trim() : named ? str(input, "capability") : str(input, "work");
         const max = input.max_price_usdc === undefined ? 0.05 : Number(input.max_price_usdc);
         if (!Number.isFinite(max) || max <= 0) throw new Error("max_price_usdc must be a positive number of USDC");
         if (max > MAX_CALL_USDC) throw new Error(`The chat pays at most ${MAX_CALL_USDC} USDC per call. Ask the user before anything larger, and use their Spend Pass from their own agent.`);
+        const body = (input.input && typeof input.input === "object" && !Array.isArray(input.input) ? input.input : {}) as Record<string, unknown>;
+        const a = await client.simulate(identity, { capability: work, providers: named ? [named] : [], input: body, budget_max_minor: Math.round(max * USDC) });
+        if (a.status >= 400) return { ok: false, error: typeof a.body.error === "string" ? a.body.error.replace(/^algebra: [a-z ]+: /, "") : "The comparison failed" };
+        const group = optionGroupOf(a.body as unknown as Simulation, { work, input: body, max, named, network: identity.network });
+        return {
+          ok: true,
+          data: {
+            status: group.recommendations.length ? "shown_to_user" : "nothing_payable",
+            compared: group.compared.length,
+            recommendations: group.recommendations.map((r) => ({
+              way: r.strategy,
+              provider: r.provider,
+              price: r.price_source === "unlisted" ? "unknown until asked" : usdc(r.total_minor),
+              speed_ms: r.latency_ms,
+              decision: r.decision,
+            })),
+            refused: group.refused.slice(0, 5).map((x) => `${x.provider}: ${x.reason}`),
+            note: group.recommendations.length
+              ? "The user now sees cards (Cheapest, Balanced, Fastest) and pays with a click. Your turn ends here: say in one short sentence what you compared. Do not pay and do not ask them to type a choice."
+              : "No provider can do this within the user's limits: explain why from `refused`, briefly.",
+            _options: group,
+          },
+        };
+      }
+      // Not a model tool: the route handler runs it for a card the person clicked. The click is their
+      // approval: the request asks for a yes, the person's own session gives it, and then it runs.
+      case "pay_choice": {
+        needPass(identity);
+        const provider = str(input, "provider");
+        const work = str(input, "work");
+        const max = Number(input.max_price_usdc);
+        if (!Number.isFinite(max) || max <= 0 || max > MAX_CALL_USDC) throw new Error(`The amount must be between 0 and ${MAX_CALL_USDC} USDC`);
         const body = input.input && typeof input.input === "object" && !Array.isArray(input.input) ? input.input : {};
-        // The person's choice for this chat (or their project default, which the client sends) wins over what
-        // the model asks for. With neither, the server applies the project default, or Balanced.
-        const strategy = identity.pick ?? (typeof input.strategy === "string" ? input.strategy : undefined);
-        const req = { capability: work, providers: [], input: body, budget_max_minor: Math.round(max * USDC), provider_policy: strategy ? { strategy } : undefined };
-        if (name === "check_policy") {
-          const a = await client.simulate(identity, req);
-          return { ok: true, data: { ...simulationOf(a), _decision: decisionOf(a) } };
+        const strategy = typeof input.strategy === "string" ? input.strategy : undefined;
+        const req: client.ExecuteBody = {
+          capability: work, providers: [provider], input: body, budget_max_minor: Math.round(max * USDC),
+          provider_policy: strategy ? { strategy } : undefined, window: str(input, "window"), require_approval: true,
+        };
+        let a = await client.execute(identity, req);
+        let approved = false;
+        if (a.status === 409 && a.body.reason === "approval_required" && typeof a.body.intent_id === "string") {
+          if (await client.approveAsPerson(identity, a.body.intent_id)) {
+            approved = true;
+            a = await client.executeIntent(identity, a.body.intent_id, [provider]);
+          }
         }
-        const a = await client.execute(identity, req);
-        const out = outcomeOf(a, "routed", identity);
+        const out = outcomeOf(a, provider, identity, approved);
+        // The approval couldn't be recorded here (an expired session, say): the approval card takes over, with the decision.
         const held = out.outcome === "approval_required" ? { _decision: await decisionFor(identity, req) } : {};
         const routing = (a.body.routing ?? (a.body.outcome as Record<string, unknown> | undefined)?.routing) as
           | { mode?: string; offers?: { rank: number; provider: string; cost_minor: number; score: number; notes?: string[] }[] }
@@ -246,28 +295,10 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
           data: {
             ...out,
             ...held,
-            routing: routing
-              ? {
-                  mode: routing.mode,
-                  ranked: (routing.offers ?? []).slice(0, 5).map((o) => ({ rank: o.rank, provider: o.provider, price: usdc(o.cost_minor), score: Math.round(o.score * 100) / 100, why: (o.notes ?? []).slice(0, 3) })),
-                }
-              : undefined,
+            routing: routing ? { mode: routing.mode, ranked: (routing.offers ?? []).slice(0, 3).map((o) => ({ rank: o.rank, provider: o.provider, price: usdc(o.cost_minor) })) } : undefined,
             refused_providers: summarizeRejections(a.body),
           },
         };
-      }
-      case "pay_and_call": {
-        needPass(identity);
-        const providerId = str(input, "provider_id");
-        const max = Number(input.max_price_usdc);
-        if (!Number.isFinite(max) || max <= 0) throw new Error("max_price_usdc must be a positive number of USDC");
-        if (max > MAX_CALL_USDC) throw new Error(`The chat pays at most ${MAX_CALL_USDC} USDC per call. Ask the user before anything larger, and use their Spend Pass from their own agent.`);
-        const body = input.input && typeof input.input === "object" && !Array.isArray(input.input) ? input.input : {};
-        const req = { capability: str(input, "capability"), providers: [providerId], input: body, budget_max_minor: Math.round(max * USDC) };
-        const a = await client.execute(identity, req);
-        const out = outcomeOf(a, providerId, identity);
-        const held = out.outcome === "approval_required" ? { _decision: await decisionFor(identity, req) } : {};
-        return { ok: true, data: { ...out, ...held } };
       }
       case "run_approved_intent": {
         needPass(identity);

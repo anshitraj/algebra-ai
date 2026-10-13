@@ -73,6 +73,11 @@ type Quote struct {
 	Semantics econ.Semantics `json:"settlement_semantics,omitempty"`
 
 	EstimatedLatencyMS int `json:"estimated_latency_ms,omitempty"`
+	// PriceCheckMS is how long the provider took to answer the unpaid price
+	// request, as Algebra measured it. It is a speed signal for a provider
+	// Algebra has no record of yet; it is not part of the offer's terms, so
+	// it is left out of Hash.
+	PriceCheckMS int `json:"price_check_ms,omitempty"`
 	// Trade-shaped terms: expected output in atoms, as a decimal string.
 	ExpectedOutput string `json:"expected_output,omitempty"`
 	SlippageBps    int    `json:"slippage_bps,omitempty"`
@@ -109,7 +114,7 @@ func (q Quote) Validate() error {
 		return errors.New("a priced quote names its asset and network")
 	case !q.ValidUntil.After(q.QuotedAt):
 		return errors.New("a quote must stay valid after it is made")
-	case q.EstimatedLatencyMS < 0:
+	case q.EstimatedLatencyMS < 0 || q.PriceCheckMS < 0:
 		return errors.New("estimated latency can't be negative")
 	case q.SlippageBps < 0 || q.SlippageBps > 10_000 || q.PriceImpactBps < 0 || q.PriceImpactBps > 10_000:
 		return errors.New("slippage and price impact are basis points between 0 and 10000")

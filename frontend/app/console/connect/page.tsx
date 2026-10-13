@@ -6,7 +6,7 @@ import * as api from "@/lib/api-client";
 import type { PassConnect } from "@/lib/types";
 import { PageHeader, Panel, Skeleton } from "@/components/console/ui";
 import { Snippet } from "@/components/console/snippet";
-import { IconExternal, IconPlug, IconShield } from "@/components/icons";
+import { IconExternal, IconPlug, IconTag } from "@/components/icons";
 
 const TOOLS = [
   { name: "algebra.discover", what: "Browse the paid APIs in Pay.sh, Circle's Agent Marketplace, PayAI and Coinbase's Bazaar, and an endpoint's capability ID. Listed is not verified." },
@@ -55,17 +55,23 @@ export default function ConnectPage() {
   }, []);
 
   const mcp = connect?.mcp_url;
-  const token = "<SPEND_PASS_TOKEN>";
+  // The key lives in the environment of whatever runs the agent, never in a committed file.
+  const token = "$ALGEBRA_API_KEY";
 
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Connect an agent"
-        description="Any agent that speaks MCP or can make an HTTP call can use Algebra. It authenticates with a Spend Pass token, and the pass is its whole authority: a USDC budget, a per-call ceiling and the providers it may pay."
+        description="Any agent that speaks MCP or can make an HTTP call can use Algebra. It authenticates with an API key from one of your projects. A key works only in its own environment (sandbox, devnet or mainnet) and spends only through that project's Spend Pass: a USDC budget, a per-call ceiling and the providers it may pay."
         actions={
-          <Link href="/console/passes" className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-tint hover:opacity-90">
-            <IconShield size={15} /> Issue a Spend Pass
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/console/quickstart" className="inline-flex items-center rounded-lg border border-border-strong px-4 py-2 text-sm font-medium text-foreground hover:bg-primary-tint">
+              Quickstart
+            </Link>
+            <Link href="/console/projects" className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-tint hover:opacity-90">
+              <IconTag size={15} /> Get an API key
+            </Link>
+          </div>
         }
       />
 
@@ -80,7 +86,7 @@ export default function ConnectPage() {
               <p className="mt-0.5 text-sm text-muted">
                 {mcp ? (
                   <>
-                    Streamable HTTP at <code className="font-mono text-foreground">{mcp}</code>, with the pass token as a bearer token.
+                    Streamable HTTP at <code className="font-mono text-foreground">{mcp}</code>, with your API key as a bearer token.
                   </>
                 ) : (
                   <>This server hasn&apos;t published an MCP address. The tools are the same over REST below.</>
@@ -106,12 +112,24 @@ export default function ConnectPage() {
                 <Snippet title="Claude Code" code={`claude mcp add --transport http algebra ${mcp} \\\n  --header "Authorization: Bearer ${token}"`} />
                 <Snippet
                   title="Claude Desktop or Cursor (MCP config)"
-                  code={JSON.stringify({ mcpServers: { algebra: { command: "npx", args: ["-y", "mcp-remote", mcp, "--header", `Authorization: Bearer ${token}`] } } }, null, 2)}
+                  code={JSON.stringify(
+                    { mcpServers: { algebra: { command: "npx", args: ["-y", "mcp-remote", mcp, "--header", "Authorization: Bearer ${ALGEBRA_API_KEY}"], env: { ALGEBRA_API_KEY: "<your API key>" } } } },
+                    null,
+                    2,
+                  )}
                 />
                 <Snippet
                   title="OpenAI Agents SDK (Python)"
-                  code={`from agents import Agent\nfrom agents.mcp import MCPServerStreamableHttp\n\nalgebra = MCPServerStreamableHttp(params={\n    "url": "${mcp}",\n    "headers": {"Authorization": "Bearer ${token}"},\n})\nagent = Agent(name="Researcher", mcp_servers=[algebra])`}
+                  code={`import os\nfrom agents import Agent\nfrom agents.mcp import MCPServerStreamableHttp\n\nalgebra = MCPServerStreamableHttp(params={\n    "url": "${mcp}",\n    "headers": {"Authorization": "Bearer " + os.environ["ALGEBRA_API_KEY"]},\n})\nagent = Agent(name="Researcher", mcp_servers=[algebra])`}
                 />
+                <p className="text-xs leading-relaxed text-muted">
+                  Issue the key under{" "}
+                  <Link href="/console/projects" className="text-primary hover:underline">
+                    Projects &amp; API keys
+                  </Link>
+                  : it is shown once, so keep it in the environment of whatever runs your agent. A personal Spend Pass token works as the bearer too; the pass is
+                  then the agent&apos;s whole authority.
+                </p>
               </div>
             )
           )}
@@ -136,8 +154,8 @@ export default function ConnectPage() {
             <div className="mt-5">
               <Snippet
                 title="Ask for an outcome"
-                code={`curl -X POST ${connect.api_base}/execute \\\n  -H "Authorization: Bearer ${token}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"capability":"circle.birdeye.get.x402-defi-price","providers":["circle:birdeye"],\n       "input":{"address":"So11111111111111111111111111111111111111112"},"budget_max_minor":10000}'`}
-                note="budget_max_minor is micro-USDC: 10000 is 0.01 USDC. Find capability IDs on the Providers page."
+                code={`curl -X POST ${connect.api_base}/execute \\\n  -H "Authorization: Bearer ${token}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"capability":"token.price","input":{"mint":"So11111111111111111111111111111111111111112"},"budget_max_minor":10000}'`}
+                note="token.price is a class of work: Algebra picks the provider. budget_max_minor is micro-USDC: 10000 is 0.01 USDC. The same request again returns the kept answer and pays nothing; add a window (any name) to make it a new request. To call one provider's endpoint, send its capability ID and providers: [its ID] from the Providers page."
               />
             </div>
           )}

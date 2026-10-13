@@ -1,19 +1,24 @@
 import { executeTool, type ToolResult } from "./execute-tool";
 import { detectPendingApproval, type PendingApproval } from "./pending-approval";
 import { stepHint, stepTitle, summarizeStep } from "./steps";
-import type { AskedQuestion, EmitFn } from "./events";
+import type { AskedQuestion, EmitFn, OptionGroup, ReceiptInfo } from "./events";
+import { explorerTx, solscanTx } from "../explorer";
 import type { ServerIdentity } from "./server-client";
 
 // Paid calls are counted per identity object, which the route handler
 // creates fresh for every request — so the count is per turn. A model that
 // loops on paying would otherwise spend the pass down one call at a time.
 const MAX_PAID_CALLS_PER_TURN = 3;
-const PAID_TOOLS = new Set(["pay_and_call", "run_approved_intent", "route_work"]);
+// The only paying call the model can make itself: running an intent the person already approved.
+// Cards the person clicks (pay_choice) are theirs, not the model's, and aren't counted against it.
+const MODEL_PAID_TOOLS = new Set(["run_approved_intent"]);
+const PAYING_TOOLS = new Set(["run_approved_intent", "pay_choice"]);
 const paidThisTurn = new WeakMap<ServerIdentity, number>();
 
 // Read-only lookups that are safe to run side by side. A round made only of
 // these runs concurrently. Anything that pays runs in the order the model gave.
-const PARALLEL_SAFE = new Set(["search_providers", "get_provider_endpoints", "execution_status", "check_policy"]);
+// The comparisons are dry runs (unpaid price requests), so several pieces of work are priced at once.
+const PARALLEL_SAFE = new Set(["search_providers", "get_provider_endpoints", "execution_status", "find_options", "route_work", "check_policy", "pay_and_call"]);
 
 /** Runs one round's tool calls, in parallel when every call is a read-only lookup. Results keep call order. */
 export async function runRound<C, R>(calls: C[], nameOf: (c: C) => string, run: (c: C) => Promise<R>): Promise<R[]> {
@@ -72,13 +77,44 @@ function forModel(result: ToolResult): ToolResult {
  * outcome, and reports a pending approval (never resolves one — approval is
  * a human click in the browser, not a tool).
  */
+/** A delivered, paid call as its receipt card: the PDF and the transaction on both explorers. */
+export function receiptOf(d: Record<string, unknown>, provider: string): ReceiptInfo | undefined {
+  const intentId = typeof d.intent_id === "string" ? d.intent_id : "";
+  const paidMinor = typeof d.paid_minor === "number" ? d.paid_minor : 0;
+  if (!intentId || d.outcome !== "delivered" || paidMinor <= 0) return undefined;
+  const network = typeof d.network === "string" ? d.network : undefined;
+  const tx = typeof d.transaction === "string" && d.transaction ? d.transaction : undefined;
+  const onChain = !!tx && (network === "solana" || network === "solana-devnet");
+  return {
+    intentId,
+    provider,
+    paid: typeof d.paid === "string" ? d.paid : `${paidMinor / 1_000_000} USDC`,
+    paidMinor,
+    network,
+    transaction: tx,
+    explorerUrl: onChain ? explorerTx(tx!, network) : undefined,
+    solscanUrl: onChain ? solscanTx(tx!, network) : undefined,
+    pdfUrl: `/api/v1/economic-intents/${encodeURIComponent(intentId)}/receipt.pdf`,
+    pageUrl: `/console/executions/${encodeURIComponent(intentId)}/invoice`,
+    test: d.test_money === true || network === "sandbox" || undefined,
+    at: new Date().toISOString(),
+  };
+}
+
+/** How a round of comparisons is recorded as the assistant's own message, so a click next turn reads as an answer to it. */
+export function optionsAsText(groups: OptionGroup[]): string {
+  return groups
+    .map((g) => `I compared ${g.compared.length} offers for ${g.title.toLowerCase()} and showed you the cards: ${g.recommendations.map((r) => `${r.strategy} ${r.provider}`).join(", ")}.`)
+    .join("\n");
+}
+
 export async function runTool(
   name: string,
   input: Record<string, unknown>,
   identity: ServerIdentity,
   emit: EmitFn,
   execute: ToolExecutor = executeTool
-): Promise<{ result: ToolResult; pendingApproval?: PendingApproval; questions?: AskedQuestion[] }> {
+): Promise<{ result: ToolResult; pendingApproval?: PendingApproval; questions?: AskedQuestion[]; options?: OptionGroup }> {
   if (name === "ask_user") {
     // Not an API call and not a step: the questions render as tappable
     // options, and the provider loop ends the turn to wait for the picks.
@@ -91,7 +127,7 @@ export async function runTool(
     };
   }
 
-  if (PAID_TOOLS.has(name)) {
+  if (MODEL_PAID_TOOLS.has(name)) {
     const used = paidThisTurn.get(identity) ?? 0;
     if (used >= MAX_PAID_CALLS_PER_TURN) {
       return {
@@ -112,20 +148,27 @@ export async function runTool(
   const outcome = summarizeStep(name, input, result);
   emit({ type: "step", id, tool: name, title, ...outcome });
 
-  if (PAID_TOOLS.has(name) && result.ok) {
-    const d = result.data as { outcome?: string; paid_minor?: number; intent_id?: string; network?: string; provider_id?: string } | undefined;
-    if ((d?.outcome === "delivered" || d?.outcome === "being_confirmed") && (d.paid_minor ?? 0) > 0) {
+  const provider = typeof input.provider === "string" ? input.provider : typeof input.provider_id === "string" ? input.provider_id : "";
+  if (PAYING_TOOLS.has(name) && result.ok) {
+    const d = result.data as { outcome?: string; paid_minor?: number; intent_id?: string; network?: string; provider_id?: string; replayed?: boolean } | undefined;
+    // A replayed answer was paid for the first time it ran: counting it again would overstate the chat's spend.
+    if ((d?.outcome === "delivered" || d?.outcome === "being_confirmed") && (d.paid_minor ?? 0) > 0 && !d.replayed) {
       emit({
         type: "spend",
         amount: { minor_units: d.paid_minor ?? 0, currency: "USDC" },
         intentId: d.intent_id ?? "",
-        provider: typeof input.provider_id === "string" ? input.provider_id : "",
+        provider,
         network: d.network,
       });
     }
+    const r = d && receiptOf(d as Record<string, unknown>, provider);
+    if (r) emit({ type: "receipt", receipt: r });
   }
+  // A comparison becomes cards, and the model's turn ends: the person chooses.
+  const options = result.ok ? ((result.data as { _options?: OptionGroup } | undefined)?._options ?? undefined) : undefined;
+  if (options && options.recommendations.length > 0) emit({ type: "options", group: options });
 
   const pendingApproval = detectPendingApproval(name, input, result);
   if (pendingApproval) emit({ type: "approval", intentId: pendingApproval.intentId, provider: pendingApproval.provider, askedFirst: pendingApproval.askedFirst, decision: pendingApproval.decision });
-  return { result: forModel(result), pendingApproval };
+  return { result: forModel(result), pendingApproval, options: options && options.recommendations.length > 0 ? options : undefined };
 }

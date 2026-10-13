@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import * as api from "@/lib/api-client";
-import type { ProviderDetail, ProviderEndpoint, ProviderListing, ProviderSummary } from "@/lib/types";
+import type { EndpointTrust, ProviderDetail, ProviderEndpoint, ProviderListing, ProviderSummary, ProviderTrust } from "@/lib/types";
+import { EndpointTrustChips, ProviderTrustChips } from "@/components/console/trust-badges";
 import { CATALOGS, catalogName, categoryLabel } from "@/lib/paysh";
 import { formatEndpointPrice, formatPriceRange, formatUSDC } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
@@ -127,7 +128,7 @@ export default function ProvidersPage() {
           </p>
         )}
         {providers.map((p) => (
-          <ProviderRow key={p.id} provider={p} open={open === p.id} onToggle={() => setOpen(open === p.id ? null : p.id)} />
+          <ProviderRow key={p.id} provider={p} trust={listing?.trust?.[p.id]} open={open === p.id} onToggle={() => setOpen(open === p.id ? null : p.id)} />
         ))}
         {canLoadMore && (
           <div className="flex justify-center pt-2">
@@ -197,7 +198,7 @@ function NetworkBadges({ networks }: { networks: string[] }) {
   );
 }
 
-function ProviderRow({ provider: p, open, onToggle }: { provider: ProviderSummary; open: boolean; onToggle: () => void }) {
+function ProviderRow({ provider: p, trust, open, onToggle }: { provider: ProviderSummary; trust?: ProviderTrust; open: boolean; onToggle: () => void }) {
   return (
     <div className={`rounded-2xl border bg-surface transition-colors ${open ? "border-primary/40" : "border-border"}`}>
       <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-start gap-4 px-5 py-4 text-left">
@@ -216,6 +217,9 @@ function ProviderRow({ provider: p, open, onToggle }: { provider: ProviderSummar
               </span>
             )}
             <span className="text-xs text-muted">{categoryLabel(p.category)}</span>
+          </span>
+          <span className="mt-1.5 block">
+            <ProviderTrustChips trust={trust} />
           </span>
           {p.description && <span className="mt-1 line-clamp-2 block text-sm leading-relaxed text-muted">{p.description}</span>}
           <span className="mt-1.5 block font-mono text-[0.6875rem] text-muted/80">
@@ -302,6 +306,7 @@ function ProviderEndpoints({ provider }: { provider: ProviderSummary }) {
                 key={`${e.method} ${e.path}`}
                 e={e}
                 here={payableHere(e)}
+                trust={detail.endpoint_trust?.[e.capability]}
                 selected={picked === e.capability}
                 onPick={() => setPicked(picked === e.capability ? null : e.capability)}
               />
@@ -319,7 +324,7 @@ function MethodBadge({ method }: { method: string }) {
   return <span className={`w-14 shrink-0 rounded-md px-1.5 py-0.5 text-center font-mono text-[0.6875rem] font-medium ${tone}`}>{method}</span>;
 }
 
-function EndpointRow({ e, here, selected, onPick }: { e: ProviderEndpoint; here: boolean; selected: boolean; onPick: () => void }) {
+function EndpointRow({ e, here, trust, selected, onPick }: { e: ProviderEndpoint; here: boolean; trust?: EndpointTrust[]; selected: boolean; onPick: () => void }) {
   const { demo } = useNetwork();
   const prices = e.payments?.length ? e.payments : [{ network: "solana", price_minor: e.price_minor }];
   return (
@@ -330,6 +335,9 @@ function EndpointRow({ e, here, selected, onPick }: { e: ProviderEndpoint; here:
           /{e.path}
         </p>
         {e.description && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{e.description}</p>}
+        <span className="mt-1 block">
+          <EndpointTrustChips rows={trust} />
+        </span>
         {e.callable && e.path_params && e.path_params.length > 0 && (
           <p className="mt-0.5 text-xs text-muted">
             Takes {e.path_params.map((p) => `{${p}}`).join(", ")} in the path: give each in the input.
@@ -375,7 +383,7 @@ function UseIt({ provider, e, network }: { provider: ProviderDetail; e: Provider
     constraints: { allowed_networks: [network] },
   };
   const curl = `curl -X POST "$ALGEBRA_API/execute" \\
-  -H "Authorization: Bearer $SPEND_PASS_TOKEN" \\
+  -H "Authorization: Bearer $ALGEBRA_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '${JSON.stringify(body)}'`;
   const mcp = `algebra.execute({

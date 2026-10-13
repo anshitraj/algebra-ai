@@ -7,6 +7,7 @@ import Link from "next/link";
 import { IconArrowRight, IconBan, IconCheck, IconChevronDown, IconClock, IconExternal, IconShield, IconX } from "@/components/icons";
 import type { PolicyReport } from "@/lib/policy-check";
 import { DecisionPanel } from "@/components/console/decision-panel";
+import { ProviderTrustChips } from "@/components/console/trust-badges";
 import { LiveActivity, Pulse, ThinkingLine } from "./live-activity";
 import { ProviderLogo } from "@/components/provider-logo";
 import { networkLabel } from "@/lib/network";
@@ -256,6 +257,9 @@ function ProviderRow({ p, onAsk }: { p: ProviderCard; onAsk?: Ask }) {
             </span>
           ))}
         </p>
+        <span className="mt-1 block">
+          <ProviderTrustChips trust={p.trust} />
+        </span>
         {p.description && <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted">{p.description}</p>}
         <p className="mt-1 truncate font-mono text-[0.68rem] text-muted/80">{p.id}</p>
       </div>

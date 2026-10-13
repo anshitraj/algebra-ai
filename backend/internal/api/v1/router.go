@@ -41,6 +41,12 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 		origins[o] = true
 	}
 	api := &API{b: b, limiter: limiter, allowedOrigins: origins}
+	if b.Notifications != nil {
+		// The receipt emailed to its person is the same page the console serves.
+		b.Notifications.SetReceiptPDF(func(v *app.IntentView, ver *app.IntentVerification) []byte {
+			return receiptPDF(v, ver, b.AuthConfig.PublicWebURL)
+		})
+	}
 	if b.AuthConfig.TrustedProxyHops >= 0 {
 		trustedProxyHops = b.AuthConfig.TrustedProxyHops
 	}
@@ -67,6 +73,11 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/me/plugins", api.listMyPlugins)
 	mux.HandleFunc("PUT /api/v1/me/plugins/{id}", api.setMyPlugin)
 	mux.HandleFunc("PATCH /api/v1/me", api.updateMe)
+	mux.HandleFunc("GET /api/v1/me/notifications", api.getMyNotifications)
+	mux.HandleFunc("PUT /api/v1/me/notifications", api.setMyNotificationKinds)
+	mux.HandleFunc("POST /api/v1/me/notifications/email", api.setMyNotificationEmail)
+	mux.HandleFunc("POST /api/v1/me/notifications/email/confirm", api.confirmMyNotificationEmail)
+	mux.HandleFunc("DELETE /api/v1/me/notifications/email", api.removeMyNotificationEmail)
 	mux.HandleFunc("GET /api/v1/me/sessions", api.listMySessions)
 	mux.HandleFunc("POST /api/v1/me/sessions/{id}/revoke", api.revokeMySession)
 	mux.HandleFunc("GET /api/v1/me/guardrails", api.getMyGuardrails)
@@ -125,6 +136,7 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/economic-intents/{id}/reservations/{rid}/release", api.releaseEconomicAttempt)
 	mux.HandleFunc("POST /api/v1/economic-intents/{id}/reconcile", api.reconcileEconomicIntent)
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/receipt", api.getEconomicReceipt)
+	mux.HandleFunc("GET /api/v1/economic-intents/{id}/receipt.pdf", api.getEconomicReceiptPDF)
 	// Execution: Algebra prices, pays, calls, verifies and signs.
 	mux.HandleFunc("POST /api/v1/execute", api.executeOutcome)
 	mux.HandleFunc("POST /api/v1/economic-intents/{id}/execute", api.executeEconomicIntent)

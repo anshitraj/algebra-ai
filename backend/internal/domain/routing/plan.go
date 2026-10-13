@@ -24,6 +24,14 @@ type Score struct {
 	Components map[string]float64 `json:"components,omitempty"`
 	Weights    map[string]float64 `json:"weights,omitempty"`
 	Notes      []string           `json:"notes,omitempty"`
+	// LatencyMS is the speed the ranking used, and LatencySource where it came
+	// from: "observed" (Algebra's own paid calls), "estimate" (the quote or a
+	// health probe), "price_check" (how long the unpaid price request took) or
+	// "" when nothing is known. Calls is how many of Algebra's own calls the
+	// reliability figure rests on.
+	LatencyMS     int    `json:"latency_ms,omitempty"`
+	LatencySource string `json:"latency_source,omitempty"`
+	Calls         int    `json:"calls,omitempty"`
 }
 
 // PlanStep is one ranked option: a live quote, how far its provider is
