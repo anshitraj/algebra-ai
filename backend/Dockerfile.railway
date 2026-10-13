@@ -1,0 +1,30 @@
+# Algebra backend for a single-service host (Railway, Render, Fly): the API
+# and the devnet demo providers in one container, so the API reaches the demo
+# providers on 127.0.0.1 the way it does on a laptop.
+#   Railway: service root directory "backend", variable RAILWAY_DOCKERFILE_PATH=Dockerfile.railway
+#   Mount a volume at /data: the demo providers' wallet lives there.
+# For a split deployment use the plain Dockerfile in this folder.
+
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd ./cmd
+COPY internal ./internal
+COPY connectors ./connectors
+COPY providers ./providers
+COPY policy ./policy
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/demo-provider ./cmd/demo-provider
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates && adduser -D -u 10001 app && mkdir -p /data && chown app /data
+WORKDIR /app
+COPY --from=build /out/api /out/demo-provider /app/
+COPY migrations /app/migrations
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+ENV APP_ENV=production ALGEBRA_DATA_DIR=/data
+USER app
+EXPOSE 8080
+ENTRYPOINT ["/app/start.sh"]
