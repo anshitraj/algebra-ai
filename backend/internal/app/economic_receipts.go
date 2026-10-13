@@ -23,7 +23,19 @@ type IntentReceiptService struct {
 	// executions, when set, lets a receipt carry how the provider was chosen
 	// and how the result was judged.
 	executions ExecutionStore
+	// funding, when set, lets a receipt name the Spend Pass vault that paid.
+	funding FundingReader
 }
+
+// FundingReader says which vault funded an attempt's payment.
+type FundingReader interface {
+	// PullFor returns the pull made for a reservation, or an error wrapping
+	// shared.ErrNotFound when the payment was not funded from a vault.
+	PullFor(ctx context.Context, reservationID string) (*OnchainPull, error)
+}
+
+// SetFunding attaches the vault records.
+func (s *IntentReceiptService) SetFunding(f FundingReader) { s.funding = f }
 
 // SetExecutions attaches the executor's records.
 func (s *IntentReceiptService) SetExecutions(e ExecutionStore) { s.executions = e }
@@ -95,6 +107,16 @@ func (s *IntentReceiptService) Sign(ctx context.Context, v *IntentView) (jws, id
 		Rail: r.Rail, Network: r.Evidence.Network, Asset: r.Evidence.Asset,
 		Amount:      receipt.Money{MinorUnits: r.Evidence.AmountMinor, Currency: v.Currency},
 		Transaction: r.Evidence.Transaction, PaymentID: r.Evidence.PaymentID, Payer: r.Evidence.Payer, PayTo: r.Evidence.PayTo,
+	}
+	// A payment a vault funded says so: which vault, whose, and the pull that
+	// moved the money, so the person can check it on chain.
+	if s.funding != nil {
+		if p, err := s.funding.PullFor(ctx, r.ID); err == nil && p.State != PullVoid {
+			c.Settlement.Funding = &receipt.FundingRef{
+				Source: "spend_pass_vault", Vault: p.PassAddress, Owner: p.OwnerWallet, PullSignature: p.PullSignature,
+				Pulled: receipt.Money{MinorUnits: p.AmountMinor, Currency: v.Currency},
+			}
+		}
 	}
 	for _, e := range v.Events {
 		if e.Event == "reconciliation.started" {

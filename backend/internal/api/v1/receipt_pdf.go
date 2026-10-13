@@ -125,12 +125,14 @@ func receiptPDF(v *app.IntentView, ver *app.IntentVerification, publicURL string
 		c = ver.Claims
 	}
 	net, tx, payer, payTo := "", "", "", ""
+	var funding *receipt.FundingRef
 	amount := receipt.Money{MinorUnits: v.CommittedMinor, Currency: v.Currency}
 	test := false
 	if c != nil {
 		test = c.Test
 		if s := c.Settlement; s != nil {
 			net, tx, payer, payTo, amount = s.Network, s.Transaction, s.Payer, s.PayTo, s.Amount
+			funding = s.Funding
 		}
 	}
 	if test || net == "sandbox" || net == "solana-devnet" {
@@ -179,7 +181,20 @@ func receiptPDF(v *app.IntentView, ver *app.IntentVerification, publicURL string
 	if payTo != "" {
 		row("Payee address", payTo, pdf.Courier, 8.5)
 	}
-	if payer != "" {
+	if funding != nil {
+		// The person's own money, in their vault, moved by Algebra's key for this
+		// payment alone. Every address and transaction is there to be checked.
+		row("Funded from", "Your Spend Pass vault "+funding.Vault, pdf.Courier, 8.5)
+		row("Vault owner", funding.Owner, pdf.Courier, 8.5)
+		row("Amount taken", usdcText(funding.Pulled)+", for this payment only; anything unspent went back to the vault", pdf.Helvetica, 10)
+		row("Vault transaction", funding.PullSignature, pdf.Courier, 8.5)
+		for _, l := range explorerLinks(net, funding.PullSignature) {
+			linkRow("", "View on "+l[0], l[1])
+		}
+		if payer != "" {
+			row("Payment signed by", "Algebra's payer key "+payer, pdf.Courier, 8.5)
+		}
+	} else if payer != "" {
 		row("Paid from", payer, pdf.Courier, 8.5)
 	}
 	row("Budget for this call", usdcText(receipt.Money{MinorUnits: v.BudgetMaxMinor, Currency: v.Currency}), pdf.Helvetica, 10)

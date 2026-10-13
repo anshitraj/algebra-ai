@@ -119,6 +119,27 @@ type SettlementRef struct {
 	PaymentID   string `json:"payment_id,omitempty"`
 	Payer       string `json:"payer,omitempty"`
 	PayTo       string `json:"pay_to,omitempty"`
+	// Funding says where the payment's money came from, when a Spend Pass vault
+	// funded it. Payer is then Algebra's signing key, which held the money only
+	// for this payment.
+	Funding *FundingRef `json:"funding,omitempty"`
+}
+
+// FundingRef is the vault that funded one payment: the person's own money, in
+// their on-chain Spend Pass, moved by Algebra's payer for exactly this payment.
+// Anything the payment did not spend went back to the vault; that is on chain
+// too, and changes after this receipt is signed, so it is not claimed here.
+type FundingRef struct {
+	// Source is "spend_pass_vault".
+	Source string `json:"source"`
+	// Vault is the on-chain pass's address; Owner is the wallet that owns it,
+	// the person's own.
+	Vault string `json:"vault"`
+	Owner string `json:"owner"`
+	// PullSignature is the Solana transaction that moved Pulled from the vault
+	// to the payer before the payment was handed over.
+	PullSignature string `json:"pull_signature"`
+	Pulled        Money  `json:"pulled"`
 }
 
 type CoordinationRef struct {

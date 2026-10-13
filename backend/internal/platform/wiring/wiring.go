@@ -587,6 +587,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	if onchainPasses != nil {
 		econSvc.SetFunder(onchainPasses)
 		execSvc.SetVaults(onchainPasses)
+		intentReceiptSvc.SetFunding(onchainPasses)
 	}
 	mainnet := app.MainnetFacts{ExecutionEnabled: cfg.MainnetExecution, PassesRequired: cfg.OnchainPasses.Required["mainnet"]}
 	for _, r := range solanaRails {
@@ -909,6 +910,13 @@ func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgr
 	}
 	svc := app.NewOnchainPassService(postgres.NewOnchainPassRepo(db), passes, wallets, reservations, nets)
 	svc.AnyOwnerOn = anyOwner
+	if v := strings.TrimSpace(os.Getenv("CHANNEL_RECOVERY_AFTER")); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			return nil, fmt.Errorf("CHANNEL_RECOVERY_AFTER must be a duration like 10m: %v", err)
+		}
+		svc.RecoverAfter = d
+	}
 	return svc, nil
 }
 

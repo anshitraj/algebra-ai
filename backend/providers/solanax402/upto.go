@@ -157,6 +157,11 @@ func (r *Rail) uptoSettlement(ctx context.Context, ev econ.Evidence) (app.Settle
 		case paychan.StatusOpen, paychan.StatusClosing:
 			return status(app.SettlementPending, 0, "", fmt.Sprintf("the ceiling (%d) is escrowed in channel %s; the provider hasn't settled yet", c.Deposit, ch))
 		default:
+			// Sealed, but the payer's remainder is still in the escrow: until it is
+			// withdrawn (RecoverEscrow) the money is not back, so it is not final.
+			if c.Status == paychan.StatusSealed && c.PayerWithdrawnAt == 0 && c.Refundable() > 0 {
+				return status(app.SettlementPending, int64(c.Settled), "", fmt.Sprintf("the channel is sealed; %d of the ceiling waits to be withdrawn", c.Refundable()))
+			}
 			if c.Settled == 0 {
 				return status(app.SettlementNotSettled, 0, "", "the channel was sealed with nothing settled; the ceiling is refundable")
 			}
