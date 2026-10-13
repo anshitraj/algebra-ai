@@ -77,11 +77,32 @@ func (a *API) csrfGuard(next http.Handler) http.Handler {
 		}
 		origin := r.Header.Get("Origin")
 		if origin != "" && !a.originAllowed(origin) {
-			writeJSON(w, http.StatusForbidden, errorBody{Error: "cross-origin request rejected"})
+			// Almost always the operator's own site on an address the API was never
+			// told about (a new domain, or www against the bare name): say which
+			// address and which settings, here and in the log, or every button in
+			// the console fails with nothing to act on.
+			log.Printf("auth: refused a %s to %s from origin %q: not in CORS_ALLOWED_ORIGINS and not PUBLIC_WEB_URL", r.Method, r.URL.Path, truncateOrigin(origin))
+			writeJSON(w, http.StatusForbidden, errorBody{Error: "cross-origin request rejected: " + truncateOrigin(origin) +
+				" is not an address this server accepts changes from. Whoever runs it must add that exact address to CORS_ALLOWED_ORIGINS (or set PUBLIC_WEB_URL to it) on the API."})
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// truncateOrigin bounds an Origin header before it is echoed or logged: it is
+// whatever the caller sent.
+func truncateOrigin(origin string) string {
+	origin = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, origin)
+	if len(origin) > 120 {
+		return origin[:120] + "…"
+	}
+	return origin
 }
 
 func (a *API) originAllowed(origin string) bool {

@@ -70,6 +70,18 @@ GRIEVANCE_OFFICER_EMAIL=you@example.com
 2. Privy dashboard, your app: add the Vercel address under **Allowed origins**; enable your login methods and Solana wallets; turn on "Return user data in an identity token".
 3. Vercel: if `PUBLIC_WEB_URL` was wrong the first time, fix it and redeploy.
 
+### Your own domain
+
+Adding a domain in Vercel changes the address the browser sends, and the API only accepts changes (anything but a read) from addresses it was told about. Until it is told, signing in still works and then every button fails with "cross-origin request rejected". When you add a domain:
+
+1. See which form Vercel serves. It usually redirects one to the other (`example.com` to `www.example.com`): `curl -sI https://example.com | grep -i location`. The one it redirects **to** is the site's address.
+2. Railway: `PUBLIC_WEB_URL=https://www.example.com` (that address) and `CORS_ALLOWED_ORIGINS=https://www.example.com,https://example.com` (both forms, comma-separated, no trailing slash). The service redeploys.
+3. Vercel: `PUBLIC_WEB_URL` to the same address, then redeploy (it is read at build time).
+4. Privy dashboard: both forms under **Allowed origins**.
+5. Resend: verify the domain, then `EMAIL_FROM=Algebra <no-reply@example.com>` on Railway.
+
+Check it without a browser: `curl -s -X POST https://www.example.com/api/v1/auth/logout -H "Origin: https://www.example.com" -H "Cookie: algebra_session=x"` answers `{"ok":true}` once the address is accepted, and "cross-origin request rejected" until then.
+
 ## 4. Check it
 
 1. Open the Vercel address and sign in with Privy. Hover your wallet at the top right: address and QR.
