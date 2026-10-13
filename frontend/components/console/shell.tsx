@@ -132,6 +132,7 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
 
       <div className="flex min-w-0 flex-1 flex-col">
         {user.mode === "demo" && <DemoBanner />}
+        {user.mode !== "demo" && user.needs_notification_email && !pathname.startsWith("/console/settings") && <EmailBanner userId={user.id} />}
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 md:hidden print:hidden">
           <button
             type="button"
@@ -314,6 +315,52 @@ function UserMenu({ user }: { user: User }) {
           <span className="block truncate text-xs text-muted">{user.mode === "demo" ? "Demo account" : user.email || "Signed in with a wallet"}</span>
         </span>
         <IconChevronDown size={16} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+    </div>
+  );
+}
+
+const EMAIL_BANNER_KEY = "algebra:email-banner-dismissed";
+
+// Someone who signed in with a wallet has no address to be written to: no
+// sign-in alerts, no receipts. This says so on every screen and leads to
+// where one is added (Account > Email notifications). Closing it lasts for
+// this browser tab; it is gone for good once an address is confirmed.
+function EmailBanner({ userId }: { userId: string }) {
+  const [hidden, setHidden] = useState(true);
+  useEffect(() => {
+    let dismissed = false;
+    try {
+      dismissed = window.sessionStorage.getItem(EMAIL_BANNER_KEY) === userId;
+    } catch {
+      // storage blocked: show it
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sessionStorage is unavailable during SSR, so read it after mount
+    setHidden(dismissed);
+  }, [userId]);
+  if (hidden) return null;
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-border bg-primary-tint px-4 py-2 text-center text-xs text-foreground print:hidden">
+      <span>
+        <strong className="font-semibold">Add your email to receive email notifications</strong> · sign-in alerts and a receipt for each payment. You signed in with a wallet, so we have nowhere to send them.
+      </span>
+      <Link href="/console/settings#notifications" className="font-semibold text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary">
+        Add email
+      </Link>
+      <button
+        type="button"
+        aria-label="Dismiss"
+        onClick={() => {
+          setHidden(true);
+          try {
+            window.sessionStorage.setItem(EMAIL_BANNER_KEY, userId);
+          } catch {
+            // storage blocked: hidden for this page only
+          }
+        }}
+        className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-foreground"
+      >
+        <IconX size={12} />
       </button>
     </div>
   );

@@ -249,6 +249,9 @@ func (s *PersonaServer) Serve(w http.ResponseWriter, r *http.Request) {
 		payHeader = r.Header.Get(x402.HeaderPaymentV2)
 	}
 	if payHeader == "" {
+		// A slow provider is slow to quote too: the price check and the health
+		// probe time this answer, so it is told apart before anyone has paid it.
+		time.Sleep(p.Delay)
 		writeJSON(w, http.StatusPaymentRequired, x402.Challenge{Version: 1, Error: "X-PAYMENT header is required", Accepts: []x402.Requirements{s.requirements(p)}})
 		return
 	}

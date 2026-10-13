@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
+import { EmailNotifications } from "@/components/console/email-notifications";
 import { useSession } from "@/lib/session";
 import type { SessionInfo } from "@/lib/types";
 import { GitHubMark, GoogleMark, IconCheck, IconExternal, IconMail, IconWallet, Spinner } from "@/components/icons";
@@ -189,6 +190,11 @@ export default function SettingsPage() {
           </ul>
         </section>
       )}
+
+      {/* It reads the confirmation link's token from the address bar. */}
+      <Suspense fallback={null}>
+        <EmailNotifications />
+      </Suspense>
 
       <section className="mt-8">
         <h2 className="text-[0.95rem] font-semibold text-foreground">Where you&apos;re signed in</h2>

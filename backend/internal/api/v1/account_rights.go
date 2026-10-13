@@ -109,6 +109,11 @@ func (a *API) exportMe(w http.ResponseWriter, r *http.Request) {
 		"exported_at": time.Now().UTC(),
 		"account":     a.toUserResponse(ctx, u),
 	}
+	if a.b.Notifications != nil {
+		if n, err := a.b.Notifications.View(ctx, u); err == nil {
+			out["email_notifications"] = n
+		}
+	}
 	if g, _, err := a.b.Accounts.Guardrails(ctx, sess.UserID); err == nil {
 		out["guardrails"] = g
 	}

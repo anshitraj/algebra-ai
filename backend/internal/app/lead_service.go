@@ -1,8 +1,10 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"net/url"
 	"slices"
@@ -40,6 +42,37 @@ type LeadStore interface {
 type LeadService struct {
 	store LeadStore
 	now   func() time.Time
+	// notify and notifyTo tell the operator about each new enquiry by email
+	// (LEADS_NOTIFY_EMAIL). Without them the stored row is the only record.
+	notify   Mailer
+	notifyTo string
+	log      *slog.Logger
+}
+
+// SetNotify emails each new enquiry to the operator at to, after it is
+// stored. A failed email is logged; the enquiry is kept either way.
+func (s *LeadService) SetNotify(m Mailer, to string, log *slog.Logger) {
+	s.notify, s.notifyTo, s.log = m, strings.TrimSpace(to), log
+}
+
+// tell sends the operator a new enquiry, off the request's path.
+func (s *LeadService) tell(ctx context.Context, l Lead) {
+	if s.notify == nil || s.notifyTo == "" {
+		return
+	}
+	log := s.log
+	if log == nil {
+		log = slog.Default()
+	}
+	body := fmt.Sprintf("A Book a Demo enquiry was stored as %s.\n\nBusiness: %s\nWork email: %s\nWebsite: %s\nEstimated usage: %s\n\nWhat they want to build:\n%s\n\nMessage:\n%s\n\nRead every enquiry with GET /api/v1/leads and the operator token.\n",
+		l.ID, l.BusinessName, l.WorkEmail, cmp.Or(l.Website, "(none)"), cmp.Or(l.EstimatedUsage, "(not given)"), l.UseCase, cmp.Or(l.Message, "(none)"))
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		defer cancel()
+		if err := s.notify.Send(ctx, s.notifyTo, "New demo request: "+l.BusinessName, body); err != nil {
+			log.Warn("leads: emailing the operator failed; the enquiry is stored", "lead_id", l.ID, "err", err)
+		}
+	}()
 }
 
 func NewLeadService(store LeadStore) *LeadService {
@@ -61,8 +94,9 @@ func cleanLeadText(s string, max int, multiline bool) (string, bool) {
 	return s, len([]rune(s)) <= max
 }
 
-// Submit validates an enquiry and stores it. Nothing is sent anywhere else:
-// the row is the record, read by the operator.
+// Submit validates an enquiry and stores it. The row is the record, read by
+// the operator; with SetNotify the operator is also emailed, and nothing is
+// sent anywhere else.
 func (s *LeadService) Submit(ctx context.Context, in Lead) (*Lead, error) {
 	bad := func(msg string) (*Lead, error) { return nil, fmt.Errorf("%w: %s", ErrInvalidRequest, msg) }
 	var ok bool
@@ -102,6 +136,7 @@ func (s *LeadService) Submit(ctx context.Context, in Lead) (*Lead, error) {
 	if err := s.store.CreateLead(ctx, &in); err != nil {
 		return nil, err
 	}
+	s.tell(ctx, in)
 	return &in, nil
 }
 

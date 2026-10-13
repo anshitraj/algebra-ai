@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import * as api from "@/lib/api-client";
-import type { EconIntent } from "@/lib/types";
+import type { EconIntent, SpendPass } from "@/lib/types";
+import type { Simulation } from "@/lib/routing-types";
+import { DecisionPanel } from "@/components/console/decision-panel";
 import { formatUSDC } from "@/lib/money";
 import { IconShield, Spinner } from "@/components/icons";
 
@@ -19,11 +21,16 @@ export function ApprovalCard({
   intentId,
   provider,
   askedFirst,
+  decision,
+  pass,
   resolved,
   onResolved,
 }: {
   intentId: string;
   provider?: string;
+  /** The server's dry run for this request: the provider, total, seller, network, rules and decision. */
+  decision?: Simulation;
+  pass?: SpendPass | null;
   /** The person asked to approve every payment (the chat's "Ask before paying"). */
   askedFirst?: boolean;
   resolved?: ApprovalOutcome;
@@ -98,6 +105,11 @@ export function ApprovalCard({
           )}
         </div>
       </div>
+      {decision && !resolved && !closed && (
+        <div className="mt-3 sm:pl-12">
+          <DecisionPanel sim={decision} pass={pass} />
+        </div>
+      )}
       {error && <p className="mt-3 rounded-lg bg-danger-tint px-3 py-2 text-sm text-danger">{error}</p>}
       {!resolved && !closed && intent && (
         <div className="mt-4 flex flex-wrap gap-2.5 sm:pl-12">

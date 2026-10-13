@@ -37,34 +37,42 @@ const workParams = {
   },
   max_price_usdc: {
     type: "number",
-    description: "The most this one call may cost, in USDC. Use the user's stated limit, else 0.05.",
-  },
-  strategy: {
-    type: "string",
-    enum: ["balanced", "cheapest", "fastest"],
-    description: "How to choose among providers: balanced (price, reliability, speed, honesty together), cheapest or fastest. The user's own choice in the chat overrides this. Default balanced.",
+    description: "The most one call may cost, in USDC. Use the user's stated limit, else 0.05.",
   },
 };
 
+// Cards, not payments: the person chooses and pays with a click (see execute-tool.ts).
+const SHOWS_CARDS = "Nothing is paid: the user sees the comparison as cards and pays with a click. Your turn ends after this call.";
+
 export const AGENT_TOOLS: AgentTool[] = [
   {
-    name: "route_work",
+    name: "find_options",
     description:
-      "The preferred way to get something done: have Algebra do a class of work by routing across every provider that does it, " +
-      "instead of picking one provider yourself. Algebra asks each provider for its real price (unpaid), skips any that are down, " +
-      "charge more than they list or price like a trap, ranks the rest by the strategy under the user's Spend Pass, pays the best in " +
-      "USDC on Solana, and falls back to the next only when the attempt is proven to have moved no money. Returns the same outcomes as " +
-      "pay_and_call, plus the routing: who was chosen, at what price, and why. Use pay_and_call only when the user names a provider " +
-      "or the work isn't one of these classes.",
+      "The way to get paid work done in this chat. Algebra asks every provider of the work for its real price (an unpaid request), " +
+      "drops the ones that are down, overcharge, are blocked, or that the user's Spend Pass rules out, and shows the user the compared " +
+      "providers with three cards: Cheapest, Balanced (recommended) and Fastest, each with its price, its speed in ms and how that speed " +
+      "was measured, its reliability and what is known about the seller. The user picks one or more cards and pays with a click; you " +
+      "never pay. Give `work` for a class of work, or `capability` and `provider_id` from get_provider_endpoints for one named " +
+      "provider. When the user asks for several things at once (a weather forecast and a token price, say), call find_options once " +
+      "for each, in the same round. " + SHOWS_CARDS,
+    parameters: {
+      type: "object",
+      properties: {
+        ...workParams,
+        capability: { type: "string", description: "Only for a named provider: the endpoint's capability ID from get_provider_endpoints." },
+        provider_id: { type: "string", description: "Only for a named provider: its ID exactly as search_providers returned it." },
+      },
+      required: ["input", "max_price_usdc"],
+    },
+  },
+  {
+    name: "route_work",
+    description: "Older name of find_options for a class of work. " + SHOWS_CARDS,
     parameters: { type: "object", properties: workParams, required: ["work", "input", "max_price_usdc"] },
   },
   {
     name: "check_policy",
-    description:
-      "A dry run of route_work: would Algebra allow this under the user's Spend Pass, who would it pay and how much, and why every " +
-      "other provider would be refused (down, over its listing, trap price, wrong network, not allowed by the pass, new provider). " +
-      "Nothing is reserved or paid; providers only get the unpaid price request. Use it when the user asks what something would cost, " +
-      "whether it would be allowed, or which provider Algebra would pick.",
+    description: "Older name of find_options for a class of work: the same comparison, with each provider's ALLOW, HOLD or BLOCK. " + SHOWS_CARDS,
     parameters: { type: "object", properties: workParams, required: ["work", "input"] },
   },
   {
@@ -106,12 +114,8 @@ export const AGENT_TOOLS: AgentTool[] = [
   {
     name: "pay_and_call",
     description:
-      "Have Algebra call one paid endpoint and pay for it in USDC on Solana, under the user's Spend Pass. Algebra asks the endpoint " +
-      "for its real price first, refuses anything above max_price_usdc or outside the pass, pays from its wallet only if allowed, " +
-      "calls the API, verifies the payment on-chain and returns the provider's response with a signed receipt. Every call that " +
-      "pays moves real money on mainnet (test USDC on devnet). Outcomes: delivered (with the response); approval_required (the " +
-      "user must approve in the card below: stop and say so); refused (the pass or the price ruled it out: explain); failed " +
-      "(nothing was paid unless it says so).",
+      "Older name of find_options for one named provider's endpoint: shows the user a card for that endpoint, with its live price and " +
+      "what is known about the seller. " + SHOWS_CARDS,
     parameters: {
       type: "object",
       properties: {
@@ -134,8 +138,8 @@ export const AGENT_TOOLS: AgentTool[] = [
   {
     name: "run_approved_intent",
     description:
-      "Run a call the user has just approved in the approval card: the same intent_id pay_and_call returned with approval_required, " +
-      "and the same provider. Only after the user says they approved it.",
+      "Run a call the user has just approved in an approval card: the intent_id from the approval_required answer, and the same " +
+      "provider. Only after the user says they approved it; the server refuses it otherwise.",
     parameters: {
       type: "object",
       properties: {

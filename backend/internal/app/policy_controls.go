@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/econ"
+	"github.com/project-algebra/algebra/internal/domain/intel"
 	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 	"github.com/project-algebra/algebra/internal/domain/spendpass"
@@ -25,17 +27,56 @@ const (
 	// pass's new-provider rule holds this call back; another provider, one
 	// they have paid, may still be tried, or the person may approve.
 	RejectNewProvider = "new_provider"
+	// RejectUnverifiedProvider: the pass asks for a person's yes before paying
+	// a provider whose identity isn't verified, and there is none yet.
+	RejectUnverifiedProvider = "unverified_provider"
 )
 
 // RejectNewProviderGate is the plan-level code for a provider held back by
-// the new-provider rule.
-const RejectNewProviderGate = "new_provider_gate"
+// the new-provider rule, and RejectUnverifiedGate by the unverified-provider rule.
+const (
+	RejectNewProviderGate = "new_provider_gate"
+	RejectUnverifiedGate  = "unverified_provider_gate"
+)
+
+// ProviderTrustReader is the provider registry as the coordinator needs it:
+// whether a provider's identity has been verified (IntelService).
+type ProviderTrustReader interface {
+	ProviderTrust(ctx context.Context, providerIDs []string) (map[string]intel.ProviderTrust, error)
+}
+
+// SetProviderTrust gives the coordinator the provider registry, for the Spend
+// Pass rule on unverified providers. Without it every provider counts as
+// unverified, so a pass that asks for verified providers holds every payment.
+func (s *EconomicService) SetProviderTrust(t ProviderTrustReader) { s.trust = t }
+
+// providerVerified reports whether the provider's identity is verified, read
+// only when the pass has a rule that needs it. Unreadable counts as not
+// verified: the rule fails closed.
+func (s *EconomicService) providerVerified(ctx context.Context, p *spendpass.Pass, provider string) bool {
+	if p.Controls.Effective().UnverifiedProviders == spendpass.UnverifiedAllow {
+		return true
+	}
+	return providerVerifiedBy(ctx, s.trust, provider, s.log)
+}
+
+func providerVerifiedBy(ctx context.Context, t ProviderTrustReader, provider string, log *slog.Logger) bool {
+	if t == nil {
+		return false
+	}
+	got, err := t.ProviderTrust(ctx, []string{provider})
+	if err != nil {
+		log.Warn("reading provider trust failed; treating the provider as unverified", "provider", provider, "err", err)
+		return false
+	}
+	return got[provider].IdentityVerified()
+}
 
 // passControls applies a pass's controls to a reservation request, under the
 // pass's lock: how many attempts it made in the last minute, overall and to
 // this provider, and whether its person has ever paid this provider. It
 // returns the rejection reason and reason codes, or "" to go ahead.
-func (s *EconomicService) passControls(u EconUnit, p *spendpass.Pass, in *econ.Intent, provider string, hold int64, now time.Time) (string, []string, error) {
+func (s *EconomicService) passControls(u EconUnit, p *spendpass.Pass, in *econ.Intent, provider string, verified bool, hold int64, now time.Time) (string, []string, error) {
 	c := p.Controls.Effective()
 	since := now.Add(-time.Minute)
 	all, err := u.PassAttemptsSince(p.ID, "", since)
@@ -58,6 +99,13 @@ func (s *EconomicService) passControls(u EconUnit, p *spendpass.Pass, in *econ.I
 	}
 	if code, _ := c.NewProvider(hold, paid, in.ApprovedAt != nil); code != "" {
 		return RejectNewProvider, []string{code}, nil
+	}
+	switch code, approvable := c.Unverified(verified, in.ApprovedAt != nil); {
+	case code == "":
+	case approvable:
+		return RejectUnverifiedProvider, []string{code}, nil
+	default:
+		return RejectAuthorityDenied, []string{code}, nil
 	}
 	return "", nil, nil
 }
@@ -89,24 +137,31 @@ func (s *EconomicService) Escalate(ctx context.Context, intentID string, codes [
 }
 
 // escalateIfGated turns "nothing could be tried" into "waiting for you" when
-// the only thing between the intent and a provider is the new-provider rule.
-// Any other outcome is returned as it was.
+// the only thing between the intent and a provider is a rule a person's yes
+// lifts: the new-provider rule or the unverified-provider rule. Any other
+// outcome is returned as it was.
 func (s *ExecutionService) escalateIfGated(ctx context.Context, view *IntentView, rep *PlanReport, err error) error {
 	var nr *NoRoute
 	if !errors.As(err, &nr) || rep == nil || len(rep.Attempts) > 0 || view.ApprovedAt != nil {
 		return err
 	}
-	gated := slices.ContainsFunc(rep.Rejected, func(r routing.Rejection) bool { return r.Code == RejectNewProviderGate })
-	if !gated {
+	var codes []string
+	if slices.ContainsFunc(rep.Rejected, func(r routing.Rejection) bool { return r.Code == RejectNewProviderGate }) {
+		codes = append(codes, spendpass.ReasonNewProviderApproval)
+	}
+	if slices.ContainsFunc(rep.Rejected, func(r routing.Rejection) bool { return r.Code == RejectUnverifiedGate }) {
+		codes = append(codes, spendpass.ReasonUnverifiedNeedsApproval)
+	}
+	if len(codes) == 0 {
 		return err
 	}
-	v, eerr := s.econ.Escalate(ctx, view.ID, []string{spendpass.ReasonNewProviderApproval})
+	v, eerr := s.econ.Escalate(ctx, view.ID, codes)
 	if eerr != nil {
 		s.log.Warn("execution: escalating a gated intent failed", "intent_id", view.ID, "err", eerr)
 		return err
 	}
 	rep.Intent = v
-	return &ReservationRejected{Reason: RejectApproval, State: v.State, ReasonCodes: []string{spendpass.ReasonNewProviderApproval}}
+	return &ReservationRejected{Reason: RejectApproval, State: v.State, ReasonCodes: codes}
 }
 
 // --- The kill switch and the controls, from the person's side ---

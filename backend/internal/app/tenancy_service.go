@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -45,6 +46,8 @@ type TenancyStore interface {
 
 // ProjectPassLister lists the Spend Passes of one project and environment.
 type ProjectPassLister interface {
+	// GetByAgent is the pass an agent spends under.
+	GetByAgent(ctx context.Context, agentID string) (*spendpass.Pass, error)
 	ListByProject(ctx context.Context, projectID, env string) ([]spendpass.Pass, error)
 }
 
@@ -185,6 +188,16 @@ func (s *TenancyService) CreateOrganization(ctx context.Context, userID, name st
 	if err != nil {
 		return nil, invalid(err)
 	}
+	// Plan limits and the trial are per organization, so the number one
+	// person may own is bounded: otherwise a new organization would be a new
+	// free project and a new trial, as often as anyone liked.
+	owned, err := s.ownedOrganizations(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(owned) >= tenancy.MaxOwnedOrganizations {
+		return nil, fmt.Errorf("%w: an account can own at most %d organizations", shared.ErrConflict, tenancy.MaxOwnedOrganizations)
+	}
 	now := s.now().UTC()
 	o := &tenancy.Organization{ID: newID("org"), Name: name, OwnerUserID: userID, Plan: "free", CreatedAt: now}
 	if err := s.store.CreateOrganization(ctx, o, tenancy.Member{OrgID: o.ID, UserID: userID, Role: tenancy.RoleOwner, CreatedAt: now}); err != nil {
@@ -199,6 +212,21 @@ func (s *TenancyService) CreateOrganization(ctx context.Context, userID, name st
 	return m, nil
 }
 
+// ownedOrganizations are the organizations userID owns.
+func (s *TenancyService) ownedOrganizations(ctx context.Context, userID string) ([]OrgMembership, error) {
+	all, err := s.store.OrganizationsForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var out []OrgMembership
+	for _, m := range all {
+		if m.Role == tenancy.RoleOwner {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
 // StartTrial starts the organization's seven-day trial of the Startup plan.
 // Owners and admins only, and once: an organization that has had its trial
 // is refused. When it ends the organization is on its own plan again, with
@@ -210,6 +238,22 @@ func (s *TenancyService) StartTrial(ctx context.Context, userID, orgID string) (
 	}
 	if !m.Role.CanManage() {
 		return nil, fmt.Errorf("%w: only an organization's owners and admins start a trial", shared.ErrUnauthorized)
+	}
+	// One trial per person: the organization's owner may have had it already
+	// in another organization they own.
+	org, err := s.store.Organization(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	owner := cmp.Or(org.OwnerUserID, userID)
+	owned, err := s.ownedOrganizations(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	for _, other := range owned {
+		if other.ID != orgID && other.TrialEndsAt != nil {
+			return nil, fmt.Errorf("%w: the seven-day trial is once per person, and this account has had it (in %q)", shared.ErrConflict, other.Name)
+		}
 	}
 	now := s.now().UTC()
 	ends := now.Add(tenancy.TrialLength)
@@ -544,15 +588,24 @@ func (s *TenancyService) KeyForAgent(ctx context.Context, ag *agent.Identity) (*
 	return k, nil
 }
 
-// DefaultStrategy is the provider-selection strategy a request made with an
-// API key gets when it names none: its project's default (cheapest, fastest or
-// balanced), or "" for any other caller and for a project with no default.
-func (s *TenancyService) DefaultStrategy(ctx context.Context, ag *agent.Identity) string {
-	k, err := s.KeyForAgent(ctx, ag)
-	if err != nil || k == nil {
+// DefaultStrategy is the provider-selection strategy a request gets when it
+// names none: the default of the project it runs in (cheapest, fastest or
+// balanced), or "" when it has no project or its project sets none. executor
+// is the agent whose Spend Pass the request runs under; a request made with an
+// API key belongs to the key's project, any other to its pass's project.
+func (s *TenancyService) DefaultStrategy(ctx context.Context, ag *agent.Identity, executor string) string {
+	projectID := ""
+	if k, err := s.KeyForAgent(ctx, ag); err == nil && k != nil {
+		projectID = k.ProjectID
+	} else if s.passes != nil && executor != "" {
+		if p, err := s.passes.GetByAgent(ctx, executor); err == nil {
+			projectID = p.ProjectID
+		}
+	}
+	if projectID == "" {
 		return ""
 	}
-	p, err := s.store.Project(ctx, k.ProjectID)
+	p, err := s.store.Project(ctx, projectID)
 	if err != nil {
 		return ""
 	}

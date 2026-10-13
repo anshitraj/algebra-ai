@@ -83,15 +83,18 @@ const (
 )
 
 type ranked struct {
-	opt      Option
-	trust    Trust
-	tier     tier
-	cost     int64
-	latency  int // expected milliseconds; 0 when unknown
-	reliable float64
-	quality  float64
-	honesty  float64
-	notes    []string
+	opt     Option
+	trust   Trust
+	tier    tier
+	cost    int64
+	latency int // expected milliseconds; 0 when unknown
+	// latencySource is where latency came from: see Score.LatencySource.
+	latencySource string
+	calls         int
+	reliable      float64
+	quality       float64
+	honesty       float64
+	notes         []string
 }
 
 // Rank orders options best-first for a mode and explains each one's place. It
@@ -138,7 +141,7 @@ func Rank(mode Mode, opts []Option) []PlanStep {
 			ScoreTrust:        trustScore[r.trust],
 			ScorePriceHonesty: r.honesty,
 		}
-		sc := Score{Components: roundAll(comp), Notes: r.notes}
+		sc := Score{Components: roundAll(comp), Notes: r.notes, LatencyMS: r.latency, LatencySource: r.latencySource, Calls: r.calls}
 		switch mode {
 		case ModeCheapest:
 			sc.Total, sc.Weights = round(comp[ScoreCost]), map[string]float64{ScoreCost: 1}
@@ -176,7 +179,7 @@ func Rank(mode Mode, opts []Option) []PlanStep {
 		out[i] = steps[idx]
 		out[i].Rank = i + 1
 		if i == 0 && len(rs) > 1 {
-			out[i].Score.Notes = append([]string{headline(mode, len(rs))}, out[i].Score.Notes...)
+			out[i].Score.Notes = append([]string{headline(mode, len(rs), minLatency > 0)}, out[i].Score.Notes...)
 		}
 	}
 	return out
@@ -205,14 +208,24 @@ func describe(o Option) ranked {
 		r.notes = append(r.notes, "demoted: it mostly fails")
 	}
 
-	// Latency: Algebra's own measurement beats anyone's claim.
+	if h != nil {
+		r.calls = h.Calls
+	}
+
+	// Latency: Algebra's own measurement beats anyone's claim. A provider with
+	// no record yet is timed by its unpaid price check, so the fastest one can
+	// be found before anyone has paid it; the note says which measure it is.
 	switch {
 	case observed && h.P50LatencyMS > 0:
-		r.latency = h.P50LatencyMS
+		r.latency, r.latencySource = h.P50LatencyMS, LatencyObserved
+		r.notes = append(r.notes, fmt.Sprintf("median %d ms over %d paid calls", h.P50LatencyMS, h.Calls))
 	case q.EstimatedLatencyMS > 0:
-		r.latency = q.EstimatedLatencyMS
+		r.latency, r.latencySource = q.EstimatedLatencyMS, LatencyEstimate
 	case c.EstimatedLatencyMS > 0:
-		r.latency = c.EstimatedLatencyMS
+		r.latency, r.latencySource = c.EstimatedLatencyMS, LatencyEstimate
+	case q.PriceCheckMS > 0:
+		r.latency, r.latencySource = q.PriceCheckMS, LatencyPriceCheck
+		r.notes = append(r.notes, fmt.Sprintf("speed from its price check: %d ms (no paid calls timed yet)", q.PriceCheckMS))
 	}
 
 	// Quality: only a judged record says anything.
@@ -233,11 +246,24 @@ func describe(o Option) ranked {
 	return r
 }
 
-func headline(mode Mode, n int) string {
+// Where a ranked speed came from (Score.LatencySource).
+const (
+	LatencyObserved   = "observed"
+	LatencyEstimate   = "estimate"
+	LatencyPriceCheck = "price_check"
+)
+
+// headline is the first note of the winner. Fastest without a single timed
+// offer says so instead of claiming a speed it never measured: the ranking
+// then falls back to price.
+func headline(mode Mode, n int, anySpeed bool) string {
 	switch mode {
 	case ModeCheapest:
 		return fmt.Sprintf("cheapest of %d offers", n)
 	case ModeFastest:
+		if !anySpeed {
+			return fmt.Sprintf("no speed known for any of %d offers yet: ranked by price", n)
+		}
 		return fmt.Sprintf("fastest of %d offers", n)
 	}
 	return fmt.Sprintf("best overall of %d offers", n)

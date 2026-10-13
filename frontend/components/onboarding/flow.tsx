@@ -18,7 +18,8 @@ const EASE = [0.16, 1, 0.3, 1] as const;
 
 /**
  * Onboarding is one screen: a name if we don't have one, what the agents
- * will pay for, then on to issuing the first Spend Pass. The account's
+ * will pay for, then on to the quickstart (a project's sandbox Spend Pass
+ * and an API key). The account's
  * legacy shopping guardrails get their defaults; nothing here asks for an
  * address, a card or a wallet.
  */
@@ -87,8 +88,8 @@ export function OnboardingFlow() {
           {user?.name ? `Welcome, ${firstName(user)}.` : "Welcome to Algebra."}
         </h1>
         <p className="mt-3 text-[1.0125rem] leading-relaxed text-muted">
-          Algebra lets your AI agents pay for APIs in USDC on Solana, inside limits you set. Agents get a Spend Pass, never a
-          key, and every payment ends in a signed receipt.
+          Algebra lets your AI agents pay for APIs in USDC on Solana, inside limits you set. Your agent gets an API key that
+          spends only through a Spend Pass, never a wallet key, and every payment ends in a signed receipt.
         </p>
 
         {needsName && (
@@ -132,8 +133,8 @@ export function OnboardingFlow() {
 
         <ol className="mt-10 space-y-3 rounded-2xl border border-border bg-surface p-5 text-sm">
           {[
-            ["Issue a Spend Pass", "A USDC budget, the most one call may cost, when to ask you, and which providers it may pay."],
-            ["Connect your agent", "Over MCP or REST, with the pass's token."],
+            ["Set the limits", "A Spend Pass for your project: a USDC budget, the most one call may cost, when to ask you, and which providers it may pay."],
+            ["Get an API key and connect your agent", "Over MCP or REST. The key spends only through that pass, starting in the sandbox with simulated USDC."],
             ["Watch it work", "Every call, its price, the payment and the receipt, in Executions."],
           ].map(([t, b], i) => (
             <li key={t} className="flex gap-3">
@@ -154,12 +155,12 @@ export function OnboardingFlow() {
 
         <button
           type="button"
-          onClick={() => finish(uses.length ? `/console/passes?new=1&for=${encodeURIComponent(uses.join(","))}` : "/console/passes?new=1")}
+          onClick={() => finish("/console/quickstart")}
           disabled={busy}
           className="mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-[0.95rem] font-medium text-primary-tint transition-opacity hover:opacity-95 disabled:opacity-70"
         >
           {busy ? <Spinner size={16} /> : null}
-          Issue my first Spend Pass <IconArrowRight size={16} />
+          Start the quickstart <IconArrowRight size={16} />
         </button>
       </motion.main>
     </div>

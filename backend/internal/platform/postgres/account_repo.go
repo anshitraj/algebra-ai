@@ -298,6 +298,7 @@ func (r *AccountRepo) EraseUser(ctx context.Context, userID string, at time.Time
 		{"sign-in wallets", `DELETE FROM user_wallets WHERE user_id = $1`},
 		{"sessions", `DELETE FROM user_sessions WHERE user_id = $1`},
 		{"reset tokens", `DELETE FROM password_reset_tokens WHERE user_id = $1`},
+		{"notification email", `DELETE FROM user_notifications WHERE user_id = $1`},
 		{"saved addresses", `DELETE FROM private_profiles WHERE user_id = $1`},
 		{"commerce profile", `DELETE FROM commerce_profiles WHERE user_id = $1`},
 		{"guardrails", `DELETE FROM user_guardrails WHERE user_id = $1`},

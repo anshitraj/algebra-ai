@@ -169,6 +169,11 @@ type userResponse struct {
 	CreatedAt string           `json:"created_at"`
 	// Mode is "live" or "demo" — see account.Mode.
 	Mode string `json:"mode"`
+	// NotificationEmail is where sign-in alerts and receipts go; empty when
+	// nowhere. NeedsNotificationEmail: the account signed in with a wallet,
+	// has no address mail can reach, and has confirmed none.
+	NotificationEmail      string `json:"notification_email"`
+	NeedsNotificationEmail bool   `json:"needs_notification_email"`
 }
 
 func (a *API) toUserResponse(ctx context.Context, u *account.User) userResponse {
@@ -184,7 +189,14 @@ func (a *API) toUserResponse(ctx context.Context, u *account.User) userResponse 
 	if app.IsWalletOnlyEmail(email) {
 		email = "" // a placeholder, not an address anyone can write to
 	}
+	var notify app.NotificationView
+	if a.b.Notifications != nil {
+		if v, err := a.b.Notifications.View(ctx, u); err == nil {
+			notify = *v
+		}
+	}
 	return userResponse{
+		NotificationEmail: notify.Address, NeedsNotificationEmail: notify.NeedsEmail,
 		ID: u.ID, Email: email, Name: u.Name, AvatarURL: u.AvatarURL,
 		EmailVerified: u.EmailVerifiedAt != nil, Onboarded: u.OnboardedAt != nil,
 		HasPassword: u.HasPassword(), LinkedProviders: linked, Wallets: wallets,
@@ -258,6 +270,12 @@ func (a *API) privySignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setSessionCookie(w, res.Token)
+	if a.b.Notifications != nil && id.Profile.Email != "" && id.Profile.EmailVerified {
+		// A wallet account whose person has since verified an email with Privy
+		// is written to there, without confirming it a second time.
+		a.b.Notifications.AdoptVerifiedEmail(r.Context(), res.User, id.Profile.Email)
+	}
+	a.signedIn(r, res)
 	resp := a.toUserResponse(r.Context(), res.User)
 	status := http.StatusOK
 	if res.Created {
@@ -347,6 +365,7 @@ func (a *API) signUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setSessionCookie(w, res.Token)
+	a.signedIn(r, res)
 	resp := a.toUserResponse(r.Context(), res.User)
 	writeJSON(w, http.StatusCreated, sessionResponse{User: &resp})
 }
@@ -375,6 +394,7 @@ func (a *API) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setSessionCookie(w, res.Token)
+	a.signedIn(r, res)
 	resp := a.toUserResponse(r.Context(), res.User)
 	writeJSON(w, http.StatusOK, sessionResponse{User: &resp})
 }
@@ -561,6 +581,7 @@ func (a *API) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setSessionCookie(w, res.Token)
+	a.signedIn(r, res)
 	dest := "/console"
 	if res.User.OnboardedAt == nil {
 		dest = "/onboarding"

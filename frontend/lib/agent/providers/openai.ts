@@ -1,7 +1,8 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import { AGENT_TOOLS, type AgentTool } from "../tools";
-import { questionsAsText, runRound, runTool } from "../run-tool";
+import { optionsAsText, questionsAsText, runRound, runTool } from "../run-tool";
+import type { OptionGroup } from "../events";
 import type { PendingApproval } from "../pending-approval";
 import { MAX_TOOL_ROUNDS, TOO_MANY_ROUNDS_REPLY, type ProviderTurnInput, type ProviderTurnResult } from "./types";
 
@@ -43,6 +44,7 @@ export async function runTurn({
     if (message.content?.trim()) emit({ type: "text", text: message.content.trim() });
 
     let asked = "";
+    const shown: OptionGroup[] = [];
     const fnCalls = toolCalls.filter((c) => c.type === "function");
     const outcomes = await runRound(
       fnCalls,
@@ -58,11 +60,14 @@ export async function runTurn({
       }
     );
     for (const [i, call] of fnCalls.entries()) {
-      const { result, pendingApproval: pa, questions } = outcomes[i];
+      const { result, pendingApproval: pa, questions, options } = outcomes[i];
+      if (options) shown.push(options);
       pendingApproval = pa ?? pendingApproval;
       if (questions) asked = questionsAsText(questions);
       convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
     }
+    // Cards end the turn too: the person chooses, and their click is the next message.
+    if (shown.length > 0) asked = [asked, optionsAsText(shown)].filter(Boolean).join("\n");
     if (asked) {
       convo.push({ role: "assistant", content: asked });
       return { reply: "", history: convo, pendingApproval };
