@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/econ"
 )
@@ -52,6 +53,16 @@ type Rail interface {
 // and bound to the attempt; evidence records what was authorized.
 type PaymentAuthorizer interface {
 	Authorize(ctx context.Context, r *econ.Reservation, req PaymentRequest) (*PaymentAuthority, error)
+}
+
+// ChannelRecoverer is a rail that can get back money it escrowed in a payment
+// channel whose provider never settled it. Each call takes at most the next
+// step (close, seal, withdraw), and does nothing while the provider may still
+// settle, so it is safe to call on every sweep.
+type ChannelRecoverer interface {
+	// RecoverEscrow acts on the channel named in ev, not before notBefore, and
+	// says in a few words what it did ("" when it did nothing).
+	RecoverEscrow(ctx context.Context, ev econ.Evidence, notBefore time.Time) (string, error)
 }
 
 // PaymentRequest is what a provider asked to be paid (for x402, the

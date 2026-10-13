@@ -214,8 +214,11 @@ export function Invoice({ intentId }: { intentId: string }) {
           <h2 className="text-[0.7rem] font-medium tracking-wider text-muted uppercase sm:col-span-2">Payment</h2>
           <Fact label="Rail" value={s ? `${s.rail}${network ? ` · ${networkWord(network)}` : ""}` : "—"} />
           <Fact label="Asset" value={s?.asset && s.asset.length > 12 ? `USDC · mint ${mid(s.asset, 4)}` : (s?.asset ?? "USDC")} />
-          {s?.payer && <Fact label="Settled by" value={`Algebra's settlement wallet ${mid(s.payer, 4)}`} />}
+          {s?.funding && <Fact label="Funded from" value={`Your Spend Pass vault ${mid(s.funding.vault, 5)}`} />}
+          {s?.funding && <Fact label="Vault owner" value={`Your wallet ${mid(s.funding.owner, 5)}`} />}
+          {s?.payer && <Fact label="Signed by" value={`Algebra's payer key ${mid(s.payer, 4)}`} />}
           {s?.pay_to && <Fact label="Paid to" value={mid(s.pay_to, 6)} mono />}
+          {s?.funding && <Fact label="Vault transaction" value={mid(s.funding.pull_signature, 10)} mono />}
           {s?.transaction && <Fact label="Transaction" value={mid(s.transaction, 10)} mono />}
           <Fact label="Attempts" value={`${c?.coordination.attempts ?? intent.attempts}${c?.coordination.duplicate_commit_attempts_blocked ? ` · ${c.coordination.duplicate_commit_attempts_blocked} duplicate payment stopped` : " · paid once"}`} />
           {onChain && (
@@ -226,6 +229,11 @@ export function Invoice({ intentId }: { intentId: string }) {
               <a className="inline-flex items-center gap-1 font-medium text-primary hover:underline" href={explorerTx(s!.transaction!, network)} target="_blank" rel="noopener noreferrer">
                 View on Solana Explorer <IconExternal size={11} />
               </a>
+              {s?.funding && (
+                <a className="inline-flex items-center gap-1 font-medium text-primary hover:underline" href={solscanTx(s.funding.pull_signature, network)} target="_blank" rel="noopener noreferrer">
+                  Vault transaction on Solscan <IconExternal size={11} />
+                </a>
+              )}
             </p>
           )}
         </section>

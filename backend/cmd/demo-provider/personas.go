@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -31,6 +32,10 @@ type persona struct {
 	Method                string
 	Delay                 time.Duration
 	Down                  bool
+	// Stall (upto only): takes the payer's channel open, then never settles it.
+	// It is off unless DEMO_PROVIDER_STALL=on: a seller that keeps the money
+	// parked is for testing the payer's way out, not for a catalog.
+	Stall bool
 }
 
 // Each class has a cheap-but-slow seller, a fast one and (for some) a
@@ -65,6 +70,22 @@ var personas = []persona{
 	{Name: "locus", Title: "Locus IP Lookup (demo, slow)", Class: "ip.geolocate", ListedMinor: 300, AskMinor: 300, Scheme: "exact", Method: "POST", Delay: 800 * time.Millisecond},
 
 	{Name: "meter", Title: "Metered LLM (demo, x402 upto)", Class: "llm.chat", ListedMinor: 50_000, AskMinor: 50_000, Scheme: "upto", Method: "POST"},
+	{Name: "meterstall", Title: "Stalling LLM (demo, never settles)", Class: "llm.chat", ListedMinor: 40_000, AskMinor: 40_000, Scheme: "upto", Method: "POST", Stall: true},
+}
+
+// stallEnabled: DEMO_PROVIDER_STALL=on adds the seller that never settles.
+var stallEnabled = os.Getenv("DEMO_PROVIDER_STALL") == "on"
+
+// served are the personas this run serves and lists.
+func served() []persona {
+	out := make([]persona, 0, len(personas))
+	for _, p := range personas {
+		if p.Stall && !stallEnabled {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // suffixes name each class's path, so a request URL says what it buys.
@@ -80,7 +101,7 @@ func (p persona) path() string { return p.endpoint() }
 // configured is the ECONOMIC_PROVIDERS entry for each persona.
 func configured(base string) []map[string]any {
 	out := []map[string]any{}
-	for _, p := range personas {
+	for _, p := range served() {
 		out = append(out, map[string]any{
 			"capability": p.Class, "provider": "demo:" + p.Name, "name": p.Title, "endpoint": base + p.endpoint(),
 			"method": p.Method, "network": "solana-devnet", "price_minor": p.ListedMinor,
@@ -128,6 +149,10 @@ func (s *server) requirements(p persona) map[string]any {
 		req["extra"] = map[string]any{
 			"paymentFlow": "escrow", "feePayer": me, "receiverAuthorizer": me, "withdrawDelay": 900,
 			"tokenProgram": solana.TokenProgram.String(),
+		}
+		if p.Stall {
+			// A short grace period, so the payer's way out can be watched in minutes.
+			req["extra"].(map[string]any)["withdrawDelay"] = 30
 		}
 	}
 	return req
@@ -464,6 +489,9 @@ func (s *server) payUpto(ctx context.Context, p persona, header string, in map[s
 		return "", 0, "", fmt.Errorf("opening the channel: %w", err)
 	}
 	log.Printf("%s: channel %s opened (%s), ceiling %d", p.Name, ch, openSig, terms.MaxAmount)
+	if p.Stall {
+		return "", 0, "", errors.New("demo: this seller opened the channel and will never settle it")
+	}
 
 	// The work's real cost: a base fee plus a little per byte of prompt.
 	prompt, _ := in["prompt"].(string)

@@ -299,7 +299,19 @@ export type IntentReceiptClaims = {
     status: string;
     quality?: { evaluator: string; schema_valid?: boolean; score?: number };
   };
-  settlement?: { rail: string; network?: string; asset?: string; amount: ReceiptMoney; transaction?: string; payment_id?: string; payer?: string; pay_to?: string };
+  settlement?: {
+    rail: string;
+    network?: string;
+    asset?: string;
+    amount: ReceiptMoney;
+    transaction?: string;
+    payment_id?: string;
+    /** Algebra's signing key, which held the money for this payment alone when a vault funded it. */
+    payer?: string;
+    pay_to?: string;
+    /** The Spend Pass vault that funded the payment, when one did. */
+    funding?: { source: string; vault: string; owner: string; pull_signature: string; pulled: ReceiptMoney };
+  };
   coordination: { attempts: number; duplicate_commit_attempts_blocked: number; reconciliation_required: boolean };
   final_state: { lifecycle: string; commitment: string; fulfillment: string };
   test?: boolean;

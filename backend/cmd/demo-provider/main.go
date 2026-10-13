@@ -17,7 +17,8 @@
 //	ip.geolocate       geopin $0.0005 · locus $0.0003 slow
 //	llm.chat           meter, over x402 "upto": escrows a $0.05 ceiling in a
 //	                   payment channel, settles what the prompt actually cost,
-//	                   refunds the rest
+//	                   refunds the rest; with DEMO_PROVIDER_STALL=on also
+//	                   meterstall, which opens the channel and never settles it
 //
 // It is its own facilitator: it checks each payment, co-signs it as fee payer
 // and submits it to devnet, so its wallet needs a little devnet SOL (it asks
@@ -103,7 +104,7 @@ func main() {
 	s := &server{rpc: rpc, key: key, mint: mint, base: base, results: map[string]cached{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /personas", s.listPersonas)
-	for _, p := range personas {
+	for _, p := range served() {
 		mux.HandleFunc(p.path(), s.handle(p))
 	}
 	log.Printf("demo providers on %s, paying to %s on devnet", base, key.PublicKey())

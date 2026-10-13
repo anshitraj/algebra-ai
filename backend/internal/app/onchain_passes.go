@@ -207,15 +207,22 @@ type OnchainPassService struct {
 	// person signed in with (devnet demos with CLI-made wallets). The pass
 	// number still binds the on-chain pass to this Spend Pass.
 	AnyOwnerOn map[string]bool
-	log        *slog.Logger
-	now        func() time.Time
+	// RecoverAfter is how long after an attempt's deadline a payment channel the
+	// provider never settled is closed by the payer to get the escrow back.
+	RecoverAfter time.Duration
+	log          *slog.Logger
+	now          func() time.Time
 }
+
+// DefaultRecoverAfter: a provider that is going to settle does so within
+// moments of answering; this is long past that.
+const DefaultRecoverAfter = 10 * time.Minute
 
 // NewOnchainPassService builds the service for the given networks.
 func NewOnchainPassService(store OnchainPassStore, passes *SpendPassService, wallets UserWalletStore, reservations ReservationReader, nets []*OnchainNetwork) *OnchainPassService {
 	s := &OnchainPassService{store: store, passes: passes, wallets: wallets, reservations: reservations,
 		nets: map[string]*OnchainNetwork{}, byRail: map[string]*OnchainNetwork{}, AnyOwnerOn: map[string]bool{},
-		log: slog.Default(), now: time.Now}
+		RecoverAfter: DefaultRecoverAfter, log: slog.Default(), now: time.Now}
 	for _, n := range nets {
 		s.nets[n.Network] = n
 		s.byRail[n.RailName] = n
@@ -783,6 +790,14 @@ func (s *OnchainPassService) VaultStatus(ctx context.Context, passID, network st
 	return out
 }
 
+// PullFor is the pull made for a reservation (FundingReader).
+func (s *OnchainPassService) PullFor(ctx context.Context, reservationID string) (*OnchainPull, error) {
+	if s == nil {
+		return nil, fmt.Errorf("%w: no on-chain passes", shared.ErrNotFound)
+	}
+	return s.store.OnchainPull(ctx, reservationID)
+}
+
 // Funding says, before the rail signs, whether a payment on rail is funded from
 // the pass's vault. A rail this service doesn't manage (the sandbox), or a pass
 // with no vault where none is required, is paid as before. Where a vault is
@@ -1034,8 +1049,32 @@ func (s *OnchainPassService) used(ctx context.Context, n *OnchainNetwork, p *Onc
 		return min(st.AmountMinor, p.AmountMinor), true, nil
 	case SettlementNotSettled:
 		return 0, true, nil
+	case SettlementPending:
+		// A usage-based payment whose provider never settled its channel: the
+		// ceiling is escrowed, and the payer's own way out is taken in time.
+		s.recoverEscrow(ctx, n, r)
 	}
 	return 0, false, nil
+}
+
+// recoverEscrow takes the next step toward getting an unsettled channel's
+// escrow back, once the attempt is long over.
+func (s *OnchainPassService) recoverEscrow(ctx context.Context, n *OnchainNetwork, r *econ.Reservation) {
+	rec, ok := n.Rail.(ChannelRecoverer)
+	if !ok || r.Evidence.Channel == "" {
+		return
+	}
+	since := r.UpdatedAt
+	if r.ExecutionDeadline != nil {
+		since = *r.ExecutionDeadline
+	}
+	did, err := rec.RecoverEscrow(ctx, r.Evidence, since.Add(s.RecoverAfter))
+	switch {
+	case err != nil:
+		s.log.Warn("onchain pass: recovering an unsettled channel failed", "channel", r.Evidence.Channel, "reservation_id", r.ID, "err", err)
+	case did != "":
+		s.log.Info("onchain pass: recovering an unsettled channel", "channel", r.Evidence.Channel, "reservation_id", r.ID, "did", did)
+	}
 }
 
 // refund returns what an attempt didn't spend: into the vault while the pass
