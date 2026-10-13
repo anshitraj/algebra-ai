@@ -13,6 +13,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	neturl "net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,11 +25,42 @@ type Client struct {
 	rdb *goredis.Client
 }
 
+// options reads addr as host:port, or as a redis:// or rediss:// URL (which
+// carries the password, the database and TLS: what managed Redis gives you).
+func options(addr string) (*goredis.Options, error) {
+	addr = strings.TrimSpace(addr)
+	if strings.HasPrefix(addr, "redis://") || strings.HasPrefix(addr, "rediss://") {
+		opt, err := goredis.ParseURL(addr)
+		if err != nil {
+			// Not the parser's error: it can quote the URL, and the URL holds the password.
+			return nil, fmt.Errorf("redis: REDIS_ADDR is not a valid redis:// or rediss:// URL")
+		}
+		return opt, nil
+	}
+	return &goredis.Options{Addr: addr}, nil
+}
+
+// Redact is addr without its password, for logs and error messages.
+func Redact(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if !strings.HasPrefix(addr, "redis://") && !strings.HasPrefix(addr, "rediss://") {
+		return addr
+	}
+	if u, err := neturl.Parse(addr); err == nil {
+		return u.Redacted()
+	}
+	return "redis://(unparseable)"
+}
+
 // Connect opens a connection and verifies it with a ping. Callers should
 // treat a failure here as "run without Redis," not as fatal — see
 // wiring.Build.
 func Connect(ctx context.Context, addr string) (*Client, error) {
-	rdb := goredis.NewClient(&goredis.Options{Addr: addr})
+	opt, err := options(addr)
+	if err != nil {
+		return nil, err
+	}
+	rdb := goredis.NewClient(opt)
 	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	if err := rdb.Ping(pingCtx).Err(); err != nil {
