@@ -116,3 +116,15 @@ func TestUnknownIsNeverFailedAndNeverSilentlyRetried(t *testing.T) {
 		t.Error("UNKNOWN → COMMITTED must go through RECONCILING")
 	}
 }
+
+func TestProviderPolicy_BalancedIsAuto(t *testing.T) {
+	for in, want := range map[string]string{"balanced": StrategyAuto, " Balanced ": StrategyAuto, "cheapest": StrategyCheapest, "fastest": StrategyFastest, "": ""} {
+		p, err := ProviderPolicy{Strategy: in}.Normalize()
+		if err != nil || p.Strategy != want {
+			t.Errorf("Normalize(%q) = %q, %v; want %q", in, p.Strategy, err, want)
+		}
+	}
+	if _, err := (ProviderPolicy{Strategy: "bogus"}).Normalize(); err == nil {
+		t.Error("an unknown strategy must be refused")
+	}
+}

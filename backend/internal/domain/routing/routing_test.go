@@ -11,7 +11,7 @@ var t0 = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 
 func TestParseMode(t *testing.T) {
 	cases := map[string]Mode{
-		"": ModeAuto, "auto": ModeAuto, "best_execution": ModeAuto, "FIXED": ModeAuto,
+		"": ModeAuto, "auto": ModeAuto, "balanced": ModeAuto, "Balanced": ModeAuto, "best_execution": ModeAuto, "FIXED": ModeAuto,
 		"cheapest": ModeCheapest, " Fastest ": ModeFastest,
 	}
 	for in, want := range cases {

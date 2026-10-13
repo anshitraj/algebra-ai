@@ -51,7 +51,7 @@ func (m Mode) Valid() bool {
 // how they rank.
 func ParseMode(strategy string) (Mode, error) {
 	switch strings.ToLower(strings.TrimSpace(strategy)) {
-	case "", econ.StrategyAuto, econ.StrategyBestExecution, econ.StrategyFixed:
+	case "", econ.StrategyAuto, econ.StrategyBalanced, econ.StrategyBestExecution, econ.StrategyFixed:
 		return ModeAuto, nil
 	case econ.StrategyCheapest:
 		return ModeCheapest, nil

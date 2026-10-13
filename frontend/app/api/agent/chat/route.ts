@@ -5,6 +5,7 @@ import { consumeAgentTurn, getAgentToken, getPasses, getRails, ServerApiError, t
 import { toolsFor } from "@/lib/agent/tools";
 import { trimHistory } from "@/lib/agent/history";
 import type { AgentEvent } from "@/lib/agent/events";
+import { isPick } from "@/lib/strategy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -20,6 +21,8 @@ type ChatRequestBody = {
   network?: string;
   /** "Ask me before every payment". On unless this is false. */
   ask_first?: boolean;
+  /** "cheapest", "balanced" or "fastest": how providers are picked. Balanced when absent. */
+  pick?: string;
 };
 
 const MAX_MESSAGE_CHARS = 4000;
@@ -91,8 +94,9 @@ export async function POST(request: Request) {
   if (!quota.ok) return NextResponse.json({ error: quotaMessage(quota) }, { status: 429 });
   // "Ask me before every payment" is on unless the person turned it off.
   const askFirst = body.ask_first !== false;
-  const identity: ServerIdentity = { ...token, passId: pass?.id, pass: pass ?? undefined, network, askFirst };
-  const systemPrompt = buildSystemPrompt({ network, pass, rail: rails.find((r) => r.network === network), mode: token.mode, askFirst });
+  const pick = isPick(body.pick) ? body.pick : "balanced";
+  const identity: ServerIdentity = { ...token, passId: pass?.id, pass: pass ?? undefined, network, askFirst, pick };
+  const systemPrompt = buildSystemPrompt({ network, pass, rail: rails.find((r) => r.network === network), mode: token.mode, askFirst, pick });
   const tools = toolsFor();
   const history = trimHistory(Array.isArray(body.history) ? body.history : []);
 

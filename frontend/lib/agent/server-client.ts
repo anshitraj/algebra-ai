@@ -24,6 +24,8 @@ export type ServerIdentity = {
   pass?: SpendPass;
   /** The person wants to say yes to every payment, whatever the pass allows. */
   askFirst?: boolean;
+  /** How the person wants providers picked for this chat; it wins over what the model asks for. */
+  pick?: "cheapest" | "balanced" | "fastest";
 };
 
 export class ServerApiError extends Error {

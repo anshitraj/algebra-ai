@@ -12,6 +12,7 @@ import * as api from "@/lib/api-client";
 import type { SpendPass } from "@/lib/types";
 import { formatUSDC } from "@/lib/money";
 import { getOnchainPass } from "@/lib/onchain-pass";
+import { PICKS, isPick, type Pick } from "@/lib/strategy";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { IconArrowUp, IconRefresh, IconShield, IconStop } from "@/components/icons";
 import { useConsoleData } from "../console-data";
@@ -67,6 +68,7 @@ const MIN_VISIBLE_MS: Record<string, number> = { search_providers: 3000, get_pro
 const MODEL_KEY = "algebra:agent-model";
 const PASS_KEY = "algebra:agent-pass";
 const ASK_KEY = "algebra:agent-ask-first";
+const PICK_KEY = "algebra:agent-pick";
 // Provider history carries every tool result, so a long chat can get big.
 // Keep the newest turns that fit; the conversation matters more than its tail.
 const CHAT_MAX_BYTES = 400_000;
@@ -140,13 +142,25 @@ export function AgentWorkspace() {
   const [passId, setPassId] = useState("");
   // "Ask me before every payment": on unless the person turned it off in this browser.
   const [askFirst, setAskFirst] = useState(true);
+  // How providers are picked: Balanced unless the person chose otherwise in this browser.
+  const [pick, setPick] = useState<Pick>("balanced");
   useEffect(() => {
     try {
       if (window.localStorage.getItem(ASK_KEY) === "off") setAskFirst(false);
+      const saved = window.localStorage.getItem(PICK_KEY);
+      if (isPick(saved)) setPick(saved);
     } catch {
       // storage blocked: ask first
     }
   }, []);
+  function choosePick(p: Pick) {
+    setPick(p);
+    try {
+      window.localStorage.setItem(PICK_KEY, p);
+    } catch {
+      // storage blocked: applies to this page only
+    }
+  }
   function toggleAskFirst() {
     setAskFirst((on) => {
       try {
@@ -343,6 +357,7 @@ export function AgentWorkspace() {
             spend_pass_id: passId || undefined,
             network,
             ask_first: askFirst,
+            pick,
           }),
           signal: ctrl.signal,
         });
@@ -387,7 +402,7 @@ export function AgentWorkspace() {
         inputRef.current?.focus();
       }
     },
-    [running, choice, history, passId, network, askFirst, updateTurn, refreshConsole]
+    [running, choice, history, passId, network, askFirst, pick, updateTurn, refreshConsole]
   );
 
   function newChat() {
@@ -547,6 +562,7 @@ export function AgentWorkspace() {
               <ModelPicker providers={providers} value={choice} onChange={pickModel} lockedProvider={lockedProvider} />
               <PassPicker passes={passes} vaults={vaults} value={passId} onChange={pickPass} disabled={running} />
               {passId && <AskFirstSwitch on={askFirst} onToggle={toggleAskFirst} disabled={running} />}
+              <PickPicker value={pick} onChange={choosePick} disabled={running} />
               <span className="hidden text-xs text-muted/80 xl:ml-auto xl:inline">
                 <kbd className="font-mono">Enter</kbd> to send
               </span>
@@ -667,6 +683,28 @@ function TurnView({
 }
 
 /** Which Spend Pass the chat pays under. Only active USDC passes can pay for API calls. */
+/** How providers are picked: cheapest, balanced or fastest. Applies to every request the chat routes. */
+function PickPicker({ value, onChange, disabled }: { value: Pick; onChange: (p: Pick) => void; disabled: boolean }) {
+  return (
+    <div role="radiogroup" aria-label="How to pick a provider" className="inline-flex h-8 shrink-0 items-center rounded-lg bg-primary-tint/50 p-0.5">
+      {PICKS.map((p) => (
+        <button
+          key={p.id}
+          type="button"
+          role="radio"
+          aria-checked={value === p.id}
+          title={p.hint}
+          disabled={disabled}
+          onClick={() => onChange(p.id)}
+          className={`h-7 rounded-md px-2 text-xs font-medium transition-colors disabled:opacity-60 ${value === p.id ? "bg-surface text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** "Ask me before every payment": the agent proposes, the person says yes or no in a card before anything is paid. */
 function AskFirstSwitch({ on, onToggle, disabled }: { on: boolean; onToggle: () => void; disabled: boolean }) {
   return (

@@ -175,6 +175,9 @@ const (
 	StrategyFixed = "fixed"
 	// StrategyBestExecution is the original name for StrategyAuto.
 	StrategyBestExecution = "best_execution"
+	// StrategyBalanced is what the console and projects call StrategyAuto:
+	// not the cheapest, not the fastest, the best across both and reliability.
+	StrategyBalanced = "balanced"
 )
 
 // ProviderPolicy steers provider selection. Algebra doesn't claim to have
@@ -193,10 +196,10 @@ func (p ProviderPolicy) Normalize() (ProviderPolicy, error) {
 	p.Strategy = strings.ToLower(strings.TrimSpace(p.Strategy))
 	switch p.Strategy {
 	case "", StrategyAuto, StrategyCheapest, StrategyFastest, StrategyFixed:
-	case StrategyBestExecution:
+	case StrategyBestExecution, StrategyBalanced:
 		p.Strategy = StrategyAuto
 	default:
-		return p, fmt.Errorf("provider policy strategy must be auto, cheapest, fastest or fixed, not %q", p.Strategy)
+		return p, fmt.Errorf("provider policy strategy must be cheapest, balanced (auto), fastest or fixed, not %q", p.Strategy)
 	}
 	var err error
 	if p.Providers, err = canonList(p.Providers, lowerTrim, providerRE, false); err != nil {

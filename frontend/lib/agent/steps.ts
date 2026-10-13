@@ -5,6 +5,7 @@
 import type { ProviderCard, StepDetail, StepHint, StepStatus } from "./events";
 import type { ToolResult } from "./execute-tool";
 import { explorerTx, networkWord, solscanTx } from "../explorer";
+import { pickLabel } from "../strategy";
 import type { PolicyReport } from "../policy-check";
 
 const USDC = 1_000_000;
@@ -103,6 +104,9 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
   const rows: { label: string; value: string }[] = [];
   if (typeof d.paid === "string" && (d.paid_minor as number) > 0) rows.push({ label: "Paid", value: `${d.paid}${network ? ` on ${networkWord(network)}` : ""}` });
   if (tx) rows.push({ label: "Transaction", value: `${tx.slice(0, 8)}…${tx.slice(-8)}` });
+  const routing = d.routing as { mode?: string; ranked?: { rank: number; provider: string; price?: string }[] } | undefined;
+  if (routing?.mode && pickLabel(routing.mode)) rows.push({ label: "Picked by", value: pickLabel(routing.mode) });
+  for (const r of (routing?.ranked ?? []).slice(0, 3)) rows.push({ label: `Rank ${r.rank}`, value: `${r.provider}${r.price ? ` · ${r.price}` : ""}` });
   if (typeof d.intent_id === "string") rows.push({ label: "Intent", value: d.intent_id });
   const where = d.test_money && network === "solana-devnet" ? " (devnet)" : "";
   const intentId = typeof d.intent_id === "string" ? d.intent_id : undefined;

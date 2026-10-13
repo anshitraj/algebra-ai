@@ -110,7 +110,7 @@ function Simulator({ passes }: { passes: SpendPass[] }) {
   const [capability, setCapability] = useState("token.price");
   const [input, setInput] = useState('{"mint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"}');
   const [budget, setBudget] = useState("0.05");
-  const [strategy, setStrategy] = useState("auto");
+  const [strategy, setStrategy] = useState("balanced");
   const [live, setLive] = useState(true);
   const [busy, setBusy] = useState(false);
   const [sim, setSim] = useState<Simulation | null>(null);
@@ -200,8 +200,8 @@ function Simulator({ passes }: { passes: SpendPass[] }) {
             </Field>
             <Field label="Strategy">
               <select value={strategy} onChange={(e) => setStrategy(e.target.value)} className="w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground">
-                <option value="auto">Best overall</option>
                 <option value="cheapest">Cheapest</option>
+                <option value="balanced">Balanced</option>
                 <option value="fastest">Fastest</option>
               </select>
             </Field>

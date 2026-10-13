@@ -41,8 +41,8 @@ const workParams = {
   },
   strategy: {
     type: "string",
-    enum: ["auto", "cheapest", "fastest"],
-    description: "How to choose among providers: auto (best overall: price, reliability, speed, honesty), cheapest or fastest. Default auto.",
+    enum: ["balanced", "cheapest", "fastest"],
+    description: "How to choose among providers: balanced (price, reliability, speed, honesty together), cheapest or fastest. The user's own choice in the chat overrides this. Default balanced.",
   },
 };
 
