@@ -8,15 +8,16 @@
 // router's guards. Several pieces of work (a weather forecast and a token
 // price, say) are chosen and paid together.
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Choice, OptionGroup } from "@/lib/agent/events";
 import type { Recommendation } from "@/lib/routing-types";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel } from "@/lib/network";
 import { latencySourceText, pickLabel } from "@/lib/strategy";
-import { reasonLine } from "@/lib/decision";
+import { reasonLine, vaultFix } from "@/lib/decision";
 import { SellerChips } from "../trust-badges";
-import { IconBan, IconCheck, IconChevronDown, IconClock } from "@/components/icons";
+import { IconBan, IconCheck, IconChevronDown, IconClock, IconLock } from "@/components/icons";
 
 type Picked = { group: OptionGroup; rec: Recommendation; ways: string[] };
 
@@ -185,6 +186,8 @@ function GroupView({
   // With one offer there is nothing to rank: the three ways would all name it.
   const only = g.compared.length <= 1;
   const [showAll, setShowAll] = useState(false);
+  // Offers refused for want of a (funded) vault stay on the list; the way out sits under them.
+  const fix = vaultFix([...g.recommendations, ...g.compared].flatMap((r) => r.reasons ?? []));
   return (
     <section className={`rounded-2xl border border-border bg-surface ${paid ? "opacity-70" : ""}`} aria-label={g.title}>
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border px-4 py-3">
@@ -249,6 +252,16 @@ function GroupView({
           );
         })}
       </div>
+
+      {fix && !paid && (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border px-4 py-2.5 text-xs leading-snug text-muted">
+          <IconLock size={13} className="shrink-0" />
+          <span>{fix.text}</span>
+          <Link href={fix.href} className="font-medium text-primary hover:underline">
+            {fix.action}
+          </Link>
+        </p>
+      )}
 
       {g.compared.length > 0 && (
         <div className="border-t border-border px-4 py-2.5">

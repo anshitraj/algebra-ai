@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/domain/shared"
@@ -21,6 +22,36 @@ type PolicyReader interface {
 	PassSpend(ctx context.Context, passID string, since time.Time) (int64, error)
 	PassAttemptsRecent(ctx context.Context, passID, provider string, since time.Time) (int, error)
 	ProviderPaidBy(ctx context.Context, principalID, provider string) (bool, error)
+}
+
+// VaultReader reads a pass's vault for a payment on a network.
+type VaultReader interface {
+	VaultStatus(ctx context.Context, passID, network string) VaultState
+}
+
+// vaultDetail is the plain reason a vault code gives in a refusal.
+func vaultDetail(code string) string {
+	switch code {
+	case DenyOnchainRequired:
+		return "this network pays only from a Spend Pass vault, and this pass has none"
+	case DenyOnchainUnfunded:
+		return "the vault holds less than this call costs"
+	case DenyOnchainFrozen:
+		return "the pass is frozen on Solana by its owner"
+	case DenyOnchainRevoked:
+		return "the pass was revoked on Solana by its owner"
+	case DenyOnchainExpired:
+		return "the pass has expired on Solana"
+	case DenyOnchainLimit:
+		return "over a limit the pass enforces on Solana"
+	case DenyOnchainAgentChanged:
+		return "the vault was made for an earlier Algebra payer key: withdraw it and make a new one"
+	case DenyOnchainMissing:
+		return "the pass is not on Solana any more (closed by its owner)"
+	case DenyOnchainOtherNetwork:
+		return "the pass's vault is on another network"
+	}
+	return code
 }
 
 // SimulateRequest is "would this be allowed, and who would do it?".
@@ -331,8 +362,23 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 		live = s.quoteAll(ctx, view, cs)
 	}
 
-	var opts, gated []routing.Option
+	var opts, gated, vaultBlocked []routing.Option
 	var gatedOnly []CandidateVerdict
+	var vaultCodes []string
+	// One read of the vault per network, shared by every candidate on it.
+	vaultCache := map[string]VaultState{}
+	vaultOf := func(network string) VaultState {
+		if s.vaults == nil || network == "" {
+			return VaultState{}
+		}
+		key := chain.NormalizeNetwork(network)
+		if v, ok := vaultCache[key]; ok {
+			return v
+		}
+		v := s.vaults.VaultStatus(ctx, p.ID, network)
+		vaultCache[key] = v
+		return v
+	}
 	verdicts := map[string]CandidateVerdict{}
 	verified := map[string]bool{}
 	for i, e := range pending {
@@ -390,6 +436,22 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 		case policy.RequireApproval:
 			cv.Verdict, cv.Reasons = VerdictRequireApproval, append(cv.Reasons, d.ReasonCodes...)
 		}
+		// A network that pays only from a vault: the vault must be able to pay
+		// this much. The offer stays on the list, refused, so a person sees what
+		// they would buy once they have one.
+		priced := int64(0)
+		if cv.PriceSource != "unlisted" {
+			priced = q.Cost.Total()
+		}
+		if code := vaultOf(c.Network).For(priced); code != "" {
+			cv.Verdict, cv.Reasons = VerdictDeny, []string{code + ": " + vaultDetail(code)}
+			verdicts[c.ID] = cv
+			sim.Candidates = append(sim.Candidates, cv)
+			sim.Rejected = append(sim.Rejected, routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: code, Detail: vaultDetail(code)})
+			vaultBlocked = append(vaultBlocked, routing.Option{Candidate: c, Quote: q})
+			vaultCodes = append(vaultCodes, code)
+			continue
+		}
 		if reader != nil {
 			one, _ := reader.PassAttemptsRecent(ctx, p.ID, c.Provider, now.Add(-time.Minute))
 			if code := ctrl.Velocity(sim.Pass.CallsLastMinute, one); code != "" {
@@ -430,7 +492,7 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 	sim.Strategy = string(mode)
 	// The cards a person chooses from: each way's winner, and the full field,
 	// counting the offers that would wait for their yes.
-	if rankable := append(slices.Clone(opts), gated...); len(rankable) > 0 {
+	if rankable := append(append(slices.Clone(opts), gated...), vaultBlocked...); len(rankable) > 0 {
 		sim.Recommendations = recommendFor(rankable, verdicts)
 		sim.Compared = compareFor(mode, rankable, verdicts)
 	}
@@ -474,6 +536,10 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 		sim.Verdict = VerdictRequireApproval
 		sim.Reasons = slices.Clone(gatedOnly[0].Reasons)
 		sim.WouldPay = &gatedOnly[0]
+	case len(vaultBlocked) > 0:
+		// Everything that could be bought needs a vault (or a funded one).
+		sim.Verdict = VerdictDeny
+		sim.Reasons = []string{vaultCodes[0]}
 	default:
 		sim.Verdict = VerdictDeny
 		sim.Reasons = []string{"no_provider_passes"}

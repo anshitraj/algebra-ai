@@ -11,6 +11,10 @@ export type OnchainNetwork = {
   destination: string;
   mint: string;
   required: boolean;
+  /** Where Algebra's payer key comes from: "generated" (devnet) or "env". */
+  signer_mode?: "env" | "generated";
+  /** False when the payer is too low on SOL to pay the fees of vault pulls and refunds. */
+  signer_ready?: boolean;
 };
 
 export type OnchainState = {
@@ -48,6 +52,8 @@ export type OnchainPassView = {
   remaining_minor: number;
   explorer: string;
   pulls: OnchainPull[];
+  /** The vault was made for an earlier Algebra payer key and can't fund payments. */
+  agent_changed?: boolean;
 };
 
 export type OwnerAction = "freeze" | "unfreeze" | "deposit" | "withdraw" | "revoke" | "close";

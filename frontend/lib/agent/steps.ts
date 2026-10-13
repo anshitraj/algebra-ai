@@ -34,6 +34,15 @@ const REASONS: Record<string, string> = {
   already_committed: "Already paid for once; a repeat is blocked",
   frozen_unknown_outcome: "A payment's outcome is still being confirmed",
   intent_closed: "This call was cancelled or has expired",
+  ONCHAIN_PASS_REQUIRED: "Payments here come from a Spend Pass vault, and this pass has none",
+  ONCHAIN_PASS_MISSING: "The pass's vault was closed on Solana",
+  ONCHAIN_PASS_OTHER_NETWORK: "The pass's vault is on another network",
+  ONCHAIN_PASS_FROZEN: "The pass is frozen on Solana",
+  ONCHAIN_PASS_REVOKED: "The pass was revoked on Solana",
+  ONCHAIN_PASS_EXPIRED: "The pass has expired on Solana",
+  ONCHAIN_PASS_LIMIT: "Over a limit the pass enforces on Solana",
+  ONCHAIN_PASS_UNFUNDED: "The vault holds less than this costs",
+  ONCHAIN_PASS_AGENT_CHANGED: "The vault was made for an earlier Algebra payer key",
 };
 
 export function reasonText(code: string) {

@@ -276,6 +276,16 @@ function VaultRow({ passId, network }: { passId: string; network: string }) {
               </Link>
             </p>
           </div>
+        ) : view.agent_changed ? (
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-foreground">Made for an earlier Algebra payer key</p>
+            <p className="mt-0.5 text-xs leading-snug text-muted">
+              This vault can&apos;t fund payments any more. Your USDC is safe: withdraw it and make a new vault.{" "}
+              <Link href="/console/passes" className="font-medium text-primary hover:underline">
+                Open the pass
+              </Link>
+            </p>
+          </div>
         ) : (
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between gap-3">

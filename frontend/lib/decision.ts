@@ -33,6 +33,15 @@ const REASONS: Record<string, string> = {
   NETWORK_NOT_ALLOWED: "the call isn't allowed on that network",
   ENVIRONMENT_NETWORK_MISMATCH: "the network isn't one this project's environment may use",
   MAINNET_EXECUTION_DISABLED: "real-money mainnet payments are switched off on this server",
+  ONCHAIN_PASS_REQUIRED: "payments on this network come from a Spend Pass vault, and this pass has none",
+  ONCHAIN_PASS_MISSING: "the pass's vault is gone: its owner closed it on Solana",
+  ONCHAIN_PASS_OTHER_NETWORK: "the pass's vault is on another network",
+  ONCHAIN_PASS_FROZEN: "the pass is frozen on Solana by its owner",
+  ONCHAIN_PASS_REVOKED: "the pass was revoked on Solana by its owner",
+  ONCHAIN_PASS_EXPIRED: "the pass has expired on Solana",
+  ONCHAIN_PASS_LIMIT: "over a limit the pass enforces on Solana",
+  ONCHAIN_PASS_UNFUNDED: "the vault holds less than this costs",
+  ONCHAIN_PASS_AGENT_CHANGED: "the vault was made for an earlier Algebra payer key, so it can't fund payments any more",
   PROVIDER_BLOCKED: "the provider is blocked",
   PAYEE_CHANGED: "the provider asked to be paid at a different address than the one pinned for it",
   no_provider_passes: "no provider passed every check",
@@ -47,6 +56,24 @@ export function reasonLine(raw: string): { code: string; text: string } {
   const detail = raw.includes(":") ? raw.slice(raw.indexOf(":") + 1).trim() : "";
   const known = REASONS[code];
   return { code, text: known ?? (detail || code.replace(/_/g, " ").toLowerCase()) };
+}
+
+/** What a person does about a refusal that comes from the pass's vault: the sentence, the action and where it is done. */
+export function vaultFix(reasons: string[]): { text: string; action: string; href: string } | null {
+  const codes = reasons.map((r) => r.split(":")[0].trim());
+  const has = (...c: string[]) => codes.find((x) => c.includes(x));
+  const href = "/console/passes";
+  if (has("ONCHAIN_PASS_REQUIRED", "ONCHAIN_PASS_MISSING", "ONCHAIN_PASS_OTHER_NETWORK")) {
+    return { text: "Payments on this network come from a Spend Pass vault, and this pass has none yet.", action: "Create the vault", href };
+  }
+  if (has("ONCHAIN_PASS_UNFUNDED")) return { text: "The vault holds less than this costs.", action: "Add USDC to the vault", href };
+  if (has("ONCHAIN_PASS_AGENT_CHANGED")) {
+    return { text: "This vault was made for an earlier Algebra payer key and can't fund payments. Your USDC is safe: withdraw it and make a new vault.", action: "Open the pass", href };
+  }
+  if (has("ONCHAIN_PASS_FROZEN", "ONCHAIN_PASS_REVOKED", "ONCHAIN_PASS_EXPIRED")) {
+    return { text: "The pass's vault can't pay right now.", action: "Open the pass", href };
+  }
+  return null;
 }
 
 /** The seller's identity and payment history, kept apart. */

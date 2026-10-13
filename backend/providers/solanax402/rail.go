@@ -261,7 +261,7 @@ func (r *Rail) build(ctx context.Context, rv *econ.Reservation, req app.PaymentR
 	if errors.Is(err, x402.ErrNoMatch) {
 		// A usage-based option: escrow a ceiling in a payment channel (upto.go).
 		if up, uerr := x402.SelectRaw(req.Requirements, paychan.Scheme, r.networkNames()...); uerr == nil {
-			return r.buildUpto(ctx, rv, up, req.Resource)
+			return r.buildUpto(ctx, rv, up, req.Resource, req.FundedByPass)
 		}
 	}
 	if err != nil {
@@ -311,7 +311,9 @@ func (r *Rail) build(ctx context.Context, rv *econ.Reservation, req app.PaymentR
 		problems = append(problems, fmt.Sprintf("solanax402: this wallet (%s) has no USDC account on %s", r.payer, r.network))
 	case err != nil:
 		return nil, nil, err
-	case bal.Amount < uint64(amount):
+	case bal.Amount < uint64(amount) && !req.FundedByPass:
+		// (A payment funded from a Spend Pass vault is covered by the pull the
+		// coordinator makes before it hands the payment over.)
 		problems = append(problems, fmt.Sprintf("solanax402: insufficient USDC: the wallet holds %d, the payment is %d", bal.Amount, amount))
 	}
 	switch info, err := r.cfg.RPC.GetAccountInfo(ctx, dst, solana.Confirmed); {

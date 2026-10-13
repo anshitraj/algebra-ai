@@ -111,6 +111,53 @@ func TestRequiredNetworkRefusesAPassThatIsntOnChain(t *testing.T) {
 	}
 }
 
+// Before the rail signs anything, it is settled where the money comes from.
+func TestFundingSaysWhereAPaymentsMoneyComesFrom(t *testing.T) {
+	ctx := context.Background()
+	const rail = "x402-solana-devnet"
+	denial := func(err error) string {
+		var denied *AuthorityDenied
+		if errors.As(err, &denied) {
+			return denied.ReasonCodes[0]
+		}
+		return ""
+	}
+	t.Run("a rail this service doesn't manage is paid as before", func(t *testing.T) {
+		svc := NewOnchainPassService(newMemOnchainStore(), nil, nil, nil, []*OnchainNetwork{testNetwork(t, true)})
+		if from, err := svc.Funding(ctx, "pass_1", "sandbox"); from || err != nil {
+			t.Fatalf("sandbox: %v %v", from, err)
+		}
+	})
+	t.Run("no vault where none is required: the payer's own money, as before", func(t *testing.T) {
+		svc := NewOnchainPassService(newMemOnchainStore(), nil, nil, nil, []*OnchainNetwork{testNetwork(t, false)})
+		if from, err := svc.Funding(ctx, "pass_1", rail); from || err != nil {
+			t.Fatalf("%v %v", from, err)
+		}
+	})
+	t.Run("no vault where one is required: refused before the rail looks at the payer's balance", func(t *testing.T) {
+		svc := NewOnchainPassService(newMemOnchainStore(), nil, nil, nil, []*OnchainNetwork{testNetwork(t, true)})
+		if from, err := svc.Funding(ctx, "pass_1", rail); from || denial(err) != DenyOnchainRequired {
+			t.Fatalf("%v %v", from, err)
+		}
+	})
+	t.Run("a vault on another network is refused", func(t *testing.T) {
+		store := newMemOnchainStore()
+		store.bindings["pass_1"] = &OnchainBinding{PassID: "pass_1", Network: "solana"}
+		svc := NewOnchainPassService(store, nil, nil, nil, []*OnchainNetwork{testNetwork(t, false)})
+		if from, err := svc.Funding(ctx, "pass_1", rail); from || denial(err) != DenyOnchainOtherNetwork {
+			t.Fatalf("%v %v", from, err)
+		}
+	})
+	t.Run("a vault on this network funds the payment", func(t *testing.T) {
+		store := newMemOnchainStore()
+		store.bindings["pass_1"] = &OnchainBinding{PassID: "pass_1", Network: "solana-devnet"}
+		svc := NewOnchainPassService(store, nil, nil, nil, []*OnchainNetwork{testNetwork(t, true)})
+		if from, err := svc.Funding(ctx, "pass_1", rail); !from || err != nil {
+			t.Fatalf("%v %v", from, err)
+		}
+	})
+}
+
 func TestAPassOnAnotherClusterIsRefused(t *testing.T) {
 	store := newMemOnchainStore()
 	store.bindings["pass_1"] = &OnchainBinding{PassID: "pass_1", Network: "solana", Address: "11111111111111111111111111111111"}

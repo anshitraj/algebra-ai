@@ -23,7 +23,7 @@ import (
 // the provider was paid, never the ceiling.
 
 // buildUpto builds the payer-signed open for an upto option.
-func (r *Rail) buildUpto(ctx context.Context, rv *econ.Reservation, sel x402.Selected, resource string) (*app.PaymentAuthority, []string, error) {
+func (r *Rail) buildUpto(ctx context.Context, rv *econ.Reservation, sel x402.Selected, resource string, fundedByPass bool) (*app.PaymentAuthority, []string, error) {
 	t, err := paychan.ParseUptoTerms(sel.Requirements)
 	if err != nil {
 		return nil, nil, fmt.Errorf("solanax402: %w", err)
@@ -51,7 +51,7 @@ func (r *Rail) buildUpto(ctx context.Context, rv *econ.Reservation, sel x402.Sel
 		problems = append(problems, fmt.Sprintf("solanax402: this wallet (%s) has no USDC account on %s", r.payer, r.network))
 	case err != nil:
 		return nil, nil, err
-	case bal.Amount < t.MaxAmount:
+	case bal.Amount < t.MaxAmount && !fundedByPass:
 		problems = append(problems, fmt.Sprintf("solanax402: insufficient USDC to escrow the ceiling: the wallet holds %d, the ceiling is %d", bal.Amount, t.MaxAmount))
 	}
 	// The open is valid within OpenSlotWindow slots of open_slot, and the

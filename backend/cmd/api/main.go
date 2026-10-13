@@ -104,6 +104,9 @@ func main() {
 		}
 	}()
 
+	// A generated devnet payer key is kept in fee money from the faucet.
+	wiring.KeepSignersFunded(ctx, cfg, bundle)
+
 	// Free provider health probes (unpaid requests only).
 	if bundle.Health != nil {
 		go bundle.Health.Run(ctx)

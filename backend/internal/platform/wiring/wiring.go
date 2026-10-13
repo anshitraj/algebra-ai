@@ -38,6 +38,7 @@ import (
 	"github.com/project-algebra/algebra/internal/platform/bankoffers"
 	"github.com/project-algebra/algebra/internal/platform/config"
 	"github.com/project-algebra/algebra/internal/platform/identity"
+	"github.com/project-algebra/algebra/internal/platform/payersigner"
 	"github.com/project-algebra/algebra/internal/platform/postgres"
 	redisplatform "github.com/project-algebra/algebra/internal/platform/redis"
 	"github.com/project-algebra/algebra/internal/platform/resilience"
@@ -138,6 +139,9 @@ type Bundle struct {
 	// OnchainPasses links Spend Passes to Algebra's program on Solana and
 	// funds payments from them; nil when no Solana rail runs or it is off.
 	OnchainPasses *app.OnchainPassService
+	// Signers are the payer keys, by cluster ("devnet", "mainnet"), as the
+	// rails, the vault service and Jupiter use them.
+	Signers map[string]*payersigner.Signer
 	// Directory is the catalogs of paid APIs agents can browse and name
 	// (Pay.sh, Circle's Agent Marketplace, PayAI, Coinbase's Bazaar), nil
 	// when all are off.
@@ -424,7 +428,12 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 			econSvc.RegisterRecovery(p.ID(), sandboxPersonas.Recovery(p.Name))
 		}
 	}
-	execSvc, execProviders, solanaRails, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db))
+	signers, err := resolveSigners(ctx, cfg, db, masterKey)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("wiring: %w", err)
+	}
+	execSvc, execProviders, solanaRails, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db), signers)
 	var intelSources []app.IntelSource
 	if err == nil && sandboxPersonas != nil {
 		if port := listenPort(cfg.HTTPAddr); port > 0 {
@@ -570,13 +579,14 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		execSvc.SetWebFinder(webdiscovery.New(gemini), limiter)
 	}
 
-	onchainPasses, err := buildOnchainPasses(cfg, solanaRails, db, spendPassSvc, accountRepo, econRepo)
+	onchainPasses, err := buildOnchainPasses(cfg, solanaRails, db, spendPassSvc, accountRepo, econRepo, signers)
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("wiring: %w", err)
 	}
 	if onchainPasses != nil {
 		econSvc.SetFunder(onchainPasses)
+		execSvc.SetVaults(onchainPasses)
 	}
 	mainnet := app.MainnetFacts{ExecutionEnabled: cfg.MainnetExecution, PassesRequired: cfg.OnchainPasses.Required["mainnet"]}
 	for _, r := range solanaRails {
@@ -613,7 +623,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, Tenancy: tenancySvc, Leads: leadSvc, Notifications: notificationSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders, Privy: privy,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, Signers: signers, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders, Privy: privy,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,
@@ -638,7 +648,7 @@ func envWebhookSecret(provider string) string {
 // buildExecution wires the executor: the x402 runner over an HTTP client that
 // can only reach public addresses (plus the sandbox provider's own port in
 // sandbox mode), the capability catalog, and the providers an agent can name.
-func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.EconomicService, store app.ExecutionStore) (*app.ExecutionService, map[string][]routing.Candidate, []*solanax402.Rail, error) {
+func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.EconomicService, store app.ExecutionStore, signers map[string]*payersigner.Signer) (*app.ExecutionService, map[string][]routing.Candidate, []*solanax402.Rail, error) {
 	var solanaRails []*solanax402.Rail
 	caps := app.DefaultCapabilities()
 	if cfg.Jupiter.Enabled {
@@ -675,7 +685,7 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 		}
 	}
 	for _, sc := range cfg.SolanaRails {
-		rail, err := buildSolanaRail(ctx, sc)
+		rail, err := buildSolanaRail(ctx, sc, signers[clusterOf(sc)])
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -691,7 +701,7 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 		HTTP: safehttp.New(httpOpts), Networks: networks, ReuseQuoteFor: 15 * time.Second,
 	}))
 	if cfg.Jupiter.Enabled {
-		if err := wireJupiter(cfg, solanaRails, econSvc, exec, providers); err != nil {
+		if err := wireJupiter(cfg, solanaRails, econSvc, exec, providers, signers); err != nil {
 			return nil, nil, nil, err
 		}
 	}
@@ -702,7 +712,7 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 // the wallet of the verified Solana mainnet payment rail, so it is off, and
 // says so, when there isn't one: Jupiter has no devnet, and a swap is never
 // attempted on a cluster that couldn't be verified.
-func wireJupiter(cfg *config.Config, rails []*solanax402.Rail, econSvc *app.EconomicService, exec *app.ExecutionService, providers map[string][]routing.Candidate) error {
+func wireJupiter(cfg *config.Config, rails []*solanax402.Rail, econSvc *app.EconomicService, exec *app.ExecutionService, providers map[string][]routing.Candidate, signers map[string]*payersigner.Signer) error {
 	var mainnet *config.SolanaConfig
 	for i := range cfg.SolanaRails {
 		if c := strings.ToLower(cfg.SolanaRails[i].Cluster); c == "mainnet" || c == "mainnet-beta" {
@@ -717,10 +727,11 @@ func wireJupiter(cfg *config.Config, rails []*solanax402.Rail, econSvc *app.Econ
 		log.Printf("wiring: JUPITER_SWAP_ENABLED is on but there is no verified Solana mainnet wallet (SOLANA_MAINNET_KEYPAIR_FILE with SOLANA_ALLOW_MAINNET=yes): swaps are OFF")
 		return nil
 	}
-	kp, rpcURL, err := loadSolanaWallet(*mainnet)
-	if err != nil {
-		return err
+	sig := signers["mainnet"]
+	if sig == nil {
+		return fmt.Errorf("Jupiter swaps: no payer key was resolved for mainnet")
 	}
+	kp, rpcURL := sig.Key, solanaRPCURL(*mainnet)
 	rail, err := jupiter.NewRail(jupiter.RailConfig{RPC: solana.NewRPC(rpcURL, nil), Signer: kp, MaxSwapMinor: cfg.Jupiter.MaxSwapMinor})
 	if err != nil {
 		return err
@@ -816,7 +827,7 @@ var defaultSolanaRPC = map[string]string{
 // buildOnchainPasses turns on on-chain Spend Passes for every Solana rail that
 // runs: each rail's own payer is the agent of every pass on its cluster, so a
 // pull lands where the rail pays from.
-func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgres.DB, passes *app.SpendPassService, wallets app.UserWalletStore, reservations app.ReservationReader) (*app.OnchainPassService, error) {
+func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgres.DB, passes *app.SpendPassService, wallets app.UserWalletStore, reservations app.ReservationReader, signers map[string]*payersigner.Signer) (*app.OnchainPassService, error) {
 	if cfg.OnchainPasses.Disabled || len(rails) == 0 {
 		return nil, nil
 	}
@@ -841,10 +852,11 @@ func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgr
 		if sc == nil {
 			continue
 		}
-		kp, url, err := loadSolanaWallet(*sc)
-		if err != nil {
-			return nil, err
+		sig := signers[cluster]
+		if sig == nil {
+			return nil, fmt.Errorf("on-chain passes: no payer key was resolved for %s", cluster)
 		}
+		kp, url := sig.Key, solanaRPCURL(*sc)
 		if kp.PublicKey() != rail.Address() {
 			return nil, fmt.Errorf("on-chain passes: the %s wallet doesn't match its rail", cluster)
 		}
@@ -881,6 +893,7 @@ func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgr
 			RPC: rpc, Payer: kp, Mint: solana.MustPublicKey(mintStr), Rail: rail,
 			PriorityMicroLamports: cfg.OnchainPasses.PriorityMicroLamports, Required: cfg.OnchainPasses.Required[cluster],
 			AuthorityKnown: authErr == nil, Immutable: authErr == nil && authority == nil,
+			SignerMode: string(sig.Mode),
 		}
 		if authority != nil {
 			net.UpgradeAuthority = authority.String()
@@ -899,26 +912,74 @@ func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgr
 	return svc, nil
 }
 
-// loadSolanaWallet reads a cluster's wallet and the node to use for it. The
-// error never echoes the key.
-func loadSolanaWallet(sc config.SolanaConfig) (*solana.Keypair, string, error) {
-	text := sc.Keypair
-	if sc.KeypairFile != "" {
-		b, err := os.ReadFile(sc.KeypairFile)
-		if err != nil {
-			return nil, "", fmt.Errorf("SOLANA_KEYPAIR_FILE: %w", err)
+// KeepSignersFunded starts the fee top-up for every generated devnet key, until
+// ctx ends. Only generated keys: an operator's own wallet is the operator's to
+// fund, and mainnet SOL is not something a server asks a faucet for.
+func KeepSignersFunded(ctx context.Context, cfg *config.Config, b *Bundle) {
+	for _, sc := range cfg.SolanaRails {
+		sig := b.Signers[clusterOf(sc)]
+		if sig == nil || sig.Mode != payersigner.ModeGenerated {
+			continue
 		}
-		text = string(b)
+		rpc := solana.NewRPC(solanaRPCURL(sc), nil)
+		go payersigner.KeepFunded(ctx, rpc, sig.Key.PublicKey(), slog.Default(), payersigner.TopUpEvery)
 	}
-	kp, err := solana.ParseKeypair(text)
+}
+
+// clusterOf is a configured rail's cluster as the signers are keyed:
+// "devnet" or "mainnet".
+func clusterOf(sc config.SolanaConfig) string {
+	c := strings.ToLower(sc.Cluster)
+	if c == "mainnet-beta" {
+		return "mainnet"
+	}
+	return c
+}
+
+// solanaRPCURL is the node a cluster is read through.
+func solanaRPCURL(sc config.SolanaConfig) string {
+	if sc.RPCURL != "" {
+		return sc.RPCURL
+	}
+	return defaultSolanaRPC[clusterOf(sc)]
+}
+
+// resolveSigners picks every configured cluster's payer key, once, so the
+// rail, the vault service and Jupiter all sign with the same one. A key that
+// can't be had stops startup: a server never carries on with a different payer
+// than the one its vaults were made for.
+func resolveSigners(ctx context.Context, cfg *config.Config, db *postgres.DB, masterKey []byte) (map[string]*payersigner.Signer, error) {
+	out := map[string]*payersigner.Signer{}
+	if len(cfg.SolanaRails) == 0 {
+		return out, nil
+	}
+	enc, err := payersigner.NewEncryptor(masterKey)
 	if err != nil {
-		return nil, "", fmt.Errorf("the Solana wallet couldn't be loaded: %w", err)
+		return nil, fmt.Errorf("payer keys: %w", err)
 	}
-	url := sc.RPCURL
-	if url == "" {
-		url = defaultSolanaRPC[sc.Cluster]
+	deps := payersigner.Deps{Store: postgres.NewSignerRepo(db), Enc: enc}
+	for _, sc := range cfg.SolanaRails {
+		cluster := clusterOf(sc)
+		network := chain.Solana
+		if cluster == "devnet" {
+			network = chain.SolanaDevnet
+		}
+		sig, err := payersigner.Resolve(ctx, payersigner.Source{
+			Cluster: cluster, Network: network, Keypair: sc.Keypair, KeypairFile: sc.KeypairFile,
+			Generate: sc.Signer == "generated", ExpectPubkey: sc.SignerPubkey,
+		}, deps)
+		if err != nil {
+			return nil, err
+		}
+		if sig.Created {
+			log.Printf("wiring: GENERATED the %s payer key %s and stored it sealed in the database. Fund it with devnet SOL for fees (https://faucet.solana.com), "+
+				"and pin it with SOLANA_DEVNET_SIGNER_PUBKEY=%s so a lost database can never swap it silently", cluster, sig.Key.PublicKey(), sig.Key.PublicKey())
+		} else {
+			log.Printf("wiring: %s payer key %s (%s)", cluster, sig.Key.PublicKey(), sig.Mode)
+		}
+		out[cluster] = sig
 	}
-	return kp, url, nil
+	return out, nil
 }
 
 // buildSolanaRail builds the Solana USDC rail and checks it against the
@@ -926,13 +987,13 @@ func loadSolanaWallet(sc config.SolanaConfig) (*solana.Keypair, string, error) {
 // won't load, a node on another cluster) stops startup. A node that is merely
 // unreachable does not: the rail is left out and said so, so the API still
 // serves and no payment is made on a cluster that couldn't be verified.
-func buildSolanaRail(ctx context.Context, sc config.SolanaConfig) (*solanax402.Rail, error) {
-	kp, url, err := loadSolanaWallet(sc)
-	if err != nil {
-		return nil, err
+func buildSolanaRail(ctx context.Context, sc config.SolanaConfig, sig *payersigner.Signer) (*solanax402.Rail, error) {
+	if sig == nil {
+		return nil, fmt.Errorf("the %s Solana rail has no payer key", sc.Cluster)
 	}
+	url := solanaRPCURL(sc)
 	rail, err := solanax402.New(solanax402.Config{
-		Cluster: sc.Cluster, RPC: solana.NewRPC(url, nil), Signer: kp, MaxPaymentMinor: sc.MaxPaymentMinor,
+		Cluster: sc.Cluster, RPC: solana.NewRPC(url, nil), Signer: sig.Key, MaxPaymentMinor: sc.MaxPaymentMinor,
 	})
 	if err != nil {
 		return nil, err

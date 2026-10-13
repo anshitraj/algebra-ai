@@ -60,6 +60,11 @@ type PaymentRequest struct {
 	Requirements json.RawMessage `json:"requirements"`
 	// Resource is the URL being paid for, bound into the request hash.
 	Resource string `json:"resource,omitempty"`
+	// FundedByPass: this payment's money arrives from the Spend Pass's vault, in
+	// a pull made before the signed payment is handed over (and not at all if the
+	// pull fails). So a rail needn't find the money in the payer's account yet.
+	// Set by the coordinator, never by a caller.
+	FundedByPass bool `json:"-"`
 }
 
 // PaymentAuthority is a signed, single-use payment the executor attaches

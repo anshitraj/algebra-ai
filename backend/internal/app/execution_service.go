@@ -161,6 +161,9 @@ type ExecutionService struct {
 	health *HealthService
 	// trust is the provider registry's payee pins and blocks; nil runs without it.
 	trust *IntelService
+	// vaults tells a dry run whether a pass's vault can pay on a network; nil
+	// runs without it (no on-chain passes).
+	vaults VaultReader
 	// web searches the open web for endpoints (see web_discovery.go); nil is off.
 	web        WebFinder
 	webLimiter RateLimiter
