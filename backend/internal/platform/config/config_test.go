@@ -69,6 +69,28 @@ func TestValidateProduction_ARealRailNeedsVaultsRequired(t *testing.T) {
 	}
 }
 
+// Real money is signed by a key that never sits on the server.
+func TestValidateProduction_AMainnetPayerMustBeCloudKMS(t *testing.T) {
+	t.Setenv("REDIS_ADDR", "redis.internal:6379")
+	c := prodConfig()
+	c.OnchainPasses.Required = map[string]bool{"mainnet": true}
+	c.SolanaRails = []SolanaConfig{{Cluster: "mainnet", KeypairFile: "/secrets/mainnet.json"}}
+	err := c.ValidateProduction()
+	if err == nil || !strings.Contains(err.Error(), "SOLANA_MAINNET_KMS_KEY_VERSION") {
+		t.Fatalf("a mainnet key in a file must be refused in production, got %v", err)
+	}
+	c.SolanaRails = []SolanaConfig{{Cluster: "mainnet", KMSKeyVersion: "projects/p/locations/global/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1"}}
+	if err := c.ValidateProduction(); err != nil {
+		t.Fatalf("a KMS key: %v", err)
+	}
+	// Devnet may still use a generated or file key.
+	c.SolanaRails = []SolanaConfig{{Cluster: "devnet", Signer: "generated"}}
+	c.OnchainPasses.Required = map[string]bool{"devnet": true}
+	if err := c.ValidateProduction(); err != nil {
+		t.Fatalf("devnet: %v", err)
+	}
+}
+
 func TestValidateProduction_MockAllowedOnlyWhenExplicit(t *testing.T) {
 	t.Setenv("REDIS_ADDR", "redis:6379")
 	t.Setenv("ALLOW_MOCK_MERCHANT", "true")
@@ -167,7 +189,7 @@ func TestLoadSolanaRails(t *testing.T) {
 		clear(t)
 		t.Setenv("SOLANA_DEVNET_SIGNER", "generated")
 		t.Setenv("SOLANA_DEVNET_KEYPAIR_FILE", ".data/devnet.json")
-		if _, err := loadSolanaRails(SolanaConfig{}); err == nil || !strings.Contains(err.Error(), "not both") {
+		if _, err := loadSolanaRails(SolanaConfig{}); err == nil || !strings.Contains(err.Error(), "not several") {
 			t.Errorf("got %v", err)
 		}
 	})
@@ -184,6 +206,35 @@ func TestLoadSolanaRails(t *testing.T) {
 		t.Setenv("SOLANA_DEVNET_SIGNER", "magic")
 		if _, err := loadSolanaRails(SolanaConfig{}); err == nil || !strings.Contains(err.Error(), "SOLANA_DEVNET_SIGNER") {
 			t.Errorf("got %v", err)
+		}
+	})
+	t.Run("a Cloud KMS key stands in for a wallet", func(t *testing.T) {
+		clear(t)
+		const v = "projects/p/locations/global/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1"
+		t.Setenv("SOLANA_ALLOW_MAINNET", "yes")
+		t.Setenv("SOLANA_MAINNET_KMS_KEY_VERSION", v)
+		rails, err := loadSolanaRails(SolanaConfig{})
+		if err != nil || len(rails) != 1 || rails[0].Cluster != "mainnet" || rails[0].KMSKeyVersion != v || rails[0].Keypair != "" {
+			t.Errorf("%v %+v", err, rails)
+		}
+	})
+	t.Run("a KMS key and a wallet together are refused", func(t *testing.T) {
+		clear(t)
+		t.Setenv("SOLANA_ALLOW_MAINNET", "yes")
+		t.Setenv("SOLANA_MAINNET_KMS_KEY_VERSION", "projects/p/locations/global/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1")
+		t.Setenv("SOLANA_MAINNET_KEYPAIR_FILE", ".data/mainnet.json")
+		if _, err := loadSolanaRails(SolanaConfig{}); err == nil || !strings.Contains(err.Error(), "not both") {
+			t.Errorf("got %v", err)
+		}
+	})
+	t.Run("a KMS value that is not one exact key version is refused at start", func(t *testing.T) {
+		clear(t)
+		t.Setenv("SOLANA_ALLOW_MAINNET", "yes")
+		for _, bad := range []string{"my-key", "projects/p/locations/global/keyRings/r/cryptoKeys/k"} {
+			t.Setenv("SOLANA_MAINNET_KMS_KEY_VERSION", bad)
+			if _, err := loadSolanaRails(SolanaConfig{}); err == nil || !strings.Contains(err.Error(), "exact Cloud KMS key version") {
+				t.Errorf("%q: got %v", bad, err)
+			}
 		}
 	})
 	t.Run("the legacy single rail still counts", func(t *testing.T) {

@@ -497,7 +497,10 @@ func (s *server) payUpto(ctx context.Context, p persona, header string, in map[s
 	prompt, _ := in["prompt"].(string)
 	actual := min(uint64(2_000+40*len(prompt)), terms.MaxAmount)
 	from, _ := solana.ParsePublicKey(payload.From)
-	v := paychan.SignVoucher(s.key, ch, actual, time.Unix(payload.ExpiresAt, 0))
+	v, err := paychan.SignVoucher(s.key, ch, actual, time.Unix(payload.ExpiresAt, 0))
+	if err != nil {
+		return "", 0, "", err
+	}
 	bh, err := s.rpc.GetLatestBlockhash(ctx, solana.Confirmed)
 	if err != nil {
 		return "", 0, "", err

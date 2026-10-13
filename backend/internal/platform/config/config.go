@@ -176,6 +176,11 @@ type SolanaConfig struct {
 	// environment ends up in process listings and crash reports.
 	Keypair     string
 	KeypairFile string
+	// KMSKeyVersion names one exact Cloud KMS Ed25519 key version
+	// (SOLANA_MAINNET_KMS_KEY_VERSION, SOLANA_DEVNET_KMS_KEY_VERSION): the payer
+	// key then lives in KMS and never on this server. Required for mainnet in
+	// production.
+	KMSKeyVersion string
 	// Signer is "generated" when Algebra makes the payer key itself and keeps
 	// it sealed in the database (SOLANA_DEVNET_SIGNER=generated). Devnet only:
 	// a key that moves real money is one the operator controls. Empty means
@@ -632,6 +637,10 @@ func (c *Config) ValidateProduction() error {
 		if cl == "mainnet-beta" {
 			cl = "mainnet"
 		}
+		// Real money is signed by a key that never sits on the server.
+		if cl == "mainnet" && rail.KMSKeyVersion == "" {
+			problems = append(problems, "the Solana mainnet payer must be a Cloud KMS key (SOLANA_MAINNET_KMS_KEY_VERSION): a key in a file or an environment variable on the server is not accepted with real money; see docs/SIGNER.md")
+		}
 		if c.OnchainPasses.Disabled || !c.OnchainPasses.Required[cl] {
 			problems = append(problems, fmt.Sprintf("the Solana %s rail needs SPEND_PASS_REQUIRED=%s (and the vault program on), so that every payment comes from a Spend Pass vault and never from the payer's own funds", cl, cl))
 		}
@@ -719,8 +728,15 @@ func loadSolana(c *SolanaConfig) error {
 	c.Keypair = strings.TrimSpace(os.Getenv("SOLANA_KEYPAIR"))
 	c.KeypairFile = strings.TrimSpace(os.Getenv("SOLANA_KEYPAIR_FILE"))
 	c.SignerPubkey = strings.TrimSpace(os.Getenv("SOLANA_SIGNER_PUBKEY"))
-	if c.Keypair == "" && c.KeypairFile == "" {
-		return errors.New("config: SOLANA_CLUSTER is set but there is no wallet: set SOLANA_KEYPAIR_FILE (preferred) or SOLANA_KEYPAIR")
+	c.KMSKeyVersion = strings.TrimSpace(os.Getenv("SOLANA_KMS_KEY_VERSION"))
+	if c.KMSKeyVersion != "" && (c.Keypair != "" || c.KeypairFile != "") {
+		return errors.New("config: choose SOLANA_KMS_KEY_VERSION or a keypair, not both")
+	}
+	if err := checkKMSKeyVersion("SOLANA_KMS_KEY_VERSION", c.KMSKeyVersion); err != nil {
+		return err
+	}
+	if c.Keypair == "" && c.KeypairFile == "" && c.KMSKeyVersion == "" {
+		return errors.New("config: SOLANA_CLUSTER is set but there is no wallet: set SOLANA_KEYPAIR_FILE (preferred), SOLANA_KEYPAIR or SOLANA_KMS_KEY_VERSION")
 	}
 	c.MaxPaymentMinor = 1_000_000 // 1 USDC
 	if v := strings.TrimSpace(os.Getenv("SOLANA_MAX_PAYMENT_USDC")); v != "" {
@@ -729,6 +745,18 @@ func loadSolana(c *SolanaConfig) error {
 			return fmt.Errorf("config: SOLANA_MAX_PAYMENT_USDC must be a positive amount like 0.50: %v", err)
 		}
 		c.MaxPaymentMinor = n
+	}
+	return nil
+}
+
+// checkKMSKeyVersion refuses a value that is not one exact CryptoKeyVersion, so
+// a typo stops the server at start instead of at the first payment.
+func checkKMSKeyVersion(name, v string) error {
+	if v == "" {
+		return nil
+	}
+	if !strings.HasPrefix(v, "projects/") || !strings.Contains(v, "/cryptoKeyVersions/") {
+		return fmt.Errorf("config: %s must be one exact Cloud KMS key version (projects/…/locations/…/keyRings/…/cryptoKeys/…/cryptoKeyVersions/N)", name)
 	}
 	return nil
 }
@@ -750,7 +778,11 @@ func loadSolanaRails(legacy SolanaConfig) ([]SolanaConfig, error) {
 			Keypair:     strings.TrimSpace(os.Getenv(cl.prefix + "KEYPAIR")),
 			KeypairFile: strings.TrimSpace(os.Getenv(cl.prefix + "KEYPAIR_FILE")),
 
-			SignerPubkey: strings.TrimSpace(os.Getenv(cl.prefix + "SIGNER_PUBKEY")),
+			SignerPubkey:  strings.TrimSpace(os.Getenv(cl.prefix + "SIGNER_PUBKEY")),
+			KMSKeyVersion: strings.TrimSpace(os.Getenv(cl.prefix + "KMS_KEY_VERSION")),
+		}
+		if err := checkKMSKeyVersion(cl.prefix+"KMS_KEY_VERSION", c.KMSKeyVersion); err != nil {
+			return nil, err
 		}
 		switch v := strings.ToLower(strings.TrimSpace(os.Getenv(cl.prefix + "SIGNER"))); v {
 		case "":
@@ -758,14 +790,17 @@ func loadSolanaRails(legacy SolanaConfig) ([]SolanaConfig, error) {
 			if cl.cluster != "devnet" {
 				return nil, fmt.Errorf("config: %sSIGNER=generated is for devnet only. Real money needs a key held outside this server or one the operator controls", cl.prefix)
 			}
-			if c.Keypair != "" || c.KeypairFile != "" {
-				return nil, fmt.Errorf("config: choose %sSIGNER=generated or a keypair, not both", cl.prefix)
+			if c.Keypair != "" || c.KeypairFile != "" || c.KMSKeyVersion != "" {
+				return nil, fmt.Errorf("config: choose %sSIGNER=generated, a keypair or a Cloud KMS key, not several", cl.prefix)
 			}
 			c.Signer = v
 		default:
 			return nil, fmt.Errorf("config: %sSIGNER must be \"generated\" or empty, not %q", cl.prefix, v)
 		}
-		if c.Keypair == "" && c.KeypairFile == "" && c.Signer == "" {
+		if c.KMSKeyVersion != "" && (c.Keypair != "" || c.KeypairFile != "") {
+			return nil, fmt.Errorf("config: choose %sKMS_KEY_VERSION or a keypair, not both", cl.prefix)
+		}
+		if c.Keypair == "" && c.KeypairFile == "" && c.Signer == "" && c.KMSKeyVersion == "" {
 			continue
 		}
 		if cl.cluster == "mainnet" && strings.ToLower(os.Getenv("SOLANA_ALLOW_MAINNET")) != "yes" {

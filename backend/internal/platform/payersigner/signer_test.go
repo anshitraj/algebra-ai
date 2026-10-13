@@ -223,7 +223,7 @@ func TestServersStartingTogetherEndUpWithOneKey(t *testing.T) {
 
 func TestOneSourceOnly(t *testing.T) {
 	_, err := Resolve(context.Background(), Source{Cluster: "devnet", Network: "solana-devnet", Generate: true, Keypair: "[1]"}, deps(t, newMemStore(), 'a'))
-	if err == nil || !strings.Contains(err.Error(), "not both") {
+	if err == nil || !strings.Contains(err.Error(), "not several") {
 		t.Fatalf("a keypair and a generated signer together: %v", err)
 	}
 	if _, err := Resolve(context.Background(), Source{Cluster: "devnet"}, deps(t, newMemStore(), 'a')); err == nil {
@@ -279,6 +279,76 @@ func TestErrorsNeverContainKeyMaterial(t *testing.T) {
 			if strings.Contains(e.Error(), leak) {
 				t.Fatalf("case %d leaked %q: %v", i, leak, e)
 			}
+		}
+	}
+}
+
+// --- Cloud KMS ---
+
+const kmsVersion = "projects/p/locations/global/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1"
+
+// kmsKey is a remote signer that signs with a key this test holds, as a stand-in
+// for Cloud KMS.
+func kmsKey(t *testing.T) (*solana.Keypair, func(context.Context, string) (*solana.Keypair, error)) {
+	t.Helper()
+	local, _ := solana.NewKeypair()
+	remote := solana.NewRemoteSigner(local.PublicKey(), func(m []byte) ([64]byte, error) { return local.Sign(m), nil })
+	return remote, func(_ context.Context, v string) (*solana.Keypair, error) {
+		if v != kmsVersion {
+			return nil, errors.New("kms: no such key version")
+		}
+		return remote, nil
+	}
+}
+
+func TestAKMSKeyIsUsedAndNeverTouchesTheDatabase(t *testing.T) {
+	remote, kms := kmsKey(t)
+	st := newMemStore()
+	st.passes = true // vaults exist: irrelevant to a key that lives in KMS
+	src := Source{Cluster: "mainnet", Network: "solana", KMSKeyVersion: kmsVersion}
+	got, err := Resolve(context.Background(), src, Deps{Store: st, KMS: kms})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Mode != ModeKMS || got.Created || got.Key.PublicKey() != remote.PublicKey() || !got.Key.IsRemote() {
+		t.Fatalf("kms signer: %+v", got)
+	}
+	if st.saves != 0 || len(st.rows) != 0 {
+		t.Fatal("a KMS key is never written to the database")
+	}
+	// The same pin check as any other source.
+	src.ExpectPubkey = remote.PublicKey().String()
+	if _, err := Resolve(context.Background(), src, Deps{KMS: kms}); err != nil {
+		t.Fatalf("the right pin: %v", err)
+	}
+	other, _ := solana.NewKeypair()
+	src.ExpectPubkey = other.PublicKey().String()
+	if _, err := Resolve(context.Background(), src, Deps{KMS: kms}); err == nil || !strings.Contains(err.Error(), "pinned") {
+		t.Fatalf("the wrong pin: %v", err)
+	}
+}
+
+func TestAKMSKeyThatCannotBeReachedStopsTheStart(t *testing.T) {
+	_, kms := kmsKey(t)
+	// Another key version, or an outage: no other payer is made up.
+	_, err := Resolve(context.Background(), Source{Cluster: "mainnet", KMSKeyVersion: kmsVersion + "9"}, Deps{KMS: kms})
+	if err == nil || !strings.Contains(err.Error(), "Cloud KMS") {
+		t.Fatalf("got %v", err)
+	}
+	if _, err := Resolve(context.Background(), Source{Cluster: "mainnet", KMSKeyVersion: kmsVersion}, Deps{}); err == nil {
+		t.Fatal("no KMS client, no signer")
+	}
+}
+
+func TestKMSIsNotCombinedWithAnotherSource(t *testing.T) {
+	_, kms := kmsKey(t)
+	for name, src := range map[string]Source{
+		"a keypair":       {Cluster: "devnet", KMSKeyVersion: kmsVersion, Keypair: "[1]"},
+		"a generated key": {Cluster: "devnet", KMSKeyVersion: kmsVersion, Generate: true},
+		"a keypair file":  {Cluster: "devnet", KMSKeyVersion: kmsVersion, KeypairFile: "x.json"},
+	} {
+		if _, err := Resolve(context.Background(), src, Deps{Store: newMemStore(), KMS: kms}); err == nil || !strings.Contains(err.Error(), "not several") {
+			t.Errorf("%s together with KMS: %v", name, err)
 		}
 	}
 }

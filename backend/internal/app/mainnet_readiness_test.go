@@ -25,6 +25,22 @@ func TestMainnetReadiness_NothingConfiguredCanOnlyRead(t *testing.T) {
 	}
 }
 
+// The signer gate is the operator's to settle, and a Cloud KMS payer settles it.
+func TestMainnetReadiness_ACloudKMSPayerPassesTheSignerGate(t *testing.T) {
+	r := AssessMainnet(MainnetFacts{})
+	if g := gateOf(t, r, "signer"); g.Passed || g.Blocking || g.Detail == "" {
+		t.Fatalf("a key on the server fails the signer gate, without blocking, and says why: %+v", g)
+	}
+	r = AssessMainnet(MainnetFacts{SignerExternal: true})
+	if g := gateOf(t, r, "signer"); !g.Passed || g.Detail != "" {
+		t.Fatalf("a KMS payer passes: %+v", g)
+	}
+	// Still not ready for customers' funds: nobody has reviewed the program.
+	if AssessMainnet(MainnetFacts{SignerExternal: true}).ReadyForCustomerFunds {
+		t.Fatal("a KMS payer alone does not make mainnet ready")
+	}
+}
+
 func TestMainnetReadiness_EveryBlockingGateIsNeededToPay(t *testing.T) {
 	const payer, multisig = "GhpmTWT8ng3viaQtFNDF7T7RyrmemosWvEDetKmBEoPA", "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf"
 	all := MainnetFacts{ExecutionEnabled: true, RailConfigured: true, Payer: payer, ProgramDeployed: true, PassesRequired: true,

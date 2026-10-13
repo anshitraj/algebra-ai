@@ -52,7 +52,10 @@ func TestOpenMatchesARealDevnetChannel(t *testing.T) {
 func TestVoucherAndItsPrecompileInstruction(t *testing.T) {
 	k, _ := solana.NewKeypair()
 	ch := solana.MustPublicKey("Exf7dxNdykdxtLTZQoitkjVRxbtRw4FhqXkUMxsbvG7J")
-	v := SignVoucher(k, ch, 42_500, time.Unix(1_800_000_000, 0))
+	v, err := SignVoucher(k, ch, 42_500, time.Unix(1_800_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !v.Verify() {
 		t.Fatal("voucher doesn't verify")
 	}
@@ -147,7 +150,10 @@ func TestUptoOpenBuildsWhatTheProviderAccepts(t *testing.T) {
 	}
 	// The settlement transaction carries the voucher's precompile right before
 	// settle_and_seal, then distribute.
-	v := SignVoucher(sponsor, ch, 12_000, time.Unix(p.ExpiresAt, 0))
+	v, err := SignVoucher(sponsor, ch, 12_000, time.Unix(p.ExpiresAt, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
 	msg, err := SettleUptoTx("solana-devnet", terms, payer.PublicKey(), ch, &v, [32]byte{2})
 	if err != nil {
 		t.Fatal(err)

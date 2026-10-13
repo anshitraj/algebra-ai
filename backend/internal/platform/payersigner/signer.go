@@ -39,6 +39,9 @@ const (
 	// ModeGenerated: Algebra made the key itself and keeps it sealed in the
 	// database. Devnet only.
 	ModeGenerated Mode = "generated"
+	// ModeKMS: the key lives in Cloud KMS and signs there; this server holds
+	// only its address. The only mode for real money in production.
+	ModeKMS Mode = "kms"
 )
 
 // GeneratedClusters are the clusters a generated key may serve.
@@ -53,6 +56,8 @@ type Source struct {
 	Keypair, KeypairFile string
 	// Generate asks for a key Algebra makes and keeps itself (ModeGenerated).
 	Generate bool
+	// KMSKeyVersion names one exact Cloud KMS Ed25519 key version (ModeKMS).
+	KMSKeyVersion string
 	// ExpectPubkey, when set, pins the address the key must have.
 	ExpectPubkey string
 }
@@ -78,10 +83,12 @@ type Store interface {
 	HasPasses(ctx context.Context, network string) (bool, error)
 }
 
-// Deps are what generated keys need.
+// Deps are what generated and KMS keys need.
 type Deps struct {
 	Store Store
 	Enc   privacy.Encryptor
+	// KMS returns the signer for one Cloud KMS key version.
+	KMS func(ctx context.Context, keyVersion string) (*solana.Keypair, error)
 }
 
 // Signer is a cluster's resolved payer key.
@@ -110,14 +117,22 @@ func aad(cluster, publicKey string) []byte {
 // material.
 func Resolve(ctx context.Context, src Source, deps Deps) (*Signer, error) {
 	local := src.Keypair != "" || src.KeypairFile != ""
-	if local && src.Generate {
-		return nil, fmt.Errorf("payer key for %s: choose a keypair or a generated signer, not both", src.Cluster)
+	sources := 0
+	for _, on := range []bool{local, src.Generate, src.KMSKeyVersion != ""} {
+		if on {
+			sources++
+		}
+	}
+	if sources > 1 {
+		return nil, fmt.Errorf("payer key for %s: choose one source (a keypair, a generated signer or a Cloud KMS key), not several", src.Cluster)
 	}
 	var (
 		out *Signer
 		err error
 	)
 	switch {
+	case src.KMSKeyVersion != "":
+		out, err = resolveKMS(ctx, src, deps)
 	case src.Generate:
 		out, err = resolveGenerated(ctx, src, deps)
 	case local:
@@ -135,6 +150,20 @@ func Resolve(ctx context.Context, src Source, deps Deps) (*Signer, error) {
 			src.Cluster, out.Key.PublicKey(), want)
 	}
 	return out, nil
+}
+
+// resolveKMS asks Cloud KMS for the key's address and a signer; the secret never
+// reaches this server. An outage or a refusal stops the start: a server doesn't
+// carry on with some other payer.
+func resolveKMS(ctx context.Context, src Source, deps Deps) (*Signer, error) {
+	if deps.KMS == nil {
+		return nil, fmt.Errorf("payer key for %s: Cloud KMS signing isn't available in this build", src.Cluster)
+	}
+	kp, err := deps.KMS(ctx, src.KMSKeyVersion)
+	if err != nil {
+		return nil, fmt.Errorf("payer key for %s: Cloud KMS key %s: %w", src.Cluster, src.KMSKeyVersion, err)
+	}
+	return &Signer{Cluster: src.Cluster, Mode: ModeKMS, Key: kp}, nil
 }
 
 func resolveLocal(src Source) (*Signer, error) {

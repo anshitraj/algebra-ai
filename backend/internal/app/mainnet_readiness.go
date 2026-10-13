@@ -15,6 +15,8 @@ type MainnetFacts struct {
 	ProgramID       string
 	// PassesRequired: SPEND_PASS_REQUIRED includes mainnet.
 	PassesRequired bool
+	// SignerExternal: the payer key is held in Cloud KMS, not on this server.
+	SignerExternal bool
 	// AuthorityKnown: the program's upgrade authority could be read.
 	// Immutable: it has none. UpgradeAuthority: the key, when it has one.
 	AuthorityKnown   bool
@@ -83,7 +85,7 @@ func AssessMainnet(f MainnetFacts) MainnetReadiness {
 			gate("upgrade_authority", "The program's upgrade authority is not a key this server holds", authorityOK, true, authorityWhy),
 			gate("execution", "Mainnet execution is switched on", f.ExecutionEnabled, true, "MAINNET_EXECUTION is off: every mainnet payment is refused with MAINNET_EXECUTION_DISABLED"),
 			gate("review", "The program has had an independent security review", false, false, "not done: nobody outside the team has reviewed the program"),
-			gate("signer", "The payer key is held outside the server (KMS or HSM)", false, false, "the payer key is a file or an environment variable on the server"),
+			gate("signer", "The payer key is held outside the server (KMS or HSM)", f.SignerExternal, false, "the payer key is a file or an environment variable on the server"),
 		},
 	}
 	out.CanPay, out.ReadyForCustomerFunds = true, true
