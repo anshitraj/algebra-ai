@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
 import type { AgentKind, BudgetPeriod, IssuedPass, PassConnect, ProviderSummary, SpendPass } from "@/lib/types";
+import { mcpSetup } from "@/lib/mcp-clients";
 import { formatMoney } from "@/lib/money";
 import { catalogName } from "@/lib/paysh";
 import { useNetwork } from "@/lib/network";
@@ -390,22 +392,21 @@ function IssuedCard({ pass, connect, onDone }: { pass: IssuedPass; connect: Pass
           )}
           {tab === "claude" && mcp && (
             <Snippet
-              title="Run in your terminal"
-              code={`claude mcp add --transport http algebra ${mcp} \\\n  --header "Authorization: Bearer ${t}"`}
+              {...mcpSetup("claude-code", mcp, t)}
               note="Then ask Claude for something that costs money, for example a token risk score. It can only spend within this pass."
             />
           )}
           {tab === "desktop" && mcp && (
-            <Snippet
-              title="Add to your MCP config (claude_desktop_config.json or .cursor/mcp.json)"
-              code={JSON.stringify({ mcpServers: { algebra: { command: "npx", args: ["-y", "mcp-remote", mcp, "--header", `Authorization: Bearer ${t}`] } } }, null, 2)}
-            />
+            <Snippet {...mcpSetup("claude-desktop", mcp, t)} title="Add to your MCP config (claude_desktop_config.json or .cursor/mcp.json)" />
           )}
           {tab === "openai" && mcp && (
-            <Snippet
-              title="Python — OpenAI Agents SDK"
-              code={`from agents import Agent\nfrom agents.mcp import MCPServerStreamableHttp\n\nalgebra = MCPServerStreamableHttp(params={\n    "url": "${mcp}",\n    "headers": {"Authorization": "Bearer ${t}"},\n})\nagent = Agent(name="Researcher", mcp_servers=[algebra])`}
-            />
+            <Snippet {...mcpSetup("openai-agents", mcp, t)} title="Python — OpenAI Agents SDK" />
+          )}
+          {tab !== "rest" && mcp && (
+            <p className="text-xs text-muted">
+              Codex, Antigravity or Cursor without npx: each has its own format on the{" "}
+              <Link href="/console/connect" className="text-primary hover:underline">Connect page</Link>.
+            </p>
           )}
           {tab === "rest" && (
             <>

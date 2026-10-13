@@ -48,7 +48,7 @@ Beyond *how much*, a pass has controls on *how* (`PUT /api/v1/me/passes/{id}/con
 
 The catalogs list thousands of endpoints and anyone can publish one, so the first payment to a stranger is where an agent is most easily misled: hence the default cap.
 
-**Dry run.** `POST /api/v1/policy/simulate` (MCP `algebra.simulate`) takes what `POST /execute` takes, plus `live_quotes`, and answers whether it would be allowed (`ALLOW`, `REQUIRE_APPROVAL`, `DENY`), why,
+**Dry run.** `POST /api/v1/policy/simulate` (MCP `algebra_simulate`) takes what `POST /execute` takes, plus `live_quotes`, and answers whether it would be allowed (`ALLOW`, `REQUIRE_APPROVAL`, `DENY`), why,
 the plan the router would follow, and what each provider would meet (the pass's remaining budget, the controls, the guards). It creates no intent, reserves nothing and pays nothing; with `live_quotes` the only thing
 that leaves Algebra is each provider's free unpaid `402`.
 
@@ -60,7 +60,7 @@ pass can raise.
 
 ## Connecting an agent
 
-- **MCP** at `/mcp`: send the token as an HTTP header, so it never passes through the model: see [MCP.md](MCP.md). `algebra.spend_pass` reads the pass; `algebra.execute` spends under it.
+- **MCP** at `/mcp`: send the token as an HTTP header, so it never passes through the model: see [MCP.md](MCP.md). `algebra_spend_pass` reads the pass; `algebra_execute` spends under it.
 - **REST**: `POST /api/v1/execute`; `GET /api/v1/pass` returns the pass's limits and remaining budget. Details: [EXECUTION.md](EXECUTION.md) and [backend/openapi/execution.yaml](../backend/openapi/execution.yaml).
 - An agent can read its pass and spend under it. It cannot approve, change a limit, create a pass or touch a wallet: those are human-only and accept only a session cookie.
 

@@ -19,7 +19,7 @@ type spendPassInput struct {
 
 func (srv *Server) registerSpendPassTools(s *gomcp.Server) {
 	gomcp.AddTool(s, &gomcp.Tool{
-		Name: "algebra.spend_pass",
+		Name: "algebra_spend_pass",
 		Description: "Read the Spend Pass you are spending under: the budget in USDC and what is left of it this period, the most one call may cost, " +
 			"the amount above which the person must approve, which providers it allows, its controls (calls per minute, what to do about a provider it has never paid, " +
 			"whether it is frozen) and when it expires. Check it before asking for something expensive: Algebra refuses anything outside it, whatever you do. " +

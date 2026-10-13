@@ -15,7 +15,7 @@ transactions to prove it.
 | Capability | State | How to see it |
 |---|---|---|
 | Discover mainnet-compatible APIs | Works | Providers and Provider intelligence in the console; `GET /api/v1/intel/endpoints?network=solana` |
-| Get unpaid quotes from them | Works | `POST /api/v1/policy/simulate` with `"allowed_networks":["solana"]` and `"live_quotes":true`; MCP `algebra.quote` |
+| Get unpaid quotes from them | Works | `POST /api/v1/policy/simulate` with `"allowed_networks":["solana"]` and `"live_quotes":true`; MCP `algebra_quote` |
 | Compare cost, speed and health | Works | the same dry run; Routing in the console |
 | Explain why execution is unavailable | Works | every refusal carries a code: `MAINNET_EXECUTION_DISABLED`, `network_not_allowed`, `NETWORK_NOT_ALLOWED` |
 | Build and *simulate* a real payment without sending it | Works | `backend/cmd/x402-dryrun` |

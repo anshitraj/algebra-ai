@@ -574,7 +574,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	}
 
 	// With a Gemini key, agents can search the open web for endpoints no catalog
-	// lists (algebra.discover_web); the limiter, when there is one, holds each
+	// lists (algebra_discover_web); the limiter, when there is one, holds each
 	// agent to a few searches an hour.
 	if gemini != nil {
 		execSvc.SetWebFinder(webdiscovery.New(gemini), limiter)

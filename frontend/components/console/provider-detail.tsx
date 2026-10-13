@@ -109,7 +109,7 @@ function EndpointExample({ provider, endpoint: e, network }: { provider: Provide
     {!valid && <ErrorNote>Enter a positive USDC ceiling.</ErrorNote>}
     <p className="text-xs leading-relaxed text-muted">Add the endpoint&apos;s required parameters to <code>input</code>. GET uses query parameters; POST uses a JSON body. Set <code>ALGEBRA_API</code> to your API base URL and <code>ALGEBRA_API_KEY</code> to a key from Projects &amp; API keys. Copying an example doesn&apos;t make a payment.</p>
     <Snippet title="REST request" code={curl} />
-    <Snippet title="MCP tool arguments · algebra.execute" code={JSON.stringify(mcp, null, 2)} />
+    <Snippet title="MCP tool arguments · algebra_execute" code={JSON.stringify(mcp, null, 2)} />
     {e.input_schema != null && <Snippet title="Input schema from the catalog" code={JSON.stringify(e.input_schema, null, 2)} />}
     <Link href="/console/connect" className="inline-flex min-h-9 items-center gap-1 text-xs text-primary hover:underline">Find your API base URL in the setup guide</Link>
   </div>;

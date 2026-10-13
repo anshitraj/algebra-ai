@@ -57,12 +57,12 @@ An agent that can pay for things has three problems, and none is the model's to 
 | **Replay** | The provider's answer is kept sealed (AES-256-GCM, 24 hours by default, opt out per request) so asking again returns it with `replayed: true` instead of "already committed". |
 | **Developer platform** | Organizations, projects and API keys scoped to one project and one environment (`sandbox`, `devnet`, `mainnet`). A key authenticates; a Spend Pass authorises: two authorities, kept apart. Keys are shown once, stored as a hash, scoped (`read`, `simulate`, `execute`), rotated and revoked, with an audit trail and per-project usage. A sandbox key can never reach a chain. [docs/PLATFORM.md](docs/PLATFORM.md) |
 | **Provider Intelligence** | A registry of every paid endpoint the catalogs list (6,131 on 2026-10-12), refreshed every six hours by one instance under a database lease, with a history of what changed. The payee of an endpoint is pinned; one that asks to be paid somewhere else is refused at payment time and blocked. Listed, Quoted, Tested, Verified and Executable are five separate facts: a paid delivery makes an endpoint *payment tested* and nothing more, and *verified* means six checks passed and a person recorded the evidence of who runs it. [docs/PLATFORM.md](docs/PLATFORM.md#provider-intelligence) |
-| **Interfaces** | REST (`/api/v1`), an MCP server at `/mcp` (stateless streamable HTTP, the token as a bearer header, so it never passes through the model) whose default tools are `algebra.discover`, `quote`, `simulate`, `execute`, `status`, `receipt` and `spend_pass`, and a console: quickstart, projects and keys, the agent chat, passes, providers, provider intelligence, routing, the firewall and executions. |
+| **Interfaces** | REST (`/api/v1`), an MCP server at `/mcp` (stateless streamable HTTP, the token as a bearer header, so it never passes through the model) whose default tools are `algebra_discover`, `algebra_quote`, `algebra_simulate`, `algebra_execute`, `algebra_status`, `algebra_receipt` and `algebra_spend_pass`, and a console: quickstart, projects and keys, the agent chat, passes, providers, provider intelligence, routing, the firewall and executions. |
 
 ## How a request flows
 
 ```
-agent ──► POST /api/v1/execute   (or MCP algebra.execute)
+agent ──► POST /api/v1/execute   (or MCP algebra_execute)
             │
             ▼
    Spend Pass  ── is this agent, this provider, this amount, this fast, this new, allowed? ── no ─► refused, with reasons

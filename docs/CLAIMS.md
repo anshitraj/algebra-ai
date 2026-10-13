@@ -37,9 +37,10 @@ Evidence comes in four kinds, and they are not interchangeable:
 
 | Claim | Evidence |
 |---|---|
-| The default tools are `algebra.discover`, `quote`, `simulate`, `execute`, `status`, `receipt`, `spend_pass` (with `classes` and `discover_web`); the shopping tools and earlier names need `MCP_LEGACY_TOOLS=on` | HTTP tests `TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken`, `TestMCPOverHTTP_TheLegacyToolsNeedTheirFlag` |
+| The default tools are `algebra_discover`, `algebra_quote`, `algebra_simulate`, `algebra_execute`, `algebra_status`, `algebra_receipt`, `algebra_spend_pass` (with `algebra_classes` and `algebra_discover_web`); the shopping tools and earlier names need `MCP_LEGACY_TOOLS=on` | HTTP tests `TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken`, `TestMCPOverHTTP_TheLegacyToolsNeedTheirFlag` |
 | Over MCP an agent quotes, simulates, executes, repeats without paying twice, reads the status and a receipt that verifies | HTTP test, the first above |
 | No token, no payment; another person's receipt cannot be read | HTTP tests `TestMCPOverHTTP_NoTokenNoPayment`, the first above |
+| No default tool name has a dot (letters, digits and `_` only, so no client has to rewrite one); a call under an earlier dotted name such as `algebra.execute` is still answered | Unit tests `TestListedNamesNeedNoRewritingByAnyClient`, `TestEarlierDottedNamesAreAnsweredByTodaysTools`; HTTP test, the first above |
 
 ### Routing and guards
 

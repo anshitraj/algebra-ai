@@ -7,7 +7,7 @@ call, checks the result and signs a receipt. The agent never holds a key, a card
 ```
 agent: "token price for X, at most 0.01 USDC, cheapest"
    │
-   ▼  POST /api/v1/execute        (or the MCP tool algebra.execute, at /mcp)
+   ▼  POST /api/v1/execute        (or the MCP tool algebra_execute, at /mcp)
 intent ─► candidates ─► quotes ─► ranking ─► plan ─► attempt(s) ─► verify ─► receipt
  (econ)   (routing)    (free     (cheapest   (best    reserve → begin     (schema,   (signed,
                        unpaid    fastest     few)     → pay → call →      quality)   JWKS)
@@ -72,7 +72,7 @@ A *class* gives them one name and one input shape: 14 of them today (`token.pric
 `email.verify`), 661 endpoints across the catalogs, 280 routable. Membership is decided from what a catalog says about an endpoint (its path and
 description), which is third-party text: it makes an endpoint a *candidate*, never a trusted one. Each member has an input adapter that renames
 or reshapes the class's fields into its own. `GET /api/v1/classes` and `/classes/{id}` list them with listed prices and health; the MCP tool
-`algebra.classes` does the same. Ask for the class and Algebra routes; ask for one provider's capability and the call is pinned to it.
+`algebra_classes` does the same. Ask for the class and Algebra routes; ask for one provider's capability and the call is pinned to it.
 
 ## Safety properties, and the tests that pin them
 
@@ -108,7 +108,7 @@ or reshapes the class's fields into its own. `GET /api/v1/classes` and `/classes
 | `GET /api/v1/classes`, `/classes/{id}` | The classes, and a class's providers with listed prices and health. |
 | `GET /api/v1/providers`, `/providers/{id}` | The catalogs as one directory. |
 | `POST /api/v1/discover/web` | Search the open web for endpoints no catalog lists (needs `GEMINI_API_KEY`). |
-| MCP `algebra.execute`, `execution_status`, `simulate`, `classes`, `discover_providers`, `discover_web`, `spend_pass` | The same, for Claude and other MCP clients, at `/mcp`. See [MCP.md](MCP.md). |
+| MCP `algebra_execute`, `algebra_status`, `algebra_simulate`, `algebra_quote`, `algebra_receipt`, `algebra_classes`, `algebra_discover`, `algebra_discover_web`, `algebra_spend_pass` | The same, for Claude and other MCP clients, at `/mcp`. See [MCP.md](MCP.md). |
 
 Full request and response schemas: [backend/openapi/execution.yaml](../backend/openapi/execution.yaml).
 
@@ -168,7 +168,7 @@ ceiling, as it should be.
 
 ### The open web (`backend/providers/webdiscovery`, `app.DiscoverWeb`)
 
-For work no catalog lists, `POST /api/v1/discover/web` (MCP `algebra.discover_web`) asks Gemini, with Google Search grounding, for endpoints that charge by x402.
+For work no catalog lists, `POST /api/v1/discover/web` (MCP `algebra_discover_web`) asks Gemini, with Google Search grounding, for endpoints that charge by x402.
 A model can invent a URL or be steered by the page it read, so it is trusted with one thing, the address of an endpoint, and the address is checked the only
 way that means anything: each find is asked, with a free unpaid request, what it charges. The probe carries the class's sample input or nothing, **never the
 agent's input**, so nobody the agent hasn't chosen learns what it wants. A find that answers with x402 terms Algebra can pay is marked `verified` with its price and

@@ -39,11 +39,11 @@ func TestExecutionToolsAreListedWithTheRightInputs(t *testing.T) {
 	var execute, status, simulate *gomcp.Tool
 	for _, tool := range list.Tools {
 		switch tool.Name {
-		case "algebra.execute":
+		case "algebra_execute":
 			execute = tool
-		case "algebra.status":
+		case "algebra_status":
 			status = tool
-		case "algebra.simulate":
+		case "algebra_simulate":
 			simulate = tool
 		}
 	}
@@ -62,11 +62,11 @@ func TestExecutionToolsAreListedWithTheRightInputs(t *testing.T) {
 	}
 	for _, want := range []string{"capability", "max_price_usdc"} {
 		if !slices.Contains(requiredOf(t, execute), want) {
-			t.Errorf("algebra.execute must require %s", want)
+			t.Errorf("algebra_execute must require %s", want)
 		}
 	}
 	if !slices.Contains(requiredOf(t, status), "intent_id") {
-		t.Error("algebra.status must require intent_id")
+		t.Error("algebra_status must require intent_id")
 	}
 	// The description is what an agent reads before deciding how to behave.
 	for _, phrase := range []string{"never charged twice", "pending_reconciliation", "untrusted"} {
@@ -94,7 +94,7 @@ func requiredOf(t *testing.T, tool *gomcp.Tool) []string {
 func TestExecutionToolsReportWhenDisabled(t *testing.T) {
 	cs := connect(t, &Server{})
 	res, err := cs.CallTool(context.Background(), &gomcp.CallToolParams{
-		Name:      "algebra.execute",
+		Name:      "algebra_execute",
 		Arguments: map[string]any{"capability": "solana.token-risk", "max_price_usdc": "0.05"},
 	})
 	if err != nil {
@@ -157,24 +157,24 @@ func TestClassesAndSimulateAreListedAndSteerAgentsToClasses(t *testing.T) {
 	for _, tool := range list.Tools {
 		tools[tool.Name] = tool
 	}
-	for _, name := range []string{"algebra.classes", "algebra.simulate", "algebra.execute"} {
+	for _, name := range []string{"algebra_classes", "algebra_simulate", "algebra_execute"} {
 		if tools[name] == nil {
 			t.Fatalf("%s must be listed", name)
 		}
 	}
 	for _, want := range []string{"capability", "max_price_usdc"} {
-		if !slices.Contains(requiredOf(t, tools["algebra.simulate"]), want) {
-			t.Errorf("algebra.simulate must require %s", want)
+		if !slices.Contains(requiredOf(t, tools["algebra_simulate"]), want) {
+			t.Errorf("algebra_simulate must require %s", want)
 		}
 	}
-	if len(requiredOf(t, tools["algebra.classes"])) != 0 {
-		t.Error("algebra.classes lists every class without any input")
+	if len(requiredOf(t, tools["algebra_classes"])) != 0 {
+		t.Error("algebra_classes lists every class without any input")
 	}
 	// An agent reads these before it picks a capability.
 	for name, phrase := range map[string]string{
-		"algebra.execute":  "algebra.classes",
-		"algebra.classes":  "rather than for one provider",
-		"algebra.simulate": "without paying anything",
+		"algebra_execute":  "algebra_classes",
+		"algebra_classes":  "rather than for one provider",
+		"algebra_simulate": "without paying anything",
 	} {
 		if !strings.Contains(tools[name].Description, phrase) {
 			t.Errorf("%s: the description must say %q", name, phrase)
@@ -188,8 +188,8 @@ func TestClassesAndSimulateReportWhenTheyCannotRun(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		"algebra.classes":  {map[string]any{}, "turned off"},
-		"algebra.simulate": {map[string]any{"capability": "token.price", "max_price_usdc": "0.05"}, "not enabled"},
+		"algebra_classes":  {map[string]any{}, "turned off"},
+		"algebra_simulate": {map[string]any{"capability": "token.price", "max_price_usdc": "0.05"}, "not enabled"},
 	} {
 		res, err := cs.CallTool(context.Background(), &gomcp.CallToolParams{Name: name, Arguments: tc.args})
 		if err != nil {
@@ -209,12 +209,12 @@ func TestDiscoverWebIsListedAndTellsAgentsWhatItDoesNotDo(t *testing.T) {
 	}
 	var tool *gomcp.Tool
 	for _, x := range list.Tools {
-		if x.Name == "algebra.discover_web" {
+		if x.Name == "algebra_discover_web" {
 			tool = x
 		}
 	}
 	if tool == nil {
-		t.Fatal("algebra.discover_web must be listed")
+		t.Fatal("algebra_discover_web must be listed")
 	}
 	if len(requiredOf(t, tool)) != 0 {
 		t.Error("capability or query: neither is required on its own")
@@ -225,7 +225,7 @@ func TestDiscoverWebIsListedAndTellsAgentsWhatItDoesNotDo(t *testing.T) {
 		}
 	}
 
-	res, err := cs.CallTool(context.Background(), &gomcp.CallToolParams{Name: "algebra.discover_web", Arguments: map[string]any{"query": "x"}})
+	res, err := cs.CallTool(context.Background(), &gomcp.CallToolParams{Name: "algebra_discover_web", Arguments: map[string]any{"query": "x"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -72,16 +72,22 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 	for _, tool := range tools.Tools {
 		listed[tool.Name] = true
 	}
-	for _, want := range []string{"algebra.discover", "algebra.quote", "algebra.execute", "algebra.status", "algebra.receipt", "algebra.simulate", "algebra.spend_pass", "algebra.classes"} {
+	for _, want := range []string{"algebra_discover", "algebra_quote", "algebra_execute", "algebra_status", "algebra_receipt", "algebra_simulate", "algebra_spend_pass", "algebra_classes"} {
 		if !listed[want] {
 			t.Errorf("%s is not offered over /mcp", want)
 		}
 	}
 	// The original shopping tools and the earlier names stay off unless asked for.
 	for name := range listed {
-		if !strings.HasPrefix(name, "algebra.") || name == "algebra.discover_providers" || name == "algebra.execution_status" {
+		if !strings.HasPrefix(name, "algebra_") || strings.Contains(name, ".") {
 			t.Errorf("%s is a legacy tool: it must need MCP_LEGACY_TOOLS=on", name)
 		}
+	}
+	// A name with a dot is refused or rewritten by clients whose model takes
+	// only letters, digits, "_" and "-" in a function name. An integration
+	// written before the rename still gets an answer under the dotted name.
+	if _, text, isErr := callTool(t, cs, "algebra.spend_pass", map[string]any{}); isErr {
+		t.Errorf("the earlier name algebra.spend_pass must still be answered: %s", text)
 	}
 
 	req := map[string]any{
@@ -90,7 +96,7 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 	}
 
 	// A dry run: allowed, and who would be paid. Nothing is paid.
-	sim, text, isErr := callTool(t, cs, "algebra.simulate", map[string]any{
+	sim, text, isErr := callTool(t, cs, "algebra_simulate", map[string]any{
 		"capability": req["capability"], "input": req["input"], "max_price_usdc": req["max_price_usdc"], "live_quotes": true,
 	})
 	if isErr || sim["verdict"] != "ALLOW" {
@@ -101,7 +107,7 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 	}
 
 	// A quote asks the provider for its real price, ranks the offers and pays nothing.
-	quote, text, isErr := callTool(t, cs, "algebra.quote", map[string]any{
+	quote, text, isErr := callTool(t, cs, "algebra_quote", map[string]any{
 		"capability": req["capability"], "input": req["input"], "max_price_usdc": req["max_price_usdc"],
 	})
 	if isErr || quote["verdict"] != "ALLOW" || quote["quoted_live"] != true || quote["paid"] != false {
@@ -109,7 +115,7 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 	}
 
 	// Executing pays through the sandbox rail, which works here.
-	first, text, isErr := callTool(t, cs, "algebra.execute", req)
+	first, text, isErr := callTool(t, cs, "algebra_execute", req)
 	if isErr || first["delivered"] != true || first["response"] == nil || first["receipt"] == nil {
 		t.Fatalf("execute: %v %s", first, text)
 	}
@@ -119,13 +125,13 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 	}
 
 	// Asking again returns the kept answer and pays nothing.
-	again, text, isErr := callTool(t, cs, "algebra.execute", req)
+	again, text, isErr := callTool(t, cs, "algebra_execute", req)
 	if isErr || again["replayed"] != true || again["delivered"] != true {
 		t.Fatalf("a repeat request is answered from what was kept: %v %s", again, text)
 	}
 
 	// And the answer can be read back.
-	status, text, isErr := callTool(t, cs, "algebra.status", map[string]any{"intent_id": intent["id"]})
+	status, text, isErr := callTool(t, cs, "algebra_status", map[string]any{"intent_id": intent["id"]})
 	if isErr {
 		t.Fatalf("execution_status: %s", text)
 	}
@@ -134,7 +140,7 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 	}
 
 	// The receipt is signed, and the server's own check of it passes.
-	rcpt, text, isErr := callTool(t, cs, "algebra.receipt", map[string]any{"intent_id": intent["id"]})
+	rcpt, text, isErr := callTool(t, cs, "algebra_receipt", map[string]any{"intent_id": intent["id"]})
 	if isErr || rcpt["receipt"] != first["receipt"] || rcpt["state"] != "COMMITTED" {
 		t.Fatalf("receipt: %v %s", rcpt, text)
 	}
@@ -143,12 +149,12 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 	}
 	// Someone else's intent has no receipt to read.
 	other := mcpSession(t, base, issuePass(t, b))
-	if _, text, isErr := callTool(t, other, "algebra.receipt", map[string]any{"intent_id": intent["id"]}); !isErr {
+	if _, text, isErr := callTool(t, other, "algebra_receipt", map[string]any{"intent_id": intent["id"]}); !isErr {
 		t.Errorf("another person's receipt must not be readable: %s", text)
 	}
 
 	// Without catalogs there are no classes to list, and the tool says so.
-	if _, text, isErr := callTool(t, cs, "algebra.classes", map[string]any{}); !isErr || !strings.Contains(text, "turned off") {
+	if _, text, isErr := callTool(t, cs, "algebra_classes", map[string]any{}); !isErr || !strings.Contains(text, "turned off") {
 		t.Errorf("classes with the catalogs off: %v %q", isErr, text)
 	}
 }
@@ -156,13 +162,13 @@ func TestMCPOverHTTP_AnAgentExecutesThroughTheSandboxWithItsPassToken(t *testing
 func TestMCPOverHTTP_NoTokenNoPayment(t *testing.T) {
 	_, base := serve(t)
 	cs := mcpSession(t, base, "")
-	_, text, isErr := callTool(t, cs, "algebra.execute", map[string]any{
+	_, text, isErr := callTool(t, cs, "algebra_execute", map[string]any{
 		"capability": "solana.token-risk", "input": map[string]any{"mint": "So11111111111111111111111111111111111111112"}, "max_price_usdc": "0.05",
 	})
 	if !isErr || !strings.Contains(text, "agent_token is required") {
 		t.Errorf("an unauthenticated call is refused: %v %q", isErr, text)
 	}
-	_, text, isErr = callTool(t, cs, "algebra.execute", map[string]any{
+	_, text, isErr = callTool(t, cs, "algebra_execute", map[string]any{
 		"agent_token": "alg_not_a_real_token", "capability": "solana.token-risk", "max_price_usdc": "0.05",
 	})
 	if !isErr || !strings.Contains(text, "invalid agent_token") {
@@ -180,7 +186,7 @@ func TestMCPOverHTTP_TheLegacyToolsNeedTheirFlag(t *testing.T) {
 	for _, tool := range tools.Tools {
 		listed[tool.Name] = true
 	}
-	for _, want := range []string{"algebra.execute", "algebra.status", "algebra.execution_status", "algebra.discover_providers", "commerce.search_products", "payments.create_intent"} {
+	for _, want := range []string{"algebra_execute", "algebra_status", "algebra.execution_status", "algebra.discover_providers", "commerce.search_products", "payments.create_intent"} {
 		if !listed[want] {
 			t.Errorf("with MCP_LEGACY_TOOLS=on, %s is offered", want)
 		}
