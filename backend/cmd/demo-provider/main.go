@@ -2,16 +2,22 @@
 // showing Algebra's router and spend firewall against real payments without
 // spending real money. Every response says it is a demo.
 //
-// It serves several "providers" of the same class of work (token.price) that
-// differ the way real ones do, plus one usage-billed one:
+// It serves several "providers" of each class of work that differ the way real
+// ones do (see personas.go), so Cheapest, Balanced and Fastest each have a
+// different winner and a chat can buy several things at once:
 //
-//	alpha   $0.002, fast, honest
-//	beta    $0.001, slow (about 1.2 s), honest
-//	flaky   $0.0005 listed, always answers 503: down
-//	greedy  $0.001 listed, but its 402 asks $0.004: overcharges its listing
-//	trap    $25 per call: a honeypot price
-//	meter   llm.chat over x402 "upto": escrows a $0.05 ceiling in a payment
-//	        channel, settles what the prompt actually cost, refunds the rest
+//	token.price        alpha $0.002 fastest · beta $0.001 slow · gamma $0.0012,
+//	                   plus flaky (down), greedy (overcharges its listing) and
+//	                   trap ($25: a honeypot), which the router refuses
+//	weather.forecast   skycast $0.0012 · nimbus $0.001 slow · stratus $0.003 fastest
+//	solana.token-risk  sentinel $0.004 · rugwatch $0.002 slow
+//	web.search         searchlight $0.003 · scout $0.0012 slow
+//	news.search        wire $0.002 · herald $0.001 slow
+//	wallet.balances    ledgerly $0.002 · vaultview $0.001 slow
+//	ip.geolocate       geopin $0.0005 · locus $0.0003 slow
+//	llm.chat           meter, over x402 "upto": escrows a $0.05 ceiling in a
+//	                   payment channel, settles what the prompt actually cost,
+//	                   refunds the rest
 //
 // It is its own facilitator: it checks each payment, co-signs it as fee payer
 // and submits it to devnet, so its wallet needs a little devnet SOL (it asks
@@ -31,6 +37,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/chain"
@@ -52,8 +59,17 @@ func main() {
 		return
 	}
 
-	key, created, err := loadOrCreateKey(*keyPath)
-	if err != nil {
+	// DEMO_PROVIDER_KEYPAIR (the keypair JSON) wins over the file: a host
+	// whose disk is replaced on every deploy keeps one funded wallet.
+	var key *solana.Keypair
+	var created bool
+	var err error
+	if v := strings.TrimSpace(os.Getenv("DEMO_PROVIDER_KEYPAIR")); v != "" {
+		key, err = solana.ParseKeypair(v)
+		if err != nil {
+			log.Fatalf("demo-provider: DEMO_PROVIDER_KEYPAIR isn't a keypair: %v", err)
+		}
+	} else if key, created, err = loadOrCreateKey(*keyPath); err != nil {
 		log.Fatalf("demo-provider: %v", err)
 	}
 	if created {

@@ -83,7 +83,8 @@ func TestGuardSkipsDownProvidersAndOtherNetworks(t *testing.T) {
 		t.Fatalf("devnet candidate for a mainnet-only intent: %+v", r)
 	}
 	got, r := g.before(view, up)
-	if r != nil || got.EstimatedLatencyMS != 240 {
+	// 240 ms, in the 25 ms steps a price check is measured in.
+	if r != nil || got.EstimatedLatencyMS != 250 {
 		t.Fatalf("up provider should pass with the probe's latency, got %+v %d", r, got.EstimatedLatencyMS)
 	}
 }
