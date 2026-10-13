@@ -10,6 +10,7 @@ import (
 
 	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/platform/config"
+	"github.com/project-algebra/algebra/internal/platform/payersigner"
 	"github.com/project-algebra/algebra/internal/platform/solana"
 	"github.com/project-algebra/algebra/internal/platform/solana/solanatest"
 	"github.com/project-algebra/algebra/providers/solanax402"
@@ -85,20 +86,29 @@ func writeKeypair(t *testing.T) (path, text string) {
 	return path, text
 }
 
+// railFor resolves the payer key as startup does, then builds the rail.
+func railFor(ctx context.Context, sc config.SolanaConfig) (*solanax402.Rail, error) {
+	sig, err := payersigner.Resolve(ctx, payersigner.Source{Cluster: sc.Cluster, Keypair: sc.Keypair, KeypairFile: sc.KeypairFile}, payersigner.Deps{})
+	if err != nil {
+		return nil, err
+	}
+	return buildSolanaRail(ctx, sc, sig)
+}
+
 func TestBuildSolanaRail(t *testing.T) {
 	ctx := context.Background()
 	path, _ := writeKeypair(t)
 
 	// A good setup: the node serves the configured cluster.
 	devnet := solanatest.New(solana.DevnetGenesisHash)
-	rail, err := buildSolanaRail(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: devnet.Serve(t), KeypairFile: path, MaxPaymentMinor: 250_000})
+	rail, err := railFor(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: devnet.Serve(t), KeypairFile: path, MaxPaymentMinor: 250_000})
 	if err != nil || rail == nil || rail.Network() != "solana-devnet" || rail.Name() != solanax402.DevnetRailName {
 		t.Fatalf("a good setup: %v %v", rail, err)
 	}
 
 	// A node on another cluster is a configuration mistake and stops startup.
 	mainnet := solanatest.New(solana.MainnetGenesisHash)
-	if _, err := buildSolanaRail(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: mainnet.Serve(t), KeypairFile: path}); !errors.Is(err, solanax402.ErrWrongCluster) {
+	if _, err := railFor(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: mainnet.Serve(t), KeypairFile: path}); !errors.Is(err, solanax402.ErrWrongCluster) {
 		t.Errorf("paying devnet through a mainnet node (or the reverse) must be fatal: %v", err)
 	}
 
@@ -106,7 +116,7 @@ func TestBuildSolanaRail(t *testing.T) {
 	down := solanatest.New(solana.DevnetGenesisHash)
 	url := down.Serve(t)
 	down.FailMethod["getGenesisHash"] = errors.New("node is down")
-	if rail, err := buildSolanaRail(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: url, KeypairFile: path}); err != nil || rail != nil {
+	if rail, err := railFor(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: url, KeypairFile: path}); err != nil || rail != nil {
 		t.Errorf("an unverifiable cluster: no rail, no error: %v %v", rail, err)
 	}
 }
@@ -117,19 +127,19 @@ func TestBuildSolanaRailRefusesAnUnusableWalletWithoutEchoingIt(t *testing.T) {
 	url := devnet.Serve(t)
 
 	secretish := "this-is-not-a-key-but-looks-private-9f8a7b6c5d4e3f2a1b"
-	_, err := buildSolanaRail(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: url, Keypair: secretish})
+	_, err := railFor(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: url, Keypair: secretish})
 	if err == nil {
 		t.Fatal("a bad wallet must stop startup")
 	}
 	if strings.Contains(err.Error(), secretish) {
 		t.Errorf("the error must not echo the key text: %v", err)
 	}
-	if _, err := buildSolanaRail(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: url, KeypairFile: filepath.Join(t.TempDir(), "missing.json")}); err == nil {
+	if _, err := railFor(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: url, KeypairFile: filepath.Join(t.TempDir(), "missing.json")}); err == nil {
 		t.Error("a missing key file must stop startup")
 	}
 	// The inline form works too.
 	_, text := writeKeypair(t)
-	if rail, err := buildSolanaRail(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: url, Keypair: text}); err != nil || rail == nil {
+	if rail, err := railFor(ctx, config.SolanaConfig{Cluster: "devnet", RPCURL: url, Keypair: text}); err != nil || rail == nil {
 		t.Errorf("inline keypair: %v %v", rail, err)
 	}
 }

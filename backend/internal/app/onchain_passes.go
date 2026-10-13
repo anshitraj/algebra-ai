@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/shared"
+	"github.com/project-algebra/algebra/internal/platform/payersigner"
 	"github.com/project-algebra/algebra/internal/platform/solana"
 	"github.com/project-algebra/algebra/internal/platform/solana/spendpass"
 )
@@ -128,6 +130,32 @@ type OnchainNetwork struct {
 	AuthorityKnown   bool
 	Immutable        bool
 	UpgradeAuthority string
+	// SignerMode is where the payer key comes from ("env", "generated"), for
+	// the console and operators. It is a fact about the deployment, not a secret.
+	SignerMode string
+
+	readyMu sync.Mutex
+	readyAt time.Time
+	ready   bool
+}
+
+// signerReady says whether the payer holds enough SOL for the fees of pulls and
+// refunds. The answer is kept for half a minute: it is asked on every page load.
+func (n *OnchainNetwork) signerReady(ctx context.Context, now time.Time) bool {
+	n.readyMu.Lock()
+	defer n.readyMu.Unlock()
+	if !n.readyAt.IsZero() && now.Sub(n.readyAt) < 30*time.Second {
+		return n.ready
+	}
+	c, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, ok, err := payersigner.Ready(c, n.RPC, n.Payer.PublicKey())
+	if err != nil {
+		// Unknown is not "out of SOL": say nothing alarming, ask again soon.
+		return true
+	}
+	n.ready, n.readyAt = ok, now
+	return ok
 }
 
 // ProgramStatus is what is known about the program on one network.
@@ -159,6 +187,11 @@ type OnchainNetworkInfo struct {
 	Destination string `json:"destination"`
 	Mint        string `json:"mint"`
 	Required    bool   `json:"required"`
+	// SignerMode is where the payer key comes from ("env", "generated").
+	// SignerReady is false when the payer is too low on SOL to pay the fees of
+	// pulls and refunds: a vault cannot fund a payment until it is topped up.
+	SignerMode  string `json:"signer_mode,omitempty"`
+	SignerReady bool   `json:"signer_ready"`
 }
 
 // OnchainPassService links Spend Passes to on-chain passes, funds payments
@@ -203,7 +236,7 @@ func intentHash(reservationID string) [32]byte {
 }
 
 // Networks lists where passes can be made.
-func (s *OnchainPassService) Networks() []OnchainNetworkInfo {
+func (s *OnchainPassService) Networks(ctx context.Context) []OnchainNetworkInfo {
 	out := []OnchainNetworkInfo{}
 	for _, network := range []string{chain.Solana, chain.SolanaDevnet} {
 		n := s.nets[network]
@@ -212,7 +245,8 @@ func (s *OnchainPassService) Networks() []OnchainNetworkInfo {
 		}
 		dest, _ := solana.AssociatedTokenAddress(n.Payer.PublicKey(), n.Mint, solana.TokenProgram)
 		out = append(out, OnchainNetworkInfo{Network: n.Network, Cluster: n.Cluster, ProgramID: n.Program.ID.String(),
-			Agent: n.Payer.PublicKey().String(), Destination: dest.String(), Mint: n.Mint.String(), Required: n.Required})
+			Agent: n.Payer.PublicKey().String(), Destination: dest.String(), Mint: n.Mint.String(), Required: n.Required,
+			SignerMode: n.SignerMode, SignerReady: n.signerReady(ctx, s.now())})
 	}
 	return out
 }
@@ -430,6 +464,9 @@ type OnchainPassView struct {
 	Remaining  uint64           `json:"remaining_minor"`
 	Explorer   string           `json:"explorer"`
 	Pulls      []OnchainPull    `json:"pulls"`
+	// AgentChanged: the pass was made for another Algebra payer key than the
+	// one now signing. It cannot fund payments; its owner can still withdraw.
+	AgentChanged bool `json:"agent_changed,omitempty"`
 }
 
 // State reads a linked pass from the chain.
@@ -448,6 +485,7 @@ func (s *OnchainPassService) State(ctx context.Context, userID, passID string) (
 		return nil, err
 	default:
 		v.Exists, v.State, v.Remaining = true, st, st.Remaining()
+		v.AgentChanged = s.agentChanged(n, st)
 		if bal, err := n.RPC.GetTokenAccountBalance(ctx, vault, solana.Confirmed); err == nil {
 			v.VaultMinor = &bal.Amount
 		}
@@ -607,6 +645,10 @@ const (
 	DenyOnchainExpired      = "ONCHAIN_PASS_EXPIRED"
 	DenyOnchainLimit        = "ONCHAIN_PASS_LIMIT"
 	DenyOnchainUnfunded     = "ONCHAIN_PASS_UNFUNDED"
+	// DenyOnchainAgentChanged: the pass names another payer key than the one
+	// this server signs with. A pass's destination is fixed when it is made, so
+	// the owner withdraws and makes a new one.
+	DenyOnchainAgentChanged = "ONCHAIN_PASS_AGENT_CHANGED"
 )
 
 func denyFor(err error) error {
@@ -637,6 +679,134 @@ func denyFor(err error) error {
 		return nil
 	}
 	return &AuthorityDenied{ReasonCodes: []string{code}}
+}
+
+// agentChanged: the pass names a payer or destination other than this
+// server's own. The pull would be refused by the program; this says why.
+func (s *OnchainPassService) agentChanged(n *OnchainNetwork, st *spendpass.State) bool {
+	return st.Agent != n.Payer.PublicKey() || st.Destination != s.destination(n)
+}
+
+// VaultState is a Spend Pass's vault as a payment on one network would meet it.
+type VaultState struct {
+	// Required: payments on this network come from a vault and nothing else.
+	Required bool
+	// Code is the ONCHAIN_PASS_* reason no payment at all can come from the
+	// vault right now, or "".
+	Code string
+	// FundedMinor is what the vault holds, when Funded says it was read.
+	FundedMinor int64
+	Funded      bool
+
+	pass *spendpass.State
+	now  int64
+}
+
+// For returns the ONCHAIN_PASS_* code a payment of amountMinor would be
+// refused with, or "". An amount of zero asks only whether the vault can pay
+// at all (an unlisted price is not an amount).
+func (v VaultState) For(amountMinor int64) string {
+	if v.Code != "" {
+		return v.Code
+	}
+	if amountMinor <= 0 {
+		return ""
+	}
+	if v.pass != nil {
+		if err := v.pass.CanPull(v.now, uint64(amountMinor)); err != nil {
+			var d *AuthorityDenied
+			if errors.As(denyFor(err), &d) && len(d.ReasonCodes) > 0 {
+				return d.ReasonCodes[0]
+			}
+		}
+	}
+	if v.Funded && v.FundedMinor < amountMinor {
+		return DenyOnchainUnfunded
+	}
+	return ""
+}
+
+// VaultStatus reads a pass's vault for a payment on network, for the dry run:
+// it says before anyone presses Pay what Fund would say after. A rail Algebra
+// doesn't manage (the sandbox) has no vault and no requirement. A node that
+// can't be reached reports nothing wrong: Fund reads the chain again before any
+// money moves.
+func (s *OnchainPassService) VaultStatus(ctx context.Context, passID, network string) VaultState {
+	if s == nil {
+		return VaultState{}
+	}
+	n := s.nets[chain.NormalizeNetwork(network)]
+	if n == nil {
+		return VaultState{}
+	}
+	out := VaultState{Required: n.Required, now: s.now().Unix()}
+	b, err := s.store.OnchainBinding(ctx, passID)
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		if n.Required {
+			out.Code = DenyOnchainRequired
+		}
+		return out
+	case err != nil:
+		return out
+	}
+	if b.Network != n.Network {
+		out.Code = DenyOnchainOtherNetwork
+		return out
+	}
+	pass := solana.MustPublicKey(b.Address)
+	st, err := s.readPass(ctx, n, pass)
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		out.Code = DenyOnchainMissing
+		return out
+	case err != nil:
+		return out
+	}
+	if s.agentChanged(n, st) {
+		out.Code = DenyOnchainAgentChanged
+		return out
+	}
+	out.pass = st
+	if err := st.CanPull(out.now, 1); err != nil {
+		// Frozen, revoked or expired block every payment; limits depend on the amount.
+		var d *AuthorityDenied
+		if errors.As(denyFor(err), &d) && len(d.ReasonCodes) > 0 && d.ReasonCodes[0] != DenyOnchainLimit {
+			out.Code = d.ReasonCodes[0]
+			return out
+		}
+	}
+	vault, _ := spendpass.Vault(pass, n.Mint)
+	if bal, err := n.RPC.GetTokenAccountBalance(ctx, vault, solana.Confirmed); err == nil {
+		out.FundedMinor, out.Funded = int64(bal.Amount), true
+	}
+	return out
+}
+
+// Funding says, before the rail signs, whether a payment on rail is funded from
+// the pass's vault. A rail this service doesn't manage (the sandbox), or a pass
+// with no vault where none is required, is paid as before. Where a vault is
+// required and the pass has none, or its vault is on another network, the
+// payment is refused here with that reason, rather than failing later on the
+// payer's empty account.
+func (s *OnchainPassService) Funding(ctx context.Context, passID, rail string) (bool, error) {
+	n := s.byRail[rail]
+	if n == nil {
+		return false, nil
+	}
+	b, err := s.store.OnchainBinding(ctx, passID)
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		if n.Required {
+			return false, &AuthorityDenied{ReasonCodes: []string{DenyOnchainRequired}}
+		}
+		return false, nil
+	case err != nil:
+		return false, err
+	case b.Network != n.Network:
+		return false, &AuthorityDenied{ReasonCodes: []string{DenyOnchainOtherNetwork}}
+	}
+	return true, nil
 }
 
 // Fund pulls amountMinor from the pass's on-chain vault into the payer for
@@ -676,6 +846,9 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 	}
 	if err != nil {
 		return nil, err
+	}
+	if s.agentChanged(n, st) {
+		return nil, &AuthorityDenied{ReasonCodes: []string{DenyOnchainAgentChanged}}
 	}
 	if err := st.CanPull(s.now().Unix(), uint64(amountMinor)); err != nil {
 		if d := denyFor(err); d != nil {

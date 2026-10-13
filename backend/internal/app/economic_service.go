@@ -112,6 +112,10 @@ type ResolutionHook func(ctx context.Context, v *IntentView, reservationID strin
 // needed.
 type PassFunder interface {
 	Fund(ctx context.Context, passID string, rv *econ.Reservation, amountMinor int64) (*OnchainPull, error)
+	// Funding is asked before the rail signs: whether a payment on rail comes
+	// from the pass's vault (so the payer needn't hold it yet), or is refused
+	// because the rail only pays from a vault and the pass has none.
+	Funding(ctx context.Context, passID, rail string) (fromVault bool, err error)
 	// Check refuses, before anything is reserved, a pass its owner has
 	// frozen, revoked or closed on chain: the on-chain kill switch.
 	Check(ctx context.Context, passID string) error
@@ -746,6 +750,31 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 	if !ok {
 		return nil, fmt.Errorf("%w: rail %s doesn't release payment authority through Algebra", shared.ErrNotImplemented, snapshot.Rail)
 	}
+	// Where the money comes from is settled before the rail signs anything: a
+	// pass that must have a vault and has none is refused here, with that reason,
+	// and a vault-funded payment is signed for a payer that holds nothing yet.
+	passID := snapshot.ExecutorPassID
+	if passID == "" {
+		passID = pass.ID
+	}
+	deniedEvent := func(err error, at string) {
+		var denied *AuthorityDenied
+		if errors.As(err, &denied) {
+			_ = s.store.Atomically(ctx, intentID, "", func(u EconUnit) error {
+				return u.AppendEvent(s.newEvent(EconEvent{IntentID: intentID, ReservationID: snapshot.ID, AgentID: agentID, Attempt: snapshot.Attempt, Event: "authority.denied", Data: map[string]any{
+					"reason_codes": denied.ReasonCodes, "at": at,
+				}}))
+			})
+		}
+	}
+	if s.funder != nil {
+		fromVault, err := s.funder.Funding(ctx, passID, snapshot.Rail)
+		if err != nil {
+			deniedEvent(err, "onchain_pass_funding")
+			return nil, err
+		}
+		req.FundedByPass = fromVault
+	}
 	auth, err := authorizer.Authorize(ctx, &snapshot, req)
 	if err != nil {
 		return nil, err
@@ -768,20 +797,9 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 	// that pull is confirmed; if it isn't, nothing is.
 	pullSig := ""
 	if s.funder != nil {
-		passID := snapshot.ExecutorPassID
-		if passID == "" {
-			passID = pass.ID
-		}
 		pull, err := s.funder.Fund(ctx, passID, &snapshot, auth.AmountMinor)
 		if err != nil {
-			var denied *AuthorityDenied
-			if errors.As(err, &denied) {
-				_ = s.store.Atomically(ctx, intentID, "", func(u EconUnit) error {
-					return u.AppendEvent(s.newEvent(EconEvent{IntentID: intentID, ReservationID: snapshot.ID, AgentID: agentID, Attempt: snapshot.Attempt, Event: "authority.denied", Data: map[string]any{
-						"reason_codes": denied.ReasonCodes, "at": "onchain_pass_pull",
-					}}))
-				})
-			}
+			deniedEvent(err, "onchain_pass_pull")
 			return nil, err
 		}
 		if pull != nil {

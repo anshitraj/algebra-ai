@@ -182,6 +182,10 @@ func (s *ExecutionService) priceOnly(ctx context.Context, c routing.Candidate, i
 // SetHealth gives the router the health probe's findings.
 func (s *ExecutionService) SetHealth(h *HealthService) { s.health = h }
 
+// SetVaults gives dry runs the Spend Pass vaults, so a card that could not be
+// paid for want of a vault says so before anyone presses Pay.
+func (s *ExecutionService) SetVaults(v VaultReader) { s.vaults = v }
+
 // SetTrust gives the router the provider registry: blocked endpoints and
 // payees other than the pinned one are refused before anything is paid.
 func (s *ExecutionService) SetTrust(t *IntelService) { s.trust = t }

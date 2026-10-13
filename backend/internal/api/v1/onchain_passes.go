@@ -31,7 +31,7 @@ func (a *API) onchainNetworks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"networks": svc.Networks()})
+	writeJSON(w, http.StatusOK, map[string]any{"networks": svc.Networks(r.Context())})
 }
 
 func (a *API) prepareOnchainPass(w http.ResponseWriter, r *http.Request) {

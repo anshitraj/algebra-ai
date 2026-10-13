@@ -342,6 +342,43 @@ func TestAuthorizeChecksTheAccountsBeforeSigning(t *testing.T) {
 	}
 }
 
+// A payment funded from a Spend Pass vault is signed for a payer that holds
+// nothing yet: the coordinator pulls the money before it hands the payment
+// over, and hands over nothing if the pull fails. Without a vault, the same
+// payer is still refused.
+func TestAuthorizeAPaymentTheVaultFundsNeedsNoBalanceYet(t *testing.T) {
+	r := newRig(t, "devnet")
+	r.chain.SetTokenAccount(r.src, 0) // the payer's USDC account exists and is empty
+	req := app.PaymentRequest{Requirements: r.challenge(1, nil), Resource: "https://api.example.com/risk"}
+	rv := &econ.Reservation{ID: "rsv_1", HoldMinor: 5_000}
+
+	if _, err := r.rail.Authorize(context.Background(), rv, req); err == nil || !strings.Contains(err.Error(), "insufficient USDC") {
+		t.Fatalf("an empty payer with no vault behind it: %v", err)
+	}
+	req.FundedByPass = true
+	auth, err := r.rail.Authorize(context.Background(), rv, req)
+	if err != nil || auth == nil || auth.AmountMinor != 5_000 {
+		t.Fatalf("an empty payer whose payment a vault funds: %v %+v", err, auth)
+	}
+	// The vault does not excuse the other checks: the payee's account must exist.
+	empty, _ := solana.NewKeypair()
+	req.Requirements = r.challenge(1, func(o map[string]any) { o["payTo"] = empty.PublicKey().String() })
+	if _, err := r.rail.Authorize(context.Background(), rv, req); err == nil || !strings.Contains(err.Error(), "doesn't exist") {
+		t.Fatalf("a payee without a USDC account: %v", err)
+	}
+	// Nor a payer with no USDC account at all (the pull would have nowhere to land).
+	other := newRig(t, "devnet")
+	other.chain = solanatest.New(solana.DevnetGenesisHash)
+	other.rpc = solana.NewRPC(other.chain.Serve(t), nil)
+	other.chain.SetTokenAccount(other.dst, 0)
+	rail, _ := New(Config{Cluster: "devnet", RPC: other.rpc, Signer: other.payer})
+	other.rail = rail
+	req.Requirements = other.challenge(1, nil)
+	if _, err := other.rail.Authorize(context.Background(), rv, req); err == nil || !strings.Contains(err.Error(), "no USDC account") {
+		t.Fatalf("a payer that never held USDC: %v", err)
+	}
+}
+
 func TestNewRefusesBadConfiguration(t *testing.T) {
 	kp, _ := solana.NewKeypair()
 	rpc := solana.NewRPC("http://localhost:1", nil)

@@ -176,6 +176,16 @@ type SolanaConfig struct {
 	// environment ends up in process listings and crash reports.
 	Keypair     string
 	KeypairFile string
+	// Signer is "generated" when Algebra makes the payer key itself and keeps
+	// it sealed in the database (SOLANA_DEVNET_SIGNER=generated). Devnet only:
+	// a key that moves real money is one the operator controls. Empty means
+	// the wallet above.
+	Signer string
+	// SignerPubkey pins the address the payer key must have
+	// (SOLANA_DEVNET_SIGNER_PUBKEY). The server stops, rather than carry on,
+	// if the key it would use is any other: every vault made for the pinned
+	// key stops working with a different one.
+	SignerPubkey string
 	// MaxPaymentMinor is the most one payment may be, in micro-USDC: a hard
 	// ceiling in the rail itself, whatever any policy says.
 	MaxPaymentMinor int64
@@ -614,6 +624,18 @@ func (c *Config) ValidateProduction() error {
 			problems = append(problems, fmt.Sprintf("CORS_ALLOWED_ORIGINS entry %q must be https://", o))
 		}
 	}
+	// Whatever a production server pays with, it pays from a person's vault:
+	// otherwise the payer spends money that is no pass's, with none of the
+	// program's limits on it. (The simulated sandbox has no wallet.)
+	for _, rail := range c.SolanaRails {
+		cl := strings.ToLower(rail.Cluster)
+		if cl == "mainnet-beta" {
+			cl = "mainnet"
+		}
+		if c.OnchainPasses.Disabled || !c.OnchainPasses.Required[cl] {
+			problems = append(problems, fmt.Sprintf("the Solana %s rail needs SPEND_PASS_REQUIRED=%s (and the vault program on), so that every payment comes from a Spend Pass vault and never from the payer's own funds", cl, cl))
+		}
+	}
 	if len(problems) == 0 {
 		return nil
 	}
@@ -696,6 +718,7 @@ func loadSolana(c *SolanaConfig) error {
 	c.RPCURL = strings.TrimSpace(os.Getenv("SOLANA_RPC_URL"))
 	c.Keypair = strings.TrimSpace(os.Getenv("SOLANA_KEYPAIR"))
 	c.KeypairFile = strings.TrimSpace(os.Getenv("SOLANA_KEYPAIR_FILE"))
+	c.SignerPubkey = strings.TrimSpace(os.Getenv("SOLANA_SIGNER_PUBKEY"))
 	if c.Keypair == "" && c.KeypairFile == "" {
 		return errors.New("config: SOLANA_CLUSTER is set but there is no wallet: set SOLANA_KEYPAIR_FILE (preferred) or SOLANA_KEYPAIR")
 	}
@@ -726,8 +749,23 @@ func loadSolanaRails(legacy SolanaConfig) ([]SolanaConfig, error) {
 			RPCURL:      strings.TrimSpace(os.Getenv(cl.prefix + "RPC_URL")),
 			Keypair:     strings.TrimSpace(os.Getenv(cl.prefix + "KEYPAIR")),
 			KeypairFile: strings.TrimSpace(os.Getenv(cl.prefix + "KEYPAIR_FILE")),
+
+			SignerPubkey: strings.TrimSpace(os.Getenv(cl.prefix + "SIGNER_PUBKEY")),
 		}
-		if c.Keypair == "" && c.KeypairFile == "" {
+		switch v := strings.ToLower(strings.TrimSpace(os.Getenv(cl.prefix + "SIGNER"))); v {
+		case "":
+		case "generated":
+			if cl.cluster != "devnet" {
+				return nil, fmt.Errorf("config: %sSIGNER=generated is for devnet only. Real money needs a key held outside this server or one the operator controls", cl.prefix)
+			}
+			if c.Keypair != "" || c.KeypairFile != "" {
+				return nil, fmt.Errorf("config: choose %sSIGNER=generated or a keypair, not both", cl.prefix)
+			}
+			c.Signer = v
+		default:
+			return nil, fmt.Errorf("config: %sSIGNER must be \"generated\" or empty, not %q", cl.prefix, v)
+		}
+		if c.Keypair == "" && c.KeypairFile == "" && c.Signer == "" {
 			continue
 		}
 		if cl.cluster == "mainnet" && strings.ToLower(os.Getenv("SOLANA_ALLOW_MAINNET")) != "yes" {

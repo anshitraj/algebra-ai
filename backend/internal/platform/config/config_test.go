@@ -44,6 +44,31 @@ func TestValidateProduction_ReportsEveryUnsafeSetting(t *testing.T) {
 	}
 }
 
+// A production server that pays on a Solana cluster pays from a person's
+// vault there, never from the payer's own funds.
+func TestValidateProduction_ARealRailNeedsVaultsRequired(t *testing.T) {
+	t.Setenv("REDIS_ADDR", "redis.internal:6379")
+	c := prodConfig()
+	c.SolanaRails = []SolanaConfig{{Cluster: "devnet", Signer: "generated"}}
+	err := c.ValidateProduction()
+	if err == nil || !strings.Contains(err.Error(), "SPEND_PASS_REQUIRED=devnet") {
+		t.Fatalf("a devnet rail whose payments aren't vault-only must be refused, got %v", err)
+	}
+	c.OnchainPasses.Required = map[string]bool{"devnet": true}
+	if err := c.ValidateProduction(); err != nil {
+		t.Fatalf("with vaults required: %v", err)
+	}
+	c.OnchainPasses.Disabled = true
+	if err := c.ValidateProduction(); err == nil {
+		t.Fatal("the vault program switched off defeats the requirement")
+	}
+	// No rail, nothing to require (the sandbox has no wallet).
+	c = prodConfig()
+	if err := c.ValidateProduction(); err != nil {
+		t.Fatalf("no rail: %v", err)
+	}
+}
+
 func TestValidateProduction_MockAllowedOnlyWhenExplicit(t *testing.T) {
 	t.Setenv("REDIS_ADDR", "redis:6379")
 	t.Setenv("ALLOW_MOCK_MERCHANT", "true")
@@ -93,7 +118,7 @@ func TestLoadPaySh(t *testing.T) {
 
 func TestLoadSolanaRails(t *testing.T) {
 	clear := func(t *testing.T) {
-		for _, k := range []string{"SOLANA_DEVNET_KEYPAIR", "SOLANA_DEVNET_KEYPAIR_FILE", "SOLANA_DEVNET_RPC_URL", "SOLANA_MAINNET_KEYPAIR", "SOLANA_MAINNET_KEYPAIR_FILE", "SOLANA_MAINNET_RPC_URL", "SOLANA_ALLOW_MAINNET", "SOLANA_MAX_PAYMENT_USDC"} {
+		for _, k := range []string{"SOLANA_DEVNET_KEYPAIR", "SOLANA_DEVNET_KEYPAIR_FILE", "SOLANA_DEVNET_RPC_URL", "SOLANA_MAINNET_KEYPAIR", "SOLANA_MAINNET_KEYPAIR_FILE", "SOLANA_MAINNET_RPC_URL", "SOLANA_ALLOW_MAINNET", "SOLANA_MAX_PAYMENT_USDC", "SOLANA_DEVNET_SIGNER", "SOLANA_DEVNET_SIGNER_PUBKEY", "SOLANA_MAINNET_SIGNER", "SOLANA_MAINNET_SIGNER_PUBKEY"} {
 			t.Setenv(k, "")
 		}
 	}
@@ -126,6 +151,38 @@ func TestLoadSolanaRails(t *testing.T) {
 		clear(t)
 		t.Setenv("SOLANA_DEVNET_KEYPAIR_FILE", ".data/devnet.json")
 		if _, err := loadSolanaRails(SolanaConfig{Cluster: "devnet", KeypairFile: "x"}); err == nil || !strings.Contains(err.Error(), "twice") {
+			t.Errorf("got %v", err)
+		}
+	})
+	t.Run("a generated devnet signer needs no wallet", func(t *testing.T) {
+		clear(t)
+		t.Setenv("SOLANA_DEVNET_SIGNER", "generated")
+		t.Setenv("SOLANA_DEVNET_SIGNER_PUBKEY", "PinnedAddress111")
+		rails, err := loadSolanaRails(SolanaConfig{})
+		if err != nil || len(rails) != 1 || rails[0].Cluster != "devnet" || rails[0].Signer != "generated" || rails[0].SignerPubkey != "PinnedAddress111" || rails[0].Keypair != "" {
+			t.Errorf("%v %+v", err, rails)
+		}
+	})
+	t.Run("a generated signer and a wallet together are refused", func(t *testing.T) {
+		clear(t)
+		t.Setenv("SOLANA_DEVNET_SIGNER", "generated")
+		t.Setenv("SOLANA_DEVNET_KEYPAIR_FILE", ".data/devnet.json")
+		if _, err := loadSolanaRails(SolanaConfig{}); err == nil || !strings.Contains(err.Error(), "not both") {
+			t.Errorf("got %v", err)
+		}
+	})
+	t.Run("a generated signer on mainnet is refused", func(t *testing.T) {
+		clear(t)
+		t.Setenv("SOLANA_ALLOW_MAINNET", "yes")
+		t.Setenv("SOLANA_MAINNET_SIGNER", "generated")
+		if _, err := loadSolanaRails(SolanaConfig{}); err == nil || !strings.Contains(err.Error(), "devnet only") {
+			t.Errorf("got %v", err)
+		}
+	})
+	t.Run("an unknown signer kind is refused", func(t *testing.T) {
+		clear(t)
+		t.Setenv("SOLANA_DEVNET_SIGNER", "magic")
+		if _, err := loadSolanaRails(SolanaConfig{}); err == nil || !strings.Contains(err.Error(), "SOLANA_DEVNET_SIGNER") {
 			t.Errorf("got %v", err)
 		}
 	})

@@ -132,8 +132,10 @@ function summarizeRejections(b: Record<string, unknown>): string[] | undefined {
 /** A dry run's answer as the cards the person chooses from. */
 function optionGroupOf(sim: Simulation, req: { work: string; input: Record<string, unknown>; max: number; named?: string; network: string }): OptionGroup {
   const cls = WORK_CLASSES.find((c) => c.id === req.work);
+  // An offer refused for want of a vault is on the cards already (refused, with the way out); it isn't "left out" too.
+  const shown = new Set((sim.compared ?? []).map((r) => r.candidate_id));
   const refused = (sim.candidates ?? [])
-    .filter((c) => c.decision === "BLOCK" && !(c.reasons ?? []).some((r) => r.startsWith("network_not_allowed")))
+    .filter((c) => c.decision === "BLOCK" && !(c.candidate_id && shown.has(c.candidate_id)) && !(c.reasons ?? []).some((r) => r.startsWith("network_not_allowed")))
     .slice(0, 8)
     .map((c) => ({ provider: c.provider, reason: (c.reasons ?? []).join("; ").replace(/^[a-z_]+: /, "") || "not allowed" }));
   const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now());
@@ -242,10 +244,12 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         const a = await client.simulate(identity, { capability: work, providers: named ? [named] : [], input: body, budget_max_minor: Math.round(max * USDC) });
         if (a.status >= 400) return { ok: false, error: typeof a.body.error === "string" ? a.body.error.replace(/^algebra: [a-z ]+: /, "") : "The comparison failed" };
         const group = optionGroupOf(a.body as unknown as Simulation, { work, input: body, max, named, network: identity.network });
+        // Cards the pass can't pay for yet (it has no funded vault) are shown refused, with the way out.
+        const payable = group.recommendations.some((r) => r.decision !== "BLOCK");
         return {
           ok: true,
           data: {
-            status: group.recommendations.length ? "shown_to_user" : "nothing_payable",
+            status: !group.recommendations.length ? "nothing_payable" : payable ? "shown_to_user" : "shown_but_refused",
             compared: group.compared.length,
             recommendations: group.recommendations.map((r) => ({
               way: r.strategy,
@@ -255,9 +259,12 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
               decision: r.decision,
             })),
             refused: group.refused.slice(0, 5).map((x) => `${x.provider}: ${x.reason}`),
-            note: group.recommendations.length
-              ? "The user now sees cards (Cheapest, Balanced, Fastest) and pays with a click. Your turn ends here: say in one short sentence what you compared. Do not pay and do not ask them to type a choice."
-              : "No provider can do this within the user's limits: explain why from `refused`, briefly.",
+            reasons: payable ? undefined : group.reasons,
+            note: !group.recommendations.length
+              ? "No provider can do this within the user's limits: explain why from `refused`, briefly."
+              : payable
+                ? "The user now sees cards (Cheapest, Balanced, Fastest) and pays with a click. Your turn ends here: say in one short sentence what you compared. Do not pay and do not ask them to type a choice."
+                : "The user sees the cards, but none can be paid yet: the pass has no funded Spend Pass vault on this network (see `reasons`). Say so in one short sentence; a link under the cards creates it. Do not pay.",
             _options: group,
           },
         };

@@ -260,6 +260,13 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
         )}
       </div>
 
+      {net && net.signer_ready === false && (
+        <p className="mt-2 rounded-md bg-danger-tint px-3 py-2 text-xs leading-snug text-danger" role="status">
+          Algebra&apos;s {networkLabel(net.network)} payer is out of SOL for network fees, so a vault can&apos;t fund payments right now. It is topped up from the faucet
+          automatically; try again in a little while.
+        </p>
+      )}
+
       {view === null ? (
         <>
           <p className="mt-2 text-sm text-muted">
