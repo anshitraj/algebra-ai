@@ -71,10 +71,13 @@ export async function POST(request: Request) {
     token = await getAgentToken(cookie);
   } catch (err) {
     const status = err instanceof ServerApiError ? err.status : 502;
-    return NextResponse.json(
-      { error: status === 401 ? "Your session expired — sign in again." : "Can't reach Algebra's API." },
-      { status: status === 401 ? 401 : 502 }
-    );
+    // Say what actually happened: an expired session, the API's rate limit (a busy minute
+    // in the console), or the API not answering. They need different next steps.
+    if (status === 401) return NextResponse.json({ error: "Your session expired — sign in again." }, { status: 401 });
+    if (status === 429) {
+      return NextResponse.json({ error: "Too many requests from this account in the last minute. Wait a few seconds and send it again." }, { status: 429 });
+    }
+    return NextResponse.json({ error: "Can't reach Algebra's API." }, { status: 502 });
   }
 
   // A demo account pays in the sandbox whatever the browser asks for: the API

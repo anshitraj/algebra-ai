@@ -90,6 +90,10 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
   const [busy, setBusy] = useState("");
   const [amount, setAmount] = useState("1");
   const [wallets, setWallets] = useState<StandardWallet[]>([]);
+  // A revoked or expired pass can't spend, so its vault isn't looked up with the page: one
+  // request per such pass was most of what a long pass list cost. "Check vault" asks.
+  const [peek, setPeek] = useState(false);
+  const lookup = active || peek;
 
   const load = useCallback(async () => {
     try {
@@ -113,7 +117,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
       .then((r) => setNets(r.networks))
       .catch(() => setNets([]));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reading the pass once on mount
-    void load();
+    if (lookup) void load();
     setWallets(solanaWallets());
     // A wallet that loads after the page announces itself.
     const onRegister = (e: Event) => {
@@ -123,7 +127,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
     };
     window.addEventListener("wallet-standard:register-wallet", onRegister);
     return () => window.removeEventListener("wallet-standard:register-wallet", onRegister);
-  }, [load]);
+  }, [load, lookup]);
 
   const net = nets?.find((n) => n.network === (view?.binding.network ?? network));
   // The account wallet signs unless the person picked a browser wallet (or there is no account wallet).
@@ -250,6 +254,13 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
 
   if (view === undefined || nets === null) return null;
   if (view === null && (!active || nets.length === 0)) return null;
+  if (view === undefined && !lookup) {
+    return (
+      <button type="button" onClick={() => setPeek(true)} className="mt-3 text-xs font-medium text-muted underline decoration-border-strong underline-offset-4 hover:text-foreground">
+        Check on-chain vault
+      </button>
+    );
+  }
 
   const held = account ? balances?.wallets.find((w) => w.address === account.address) : undefined;
   const createDisabled = busy !== "" || (signWithAccount ? !accountSigner : wallets.length === 0);

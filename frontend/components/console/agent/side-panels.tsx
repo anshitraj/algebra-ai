@@ -241,21 +241,28 @@ function YourWallet() {
 /** The pass's vault on Solana: the USDC locked in the program, which only the pass's limits can release. */
 function VaultRow({ passId, network }: { passId: string; network: string }) {
   const [view, setView] = useState<OnchainPassView | null | undefined>(undefined);
+  // A pass with no vault is read once, and again when the tab is looked at: polling a
+  // vault that doesn't exist every 20 seconds only spent the session's request limit.
+  // While a vault exists its balance moves with each payment, so that one is kept fresh.
+  const hasVault = view?.exists === true;
   useEffect(() => {
     let live = true;
-    getOnchainPass(passId)
-      .then((v) => live && setView(v))
-      .catch(() => live && setView(null));
-    const id = setInterval(() => {
+    const read = () =>
       getOnchainPass(passId)
         .then((v) => live && setView(v))
-        .catch(() => {});
-    }, 20_000);
+        .catch(() => live && setView((cur) => cur ?? null));
+    void read();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void read();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    const id = hasVault ? setInterval(() => void (document.visibilityState === "visible" && read()), 30_000) : undefined;
     return () => {
       live = false;
-      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      if (id) clearInterval(id);
     };
-  }, [passId]);
+  }, [passId, hasVault]);
   const here = view && view.binding.network === network;
   return (
     <>
