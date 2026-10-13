@@ -26,6 +26,8 @@ export type ServerIdentity = {
   askFirst?: boolean;
   /** How the person wants providers picked for this chat; it wins over what the model asks for. */
   pick?: "cheapest" | "balanced" | "fastest";
+  /** The browser's session cookie, for the person's own reads (an on-chain pass's pulls). Never sent to the model. */
+  cookie?: string;
 };
 
 export class ServerApiError extends Error {
@@ -107,6 +109,15 @@ export async function consumeAgentTurn(cookie: string): Promise<TurnQuota> {
   }
   await parse(res);
   return { ok: true };
+}
+
+/** The pulls an on-chain Spend Pass has made from its vault (session cookie). Empty for a pass that isn't on chain. */
+export async function getOnchainPulls(cookie: string, passId: string): Promise<{ intent_id: string; pull_signature: string; network: string }[]> {
+  const r = await sessionFetch<{ pulls: { intent_id: string; pull_signature: string; network: string }[] | null }>(
+    `/api/v1/me/passes/${encodeURIComponent(passId)}/onchain`,
+    cookie,
+  );
+  return r.pulls ?? [];
 }
 
 /** The person's Spend Passes (session cookie). */

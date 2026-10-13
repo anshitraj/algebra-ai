@@ -40,11 +40,15 @@ var personas = []persona{
 	{Name: "greedy", Title: "Greedy Prices (demo, overcharges)", Class: "token.price", ListedMinor: 1_000, AskMinor: 4_000, Scheme: "exact", Method: "GET"},
 	{Name: "trap", Title: "Trap Prices (demo, honeypot)", Class: "token.price", ListedMinor: 25_000_000, AskMinor: 25_000_000, Scheme: "exact", Method: "GET"},
 	{Name: "meter", Title: "Metered LLM (demo, x402 upto)", Class: "llm.chat", ListedMinor: 50_000, AskMinor: 50_000, Scheme: "upto", Method: "POST"},
+	{Name: "openmeteo", Title: "Weather by Open-Meteo (demo seller)", Class: "weather.forecast", ListedMinor: 1_500, AskMinor: 1_500, Scheme: "exact", Method: "GET"},
 }
 
 func (p persona) endpoint() string {
-	if p.Class == "llm.chat" {
+	switch p.Class {
+	case "llm.chat":
 		return "/" + p.Name + "/chat"
+	case "weather.forecast":
+		return "/" + p.Name + "/weather"
 	}
 	return "/" + p.Name + "/price"
 }
@@ -145,6 +149,18 @@ func (s *server) handle(p persona) http.HandlerFunc {
 		input := readInput(r)
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
+		// Fetch the live data before taking the payment, so a lookup that
+		// fails costs the caller nothing.
+		var live map[string]any
+		if p.Class != "llm.chat" {
+			d, err := fetchLive(ctx, p.Class, input)
+			if err != nil {
+				log.Printf("%s: no live data, payment not taken: %v", p.Name, err)
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "no live data: " + err.Error()})
+				return
+			}
+			live = d
+		}
 		var settle string
 		var charged int64
 		var payer string
@@ -162,7 +178,7 @@ func (s *server) handle(p persona) http.HandlerFunc {
 			return
 		}
 		time.Sleep(p.Delay)
-		body := p.answer(input, charged)
+		body := p.answer(input, charged, live)
 		s.remember(key, cached{body: body, settle: settle, at: time.Now()})
 		log.Printf("%s: paid %d by %s, settlement %s", p.Name, charged, payer, settle)
 		s.respond(w, body, settle, charged, payer)
@@ -233,8 +249,9 @@ func readInput(r *http.Request) map[string]any {
 	return in
 }
 
-// answer is the persona's (demo) data.
-func (p persona) answer(in map[string]any, charged int64) []byte {
+// answer is the persona's data: a placeholder for the metered LLM, and for
+// the others the live data fetched before the payment.
+func (p persona) answer(in map[string]any, charged int64, live map[string]any) []byte {
 	if p.Class == "llm.chat" {
 		prompt, _ := in["prompt"].(string)
 		return mustBytes(map[string]any{
@@ -243,12 +260,11 @@ func (p persona) answer(in map[string]any, charged int64) []byte {
 			"charged_minor": charged, "ceiling_minor": p.AskMinor,
 		})
 	}
-	mint, _ := in["mint"].(string)
-	price := "1.0000"
-	if mint != "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" && mint != "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" {
-		price = fmt.Sprintf("%d.%02d", 100+len(mint)%50, len(mint)%100)
+	out := map[string]any{"provider": "demo:" + p.Name, "seller": "Algebra's own provider on Solana devnet, paid in devnet USDC"}
+	for k, v := range live {
+		out[k] = v
 	}
-	return mustBytes(map[string]any{"demo": true, "provider": "demo:" + p.Name, "mint": mint, "price_usd": price, "as_of": time.Now().UTC().Format(time.RFC3339)})
+	return mustBytes(out)
 }
 
 func mustBytes(v any) []byte {

@@ -108,6 +108,21 @@ function summarizeRejections(b: Record<string, unknown>): string[] | undefined {
 }
 
 /** A dry run's answer, for the model. */
+/**
+ * For a payment funded by an on-chain Spend Pass: the program's pull from the pass's
+ * vault, so the step card can link it next to the payment. Best effort; for the card only.
+ */
+async function withPull<T extends Record<string, unknown>>(out: T, identity: ServerIdentity): Promise<T> {
+  if (out.outcome !== "delivered" || !identity.cookie || !identity.passId || typeof out.intent_id !== "string") return out;
+  if (out.network !== "solana" && out.network !== "solana-devnet") return out;
+  try {
+    const pull = (await client.getOnchainPulls(identity.cookie, identity.passId)).find((p) => p.intent_id === out.intent_id && p.pull_signature);
+    return pull ? { ...out, _pull_transaction: pull.pull_signature } : out;
+  } catch {
+    return out;
+  }
+}
+
 function simulationOf(a: client.ExecutionAnswer) {
   const s = a.body as {
     verdict?: string;
@@ -211,13 +226,17 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         const body = input.input && typeof input.input === "object" && !Array.isArray(input.input) ? input.input : {};
         // The person's choice for this chat wins over what the model asks for.
         const strategy = identity.pick ?? (typeof input.strategy === "string" ? input.strategy : "balanced");
-        const req = { capability: work, providers: [], input: body, budget_max_minor: Math.round(max * USDC), provider_policy: { strategy } };
+        // The minute it was asked in: a retry within the minute is answered from the kept
+        // result and pays nothing, while asking again later buys a fresh answer. Without it
+        // the API's default window ("once") would replay the first answer for good.
+        const window = new Date().toISOString().slice(0, 16);
+        const req = { capability: work, providers: [], input: body, budget_max_minor: Math.round(max * USDC), provider_policy: { strategy }, window };
         if (name === "check_policy") {
           const a = await client.simulate(identity, req);
           return { ok: true, data: simulationOf(a) };
         }
         const a = await client.execute(identity, req);
-        const out = outcomeOf(a, "routed", identity);
+        const out = await withPull(outcomeOf(a, "routed", identity), identity);
         const routing = (a.body.routing ?? (a.body.outcome as Record<string, unknown> | undefined)?.routing) as
           | { mode?: string; offers?: { rank: number; provider: string; cost_minor: number; score: number; notes?: string[] }[] }
           | undefined;
@@ -256,7 +275,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         // "routed": the intent came from route_work, so Algebra routes it again
         // across every provider of its class.
         const a = await client.executeIntent(identity, str(input, "intent_id"), providerId === "routed" ? [] : [providerId]);
-        return { ok: true, data: outcomeOf(a, providerId, identity, true) };
+        return { ok: true, data: await withPull(outcomeOf(a, providerId, identity, true), identity) };
       }
       case "execution_status": {
         const v = await client.getIntent(identity, str(input, "intent_id"));

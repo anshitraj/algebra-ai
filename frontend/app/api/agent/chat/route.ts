@@ -95,7 +95,7 @@ export async function POST(request: Request) {
   // "Ask me before every payment" is on unless the person turned it off.
   const askFirst = body.ask_first !== false;
   const pick = isPick(body.pick) ? body.pick : "balanced";
-  const identity: ServerIdentity = { ...token, passId: pass?.id, pass: pass ?? undefined, network, askFirst, pick };
+  const identity: ServerIdentity = { ...token, passId: pass?.id, pass: pass ?? undefined, network, askFirst, pick, cookie };
   const systemPrompt = buildSystemPrompt({ network, pass, rail: rails.find((r) => r.network === network), mode: token.mode, askFirst, pick });
   const tools = toolsFor();
   const history = trimHistory(Array.isArray(body.history) ? body.history : []);
