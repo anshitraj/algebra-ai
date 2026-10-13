@@ -400,6 +400,7 @@ export type SessionInfo = {
  */
 export type OnboardingAnswers = {
   name?: string;
+  provider_categories?: string[];
   use_cases: string[];
   priority: string;
   household: string;

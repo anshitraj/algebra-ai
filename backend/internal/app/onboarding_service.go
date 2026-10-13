@@ -23,6 +23,8 @@ type ShippingStore interface {
 // Nothing here is collected for its own sake.
 type OnboardingAnswers struct {
 	Name string `json:"name"`
+	// ProviderCategories are interests, not spending permissions.
+	ProviderCategories []string `json:"provider_categories,omitempty"`
 
 	// UseCases: what the agent will shop for (account.KnownCategories).
 	UseCases []string `json:"use_cases"`
@@ -128,6 +130,9 @@ func (s *OnboardingService) Complete(ctx context.Context, sess *account.Session,
 	}
 	if merchants := cleanList(in.PreferredMerchants, 8); len(merchants) > 0 {
 		shopping["preferred_merchants"] = merchants
+	}
+	if categories := pickAllowed(in.ProviderCategories, []string{"finance", "ai_ml", "search", "data", "media", "maps", "translation", "messaging", "infrastructure"}); len(categories) > 0 {
+		shopping["provider_categories"] = categories
 	}
 	if _, err := s.profiles.SetPreferences(ctx, sess.AgentID, "shopping", shopping); err != nil {
 		return fmt.Errorf("saving preferences: %w", err)
