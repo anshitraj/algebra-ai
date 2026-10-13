@@ -99,9 +99,16 @@ function privyFailure(code: string, reason: string, refused = "") {
     const here = typeof window === "undefined" ? "this address" : window.location.origin;
     return `Privy doesn't allow sign-in from ${here}. Add exactly that address under Allowed origins (Privy dashboard, Configuration, App settings, Domains), then try again. (Privy: invalid_origin)`;
   }
+  // A wallet's own "no" (Phantom: "User rejected the request") arrives as a connect error. Nobody was
+  // signed in and nothing was sent, which is worth saying: the person did nothing wrong.
+  if (/connect_wallet_error/.test(code) && /reject|denied|declin|cancel|closed|dismiss/i.test(reason)) {
+    return `You cancelled in your wallet, so you're not signed in. Press the button to try again. (Privy: ${code}: ${reason})`;
+  }
+  const walletStuck =
+    "The wallet didn't finish connecting or signing. If you cancelled it, nothing happened: press the button to try again. Otherwise unlock the wallet, approve the signature request it shows, and try again.";
   const why: Record<string, string> = {
-    generic_connect_wallet_error: "The wallet didn't finish connecting or signing. Unlock it, approve the signature request it shows, and try again.",
-    unknown_connect_wallet_error: "The wallet didn't finish connecting or signing. Unlock it, approve the signature request it shows, and try again.",
+    generic_connect_wallet_error: walletStuck,
+    unknown_connect_wallet_error: walletStuck,
     disallowed_login_method: "This sign-in method is turned off for this app. Solana wallets must be enabled under Login methods in the Privy dashboard.",
     allowlist_rejected: "This Privy app only admits accounts on its allowlist, and this one isn't on it.",
     client_request_timeout: "Privy didn't answer in time. Check your connection and try again.",
