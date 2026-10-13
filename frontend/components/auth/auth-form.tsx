@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import * as api from "@/lib/api-client";
@@ -46,6 +46,8 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const params = useSearchParams();
   const next = safeNext(params.get("next"));
   const [providers, setProviders] = useState<AuthProviders | null>(null);
+  // Why the sign-in options never loaded, when the API couldn't be asked.
+  const [providersDown, setProvidersDown] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -55,8 +57,20 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [entry, setEntry] = useState<Entry>(params.get("mode") === "production" || next ? "production" : "demo");
   const [demoBusy, setDemoBusy] = useState(false);
 
+  const fetchProviders = useCallback(() => {
+    api
+      .getAuthProviders()
+      .then(setProviders)
+      .catch((err: unknown) => {
+        // An API too old to have the endpoint still takes a password. One that
+        // can't be reached takes nothing: a form there only fails later.
+        if (err instanceof api.ApiError && err.status === 404) setProviders({ password: true, google: false, github: false });
+        else setProvidersDown(err instanceof Error ? err.message : "Can't reach Algebra.");
+      });
+  }, []);
+
   useEffect(() => {
-    api.getAuthProviders().then(setProviders).catch(() => setProviders({ password: true, google: false, github: false }));
+    fetchProviders();
     // Already signed in? Skip the form — unless it's a demo account, which
     // comes here to create a real one.
     api
@@ -65,7 +79,12 @@ export function AuthForm({ mode }: { mode: Mode }) {
         if (user && user.mode !== "demo") router.replace(destinationFor(user, next));
       })
       .catch(() => {});
-  }, [router, next]);
+  }, [router, next, fetchProviders]);
+
+  function retryProviders() {
+    setProvidersDown(null);
+    fetchProviders();
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -94,6 +113,8 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   const isSignup = mode === "signup";
   const passwordOn = providers?.password !== false;
+  // Privy carries real sign-ins (an email code or a Solana wallet) when the server has it.
+  const privyAppId = providers?.privy ? (providers.privy_app_id ?? "") : "";
   // The chooser shows on sign-in only, and only when this server offers the demo.
   const showChooser = !isSignup && providers?.demo === true;
   const showDemo = showChooser && entry === "demo";
@@ -142,81 +163,92 @@ export function AuthForm({ mode }: { mode: Mode }) {
         <DemoPanel busy={demoBusy} error={error} onStart={handleDemo} />
       ) : (
         <>
-          <div className={`${showChooser ? "mt-6" : "mt-8"} grid gap-2.5`}>
-            {providers?.privy && providers.privy_app_id && (
-              <>
-                <PrivySignIn
-                  appId={providers.privy_app_id}
-                  label={isSignup ? "Sign up with a wallet or email" : "Continue with a wallet or email"}
-                  onSignedIn={(user) => router.replace(destinationFor(user, next))}
-                  onError={(message) => setError(message || null)}
-                />
-                <p className="text-xs leading-relaxed text-muted">
-                  Phantom, Solflare or any Solana wallet, or an email code. No wallet yet? Privy makes you one; Algebra never sees its key.
-                </p>
-              </>
-            )}
-            {!passwordOn && error && <FormError>{error}</FormError>}
-          </div>
-
-          {passwordOn && (
-            <>
-              <div className="my-7 flex items-center gap-3 text-xs text-muted">
-                <span className="h-px flex-1 bg-border" />
-                or with email
-                <span className="h-px flex-1 bg-border" />
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-4" noValidate={false}>
-                {isSignup && (
-                  <AuthInput
-                    label="Full name"
-                    name="name"
-                    autoComplete="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Ada Lovelace"
-                    maxLength={80}
-                  />
-                )}
+          {providersDown ? (
+            <div className={`${showChooser ? "mt-6" : "mt-8"} grid gap-3`}>
+              <FormError>The sign-in options couldn&apos;t load. {providersDown}</FormError>
+              <button
+                type="button"
+                onClick={retryProviders}
+                className="flex h-11 w-full items-center justify-center rounded-xl border border-border-strong bg-surface text-[0.95rem] font-medium text-foreground transition-[background-color,transform] hover:bg-primary-tint/50 active:scale-[0.99]"
+              >
+                Try again
+              </button>
+            </div>
+          ) : providers === null ? (
+            // The server hasn't said yet which ways in it offers: a placeholder
+            // rather than a form that would change shape.
+            <div className={`${showChooser ? "mt-6" : "mt-8"} grid gap-3`} aria-hidden="true">
+              <div className="h-11 animate-pulse rounded-xl bg-primary-tint/60" />
+              <div className="h-11 animate-pulse rounded-xl bg-primary-tint/60" />
+            </div>
+          ) : privyAppId ? (
+            // Real accounts: an email code or a Solana wallet, no password.
+            <div className={showChooser ? "mt-6" : "mt-8"}>
+              <PrivySignIn
+                appId={privyAppId}
+                initialError={error}
+                onSignedIn={(user) => router.replace(destinationFor(user, next))}
+              />
+              <p className="mt-6 text-xs leading-relaxed text-muted">
+                {isSignup ? "Signing in later with the same email or wallet opens this account. " : "New here? Your first sign-in makes your account. "}
+                Algebra never sees a wallet&apos;s key.
+              </p>
+            </div>
+          ) : !passwordOn ? (
+            <div className={showChooser ? "mt-6" : "mt-8"}>
+              <FormError>{error ?? "No sign-in method is turned on for this server."}</FormError>
+            </div>
+          ) : (
+            // No Privy on this server (local development, say): email and password.
+            <form onSubmit={handleSubmit} className={`${showChooser ? "mt-6" : "mt-8"} space-y-4`} noValidate={false}>
+              {isSignup && (
                 <AuthInput
-                  label="Email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  autoFocus={!isSignup}
+                  label="Full name"
+                  name="name"
+                  autoComplete="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Ada Lovelace"
+                  maxLength={80}
                 />
-                <PasswordInput
-                  label="Password"
-                  name="password"
-                  autoComplete={isSignup ? "new-password" : "current-password"}
-                  required
-                  minLength={isSignup ? 8 : undefined}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={isSignup ? "At least 8 characters" : "Your password"}
-                  trailing={
-                    !isSignup ? (
-                      <Link href="/forgot-password" className="text-xs font-medium text-muted hover:text-foreground">
-                        Forgot password?
-                      </Link>
-                    ) : undefined
-                  }
-                />
-                {isSignup && password.length > 0 && <StrengthHint password={password} />}
-                {!isSignup && params.get("reset") === "1" && !error && (
-                  <p role="status" className="rounded-xl bg-primary-tint px-3.5 py-2.5 text-sm text-primary">
-                    Password updated. Sign in with your new password.
-                  </p>
-                )}
-                {error && <FormError>{error}</FormError>}
-                <SubmitButton busy={busy}>{isSignup ? "Create account" : "Sign in"}</SubmitButton>
-              </form>
-            </>
+              )}
+              <AuthInput
+                label="Email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+                autoFocus={!isSignup}
+              />
+              <PasswordInput
+                label="Password"
+                name="password"
+                autoComplete={isSignup ? "new-password" : "current-password"}
+                required
+                minLength={isSignup ? 8 : undefined}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={isSignup ? "At least 8 characters" : "Your password"}
+                trailing={
+                  !isSignup ? (
+                    <Link href="/forgot-password" className="text-xs font-medium text-muted hover:text-foreground">
+                      Forgot password?
+                    </Link>
+                  ) : undefined
+                }
+              />
+              {isSignup && password.length > 0 && <StrengthHint password={password} />}
+              {!isSignup && params.get("reset") === "1" && !error && (
+                <p role="status" className="rounded-xl bg-primary-tint px-3.5 py-2.5 text-sm text-primary">
+                  Password updated. Sign in with your new password.
+                </p>
+              )}
+              {error && <FormError>{error}</FormError>}
+              <SubmitButton busy={busy}>{isSignup ? "Create account" : "Sign in"}</SubmitButton>
+            </form>
           )}
 
           {isSignup && (
