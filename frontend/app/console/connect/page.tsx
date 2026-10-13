@@ -503,7 +503,7 @@ export default function ConnectPage() {
                           : "MCP configuration"
                     }
                     code={configuration(selected, mcp, mode)}
-                    note="Replace <SPEND_PASS_TOKEN> with the token issued for this agent."
+                    note="Set ALGEBRA_API_KEY to a key from Projects & API keys. It is shown once: keep it in the environment of whatever runs your agent."
                   />
                 </>
               ) : (
