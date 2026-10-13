@@ -133,7 +133,7 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
       <div className="flex min-w-0 flex-1 flex-col">
         {user.mode === "demo" && <DemoBanner />}
         {user.mode !== "demo" && user.needs_notification_email && !pathname.startsWith("/console/settings") && <EmailBanner userId={user.id} />}
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 md:hidden print:hidden">
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:hidden print:hidden">
           <button
             type="button"
             onClick={() => setDrawer(true)}
@@ -144,9 +144,9 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
           </button>
           <Link href="/console" className="flex items-center gap-2 text-foreground">
             <Logo size={20} />
-            <span className="font-display text-sm font-semibold">Algebra</span>
+            <span className="hidden font-display text-sm font-semibold min-[480px]:inline">Algebra</span>
           </Link>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex min-w-0 items-center gap-1.5">
             <MobileApprovalsPill />
             <NetworkSwitch compact />
             <WalletMenu compact />
@@ -170,9 +170,11 @@ function MobileApprovalsPill() {
   return (
     <Link
       href="/console/executions"
-      className="inline-flex h-8 items-center gap-1.5 rounded-full bg-accent-tint px-3 text-xs font-medium text-accent"
+      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-accent-tint px-2.5 text-xs font-medium text-accent"
+      aria-label={`${n} waiting for your approval`}
     >
-      <IconInbox size={14} /> {n} waiting
+      <IconInbox size={14} /> {n}
+      <span className="hidden min-[480px]:inline">waiting</span>
     </Link>
   );
 }

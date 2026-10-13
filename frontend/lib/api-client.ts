@@ -107,8 +107,20 @@ async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T> {
 
 // --- auth ---
 
-export function getAuthProviders() {
-  return apiFetch<AuthProviders>("/api/v1/auth/providers");
+// Which sign-in methods the server offers doesn't change while a page is open, and
+// several components ask (every pass card on /console/passes did, 100+ requests
+// on one load): one request is shared for a minute. A failure is not kept.
+let providersCache: { at: number; value: Promise<AuthProviders> } | null = null;
+
+export function getAuthProviders(): Promise<AuthProviders> {
+  const now = Date.now();
+  if (providersCache && now - providersCache.at < 60_000) return providersCache.value;
+  const value = apiFetch<AuthProviders>("/api/v1/auth/providers");
+  providersCache = { at: now, value };
+  value.catch(() => {
+    if (providersCache?.value === value) providersCache = null;
+  });
+  return value;
 }
 
 export function getSession() {

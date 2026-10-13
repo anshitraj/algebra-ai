@@ -106,11 +106,12 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
   }, [passId]);
 
   useEffect(() => {
-    if (!account) return;
+    // Only a card that will show the vault controls needs the Privy app ID.
+    if (!account || !lookup) return;
     getAuthProviders()
       .then((p) => setPrivyAppId(p.privy && p.privy_app_id ? p.privy_app_id : ""))
       .catch(() => setPrivyAppId(""));
-  }, [account]);
+  }, [account, lookup]);
 
   useEffect(() => {
     onchainNetworks()
@@ -252,8 +253,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
     }
   }
 
-  if (view === undefined || nets === null) return null;
-  if (view === null && (!active || nets.length === 0)) return null;
+  // A pass that can't spend isn't looked up with the page: the person asks.
   if (view === undefined && !lookup) {
     return (
       <button type="button" onClick={() => setPeek(true)} className="mt-3 text-xs font-medium text-muted underline decoration-border-strong underline-offset-4 hover:text-foreground">
@@ -261,6 +261,8 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
       </button>
     );
   }
+  if (view === undefined || nets === null) return null;
+  if (view === null && (!active || nets.length === 0)) return null;
 
   const held = account ? balances?.wallets.find((w) => w.address === account.address) : undefined;
   const createDisabled = busy !== "" || (signWithAccount ? !accountSigner : wallets.length === 0);

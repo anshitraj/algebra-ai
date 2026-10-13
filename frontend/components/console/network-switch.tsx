@@ -32,7 +32,7 @@ export function NetworkSwitch({ compact = false }: { compact?: boolean }) {
               aria-checked={on}
               title={n.hint}
               onClick={() => setNetwork(n.id)}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium transition-colors sm:px-3 ${
                 on ? "bg-surface text-foreground shadow-[0_1px_3px_rgb(0_0_0/0.08)]" : "text-muted hover:text-foreground"
               }`}
             >
