@@ -6,8 +6,9 @@ import type { SpendPass } from "@/lib/types";
 import type { ClassRow, KillSwitchState, Simulation } from "@/lib/routing-types";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
-import { Button, ErrorNote, Field, Input, PageHeader, Panel, Skeleton, StatusBadge } from "@/components/console/ui";
+import { Button, ErrorNote, Field, Input, PageHeader, Panel, Skeleton } from "@/components/console/ui";
 import { PolicyGuide } from "@/components/console/policy-guide";
+import { DecisionPanel } from "@/components/console/decision-panel";
 import { IconBan, IconCheck, IconShield, IconStop, Spinner } from "@/components/icons";
 
 /**
@@ -47,10 +48,10 @@ export default function FirewallPage() {
 
       <section className="mt-8">
         <h2 className="text-sm font-medium text-foreground">Rules for each pass</h2>
-        <p className="mt-1 text-sm text-muted">Answer four questions per pass. Algebra checks the answers before every payment.</p>
-        <div className="mt-3 space-y-3">
-          {!passes && !error && <Skeleton className="h-24" />}
-          {passes?.length === 0 && <p className="text-sm text-muted">No active USDC Spend Pass. Create one under Spend passes.</p>}
+        <p className="mt-1 text-sm text-muted">Open a policy to see its rules. Algebra checks them before every payment.</p>
+        <div className="mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {!passes && !error && <Skeleton className="col-span-full h-80" />}
+          {passes?.length === 0 && <p className="col-span-full text-sm text-muted">No active USDC Spend Pass. Create one under Spend passes.</p>}
           {passes?.map((p) => <PolicyGuide key={p.id} pass={p} onSaved={load} />)}
         </div>
       </section>
@@ -84,7 +85,7 @@ function KillSwitch({ state, onChange }: { state: KillSwitchState | null; onChan
       <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${engaged ? "bg-danger text-danger-tint" : "bg-primary-tint text-primary"}`}>
         {engaged ? <IconStop size={20} /> : <IconShield size={20} />}
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-[1_1_200px]">
         <p className="font-display text-base font-semibold text-foreground">{engaged ? "Kill switch is on" : "Kill switch"}</p>
         <p className="mt-0.5 text-sm text-muted">
           {state === null
@@ -218,51 +219,20 @@ function Simulator({ passes }: { passes: SpendPass[] }) {
         </div>
         {error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}
       </Panel>
-      {sim && <SimulationResult sim={sim} />}
+      {sim && <SimulationResult sim={sim} pass={passes.find((p) => p.id === passId)} />}
     </section>
   );
 }
 
-const REASON_TEXT: Record<string, string> = {
-  PASS_FROZEN: "the pass is frozen by the kill switch",
-  PASS_RATE_LIMITED: "the pass made as many paid calls this minute as it may",
-  PASS_NEW_PROVIDER_NEEDS_APPROVAL: "a provider you've never paid needs your approval",
-  PASS_NEW_PROVIDER_OVER_CAP: "a provider you've never paid asks more than your cap",
-  PASS_BUDGET_EXCEEDED: "over the pass's budget",
-  PASS_PER_PURCHASE_LIMIT: "over the pass's per-call limit",
-  PASS_APPROVAL_REQUIRED: "at or above your ask-me line",
-  PASS_MERCHANT_NOT_ALLOWED: "the pass doesn't allow this provider",
-  DEMO_SANDBOX_ONLY: "a demo account pays in the sandbox only",
-  NETWORK_NOT_ALLOWED: "the call isn't allowed on that network",
-  no_provider_passes: "no provider passed every check",
-};
-
-function SimulationResult({ sim }: { sim: Simulation }) {
-  const tone = sim.verdict === "ALLOW" ? "border-primary/40" : sim.verdict === "DENY" ? "border-danger/40" : "border-accent/40";
+function SimulationResult({ sim, pass }: { sim: Simulation; pass?: SpendPass }) {
   const passed = sim.candidates.filter((c) => c.verdict !== "DENY");
   const refused = sim.candidates.filter((c) => c.verdict === "DENY");
   return (
-    <div className={`mt-4 rounded-2xl border ${tone} bg-surface p-5`}>
-      <div className="flex flex-wrap items-center gap-3">
-        <StatusBadge status={sim.verdict} />
-        <p className="text-sm text-foreground">
-          {sim.verdict === "DENY"
-            ? "Algebra would refuse this."
-            : sim.would_pay
-              ? `Algebra would pay ${sim.would_pay.provider} ${formatUSDC(sim.would_pay.price_minor)}${sim.would_pay.price_source === "live" ? " (live price)" : " (listed price)"}${sim.verdict === "REQUIRE_APPROVAL" ? ", after your approval" : ""}.`
-              : "Algebra would go ahead."}
-        </p>
-      </div>
-      {sim.reasons && sim.reasons.length > 0 && (
-        <ul className="mt-2 list-disc pl-5 text-sm text-muted">
-          {sim.reasons.map((r) => (
-            <li key={r}>{REASON_TEXT[r] ?? r}</li>
-          ))}
-        </ul>
-      )}
+    <div className="mt-4">
+      <DecisionPanel sim={sim} pass={pass} />
       <p className="mt-2 text-xs text-muted">
         Pass: {formatUSDC(sim.pass.remaining_minor)} left · {sim.pass.calls_last_minute} paid calls in the last minute of {sim.pass.controls.max_calls_per_minute} · new
-        providers: {sim.pass.controls.new_providers}
+        providers: {sim.pass.controls.new_providers}. A dry run: nothing was reserved or paid.
       </p>
 
       {sim.plan && sim.plan.offers.length > 0 && (

@@ -1,0 +1,6 @@
+.root {
+  --glassbound-canvas-opacity: 0;
+}
+.root[data-renderer="webgl"] {
+  --glassbound-canvas-opacity: 1;
+}

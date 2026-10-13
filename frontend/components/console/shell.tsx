@@ -93,7 +93,7 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
 
   return (
     <div className="console-frame flex h-dvh overflow-hidden print:block print:h-auto print:overflow-visible">
-      <aside className="console-sidebar hidden shrink-0 flex-col border-r border-border md:flex print:hidden">
+      <aside className="console-sidebar console-inverse hidden shrink-0 flex-col border-r border-border md:flex print:hidden">
         <SidebarContents user={user} pathname={pathname} />
       </aside>
 
@@ -108,7 +108,7 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
               onClick={() => setDrawer(false)}
             />
             <motion.aside
-              className="fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-border bg-background shadow-2xl md:hidden"
+              className="console-inverse fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-border bg-background shadow-2xl md:hidden"
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}

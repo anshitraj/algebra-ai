@@ -8,7 +8,7 @@
 // (PUT /me/passes/{id}/controls).
 
 import { motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import * as api from "@/lib/api-client";
 import type { SpendPass } from "@/lib/types";
 import type { NewProviderRule, UnverifiedRule } from "@/lib/routing-types";
@@ -16,6 +16,8 @@ import { formatUSDC } from "@/lib/money";
 import { hasOwnRules } from "@/lib/policy-check";
 import { IconArrowLeft, IconArrowRight, IconBan, IconCheck, IconGauge, IconShield, IconStore, IconTag, IconX, Spinner } from "@/components/icons";
 import { Button, StatusBadge } from "./ui";
+import GlassFolder, { hashString } from "@/components/ui/glass-folder-cards";
+import styles from "./policy-guide.module.css";
 
 const USDC = 1_000_000;
 const toMinor = (v: string) => Math.round(Number(v) * USDC);
@@ -102,15 +104,44 @@ const STEPS = ["Approval", "Per call", "Providers", "Speed", "Review"] as const;
 
 /** One pass: its rules as sentences, and "Change rules" opens the guide. */
 export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () => void }) {
+  const detailsId = useId();
+  const folderRef = useRef<HTMLDivElement>(null);
+  const [folderWidth, setFolderWidth] = useState(240);
+  const [expanded, setExpanded] = useState(false);
   const [open, setOpen] = useState(false);
+  const [startAt, setStartAt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const frozen = !!pass.frozen_at;
   const own = hasOwnRules(pass);
   const summary = useMemo(() => sentences(draftOf(pass), pass), [pass]);
 
+  useEffect(() => {
+    const el = folderRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setFolderWidth(Math.min(280, entry.contentRect.width));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  function toggleExpanded(next: boolean) {
+    // Keep an unsaved editing session open until its Cancel or Save action.
+    if (!next && open) return;
+    setExpanded(next);
+  }
+
+  function editRule(step = 0) {
+    if (open) return;
+    setStartAt(step);
+    setExpanded(true);
+    setOpen(true);
+  }
+
   async function freeze() {
     setBusy(true);
+    setMsg(null);
     try {
       await api.freezePass(pass.id, !frozen);
       onSaved();
@@ -122,63 +153,102 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-surface">
-      <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5">
-        <div className="min-w-0">
-          <p className="flex items-center gap-2 text-base font-semibold text-foreground">
-            {pass.label} {frozen && <StatusBadge status="DENIED" label="frozen" />}
-          </p>
-          <p className="mt-0.5 text-xs text-muted">
-            {formatUSDC(pass.remaining_minor_units)} left of {formatUSDC(pass.budget_minor_units)}
-            {pass.budget_period !== "total" ? ` a ${pass.budget_period}` : ""}
-          </p>
+    <article className={`${styles.card} ${expanded ? styles.expanded : ""}`}>
+      <div className={styles.cover}>
+        <div className={styles.eyebrow}>
+          <span><IconShield size={13} /> Spending policy</span>
+          {frozen ? <StatusBadge status="DENIED" label="Frozen" /> : <span className={styles.live}>Active</span>}
         </div>
-        <div className="flex gap-2">
-          {!open && (
-            <Button onClick={() => setOpen(true)}>
-              <IconShield size={14} /> {own ? "Change rules" : "Set up rules"}
-            </Button>
-          )}
-          <Button variant={frozen ? "secondary" : "danger"} onClick={freeze} disabled={busy}>
-            {busy ? <Spinner size={14} /> : frozen ? <IconCheck size={14} /> : <IconBan size={14} />} {frozen ? "Unfreeze" : "Freeze"}
-          </Button>
+        <div ref={folderRef} className={styles.folder}>
+          <GlassFolder
+            label={pass.label}
+            meta="4 spending rules"
+            tone="dark"
+            art="aurora"
+            seed={hashString(pass.id) % 997}
+            action="none"
+            width={folderWidth}
+            open={expanded}
+            onOpenChange={toggleExpanded}
+            closeOnOutside={false}
+            ariaControls={detailsId}
+            appear={false}
+            files={[
+              { name: "Approval", meta: "01" },
+              { name: "Per call", meta: "02" },
+              { name: "Providers", meta: "03" },
+              { name: "Speed", meta: "04" },
+            ]}
+            onFileSelect={(_, index) => editRule(index)}
+            className={styles.glass}
+          />
         </div>
+        <div className={styles.balance}>
+          <span>Available to spend</span>
+          <strong>{formatUSDC(pass.remaining_minor_units)}</strong>
+          <span>of {formatUSDC(pass.budget_minor_units)}{pass.budget_period !== "total" ? ` per ${pass.budget_period}` : " total budget"}</span>
+        </div>
+        <button type="button" className={styles.openButton} aria-expanded={expanded} aria-controls={detailsId} onClick={() => toggleExpanded(!expanded)} disabled={open}>
+          {expanded ? "Close policy" : "Open spending policy"}
+          {expanded ? <IconX size={14} /> : <IconArrowRight size={14} />}
+        </button>
+        {!expanded && msg && <p role="status" className="mt-3 text-xs text-muted">{msg}</p>}
       </div>
 
-      {!open ? (
-        <div className="px-5 pt-3 pb-5">
-          {!own && (
-            <p className="mb-3 rounded-xl bg-accent-tint/50 px-3.5 py-2.5 text-xs leading-relaxed text-foreground">
-              No rules of your own yet: only the budget and Algebra&apos;s defaults stand between this agent and a payment. Set them up in four short steps.
-            </p>
-          )}
-          <ul className="space-y-2">
-            {summary.map((s, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-sm text-foreground">
-                <span className="mt-0.5 text-primary">{s.icon}</span>
-                {s.text}
-              </li>
-            ))}
-          </ul>
-          {msg && <p className="mt-3 text-sm text-muted">{msg}</p>}
+      <div id={detailsId} hidden={!expanded} className={styles.details}>
+        <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-foreground">{pass.label}</h3>
+            <p className="mt-0.5 text-xs text-muted">Your rules, checked before every payment.</p>
+          </div>
+          <div className="flex gap-2">
+            {!open && (
+              <Button onClick={() => editRule()}>
+                <IconShield size={14} /> {own ? "Change rules" : "Set up rules"}
+              </Button>
+            )}
+            <Button variant={frozen ? "secondary" : "danger"} onClick={freeze} disabled={busy}>
+              {busy ? <Spinner size={14} /> : frozen ? <IconCheck size={14} /> : <IconBan size={14} />} {frozen ? "Unfreeze" : "Freeze"}
+            </Button>
+          </div>
         </div>
-      ) : (
-        <Guide
-          pass={pass}
-          onClose={() => setOpen(false)}
-          onSaved={() => {
-            setOpen(false);
-            setMsg("Saved. These rules apply from the next payment.");
-            onSaved();
-          }}
-        />
-      )}
-    </div>
+
+        {!open ? (
+          <div className="px-5 pt-3 pb-5">
+            {!own && (
+              <p className="mb-3 rounded-xl bg-accent-tint/50 px-3.5 py-2.5 text-xs leading-relaxed text-foreground">
+                No rules of your own yet: only the budget and Algebra&apos;s defaults stand between this agent and a payment. Set them up in four short steps.
+              </p>
+            )}
+            <ul className="space-y-2">
+              {summary.map((s, i) => (
+                <li key={i} className="flex items-start gap-2.5 text-sm text-foreground">
+                  <span className="mt-0.5 text-primary">{s.icon}</span>
+                  {s.text}
+                </li>
+              ))}
+            </ul>
+            {msg && <p role="status" className="mt-3 text-sm text-muted">{msg}</p>}
+          </div>
+        ) : (
+          <Guide
+            pass={pass}
+            startAt={startAt}
+            onClose={() => setOpen(false)}
+            onSaved={() => {
+              setOpen(false);
+              setMsg("Saved. These rules apply from the next payment.");
+              onSaved();
+            }}
+          />
+        )}
+      </div>
+    </article>
   );
 }
 
-function Guide({ pass, onClose, onSaved }: { pass: SpendPass; onClose: () => void; onSaved: () => void }) {
-  const [step, setStep] = useState(0);
+function Guide({ pass, startAt = 0, onClose, onSaved }: { pass: SpendPass; startAt?: number; onClose: () => void; onSaved: () => void }) {
+  const [step, setStep] = useState(startAt);
   const [d, setD] = useState<Draft>(() => draftOf(pass));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

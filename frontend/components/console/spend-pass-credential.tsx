@@ -15,7 +15,7 @@ export function SpendPassCredential({ pass: p, demo = false, preview = false, va
   const money = (n: number) => Number.isFinite(n) ? formatMoney(n, p.currency) : "—";
   const used = p.budget_minor_units > 0 ? Math.max(0, Math.min(100, p.spent_minor_units / p.budget_minor_units * 100)) : 0;
   const approval = p.approve_above_minor_units == null ? "Not required" : p.approve_above_minor_units === 0 ? "Every call" : `Above ${money(p.approve_above_minor_units)}`;
-  return <div className={styles.card} aria-label={`${p.label}, ${demo ? "demo " : ""}spend pass, ${status.toLowerCase()}`}>
+  return <div className={`${styles.card} console-inverse`} aria-label={`${p.label}, ${demo ? "demo " : ""}spend pass, ${status.toLowerCase()}`}>
     <div className={styles.watermark} aria-hidden="true">a</div>
     <div className={styles.topline}>
       <span className={styles.brand}><span className={styles.brandMark} aria-hidden="true">a</span> algebra <span className={styles.edition}>/ SPEND PASS</span></span>
