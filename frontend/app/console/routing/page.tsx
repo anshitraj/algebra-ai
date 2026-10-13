@@ -1,89 +1,349 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as api from "@/lib/api-client";
-import type { ClassDetail, ClassMember, ClassRow, EndpointHealth } from "@/lib/routing-types";
+import type {
+  ClassDetail,
+  ClassMember,
+  ClassRow,
+  EndpointHealth,
+} from "@/lib/routing-types";
 import { formatUSDC } from "@/lib/money";
 import { catalogName } from "@/lib/paysh";
 import { networkLabel } from "@/lib/network";
-import { Button, ErrorNote, PageHeader, Panel, Skeleton } from "@/components/console/ui";
+import { Button, ErrorNote, Skeleton } from "@/components/console/ui";
 import { ProviderLogo } from "@/components/provider-logo";
-import { IconArrowRight, IconGauge, IconRefresh, Spinner } from "@/components/icons";
+import {
+  CompareStrategies,
+  StrategySettings,
+} from "@/components/console/strategy-settings";
+import {
+  IconArrowRight,
+  IconCheck,
+  IconChat,
+  IconClock,
+  IconGauge,
+  IconGrid,
+  IconMail,
+  IconRefresh,
+  IconSearch,
+  IconShield,
+  IconTag,
+  IconWallet,
+  IconX,
+  Spinner,
+} from "@/components/icons";
+import { Logo } from "@/components/logo";
+import styles from "./routing.module.css";
 
-/**
- * Routing: every catalog endpoint grouped by the work it does, so an agent asks
- * for "token.price" and Algebra compares every provider of it, live.
- */
+const GROUPS = ["All", "Onchain", "Web & data", "AI & media"] as const;
+type Group = (typeof GROUPS)[number];
+
+function groupOf(id: string): Group {
+  if (/^(solana|token|wallet)\./.test(id)) return "Onchain";
+  if (/^(llm|image|text)\./.test(id)) return "AI & media";
+  return "Web & data";
+}
+
+function CapabilityIcon({ id, size = 21 }: { id: string; size?: number }) {
+  if (id.includes("risk")) return <IconShield size={size} />;
+  if (id.startsWith("wallet")) return <IconWallet size={size} />;
+  if (id.startsWith("token")) return <IconTag size={size} />;
+  if (id.startsWith("llm") || id.startsWith("text"))
+    return <IconChat size={size} />;
+  if (id.startsWith("email")) return <IconMail size={size} />;
+  if (id.startsWith("weather"))
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        aria-hidden="true"
+      >
+        <path d="M8 15a4 4 0 1 1 4-5 3.5 3.5 0 1 1 2 6H8" />
+        <path d="M5 3v2M1 7h2M2 3l1.5 1.5M7 20v1M12 20v1M17 20v1" />
+      </svg>
+    );
+  if (id.startsWith("image"))
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <rect x="3" y="3" width="18" height="18" rx="4" />
+        <circle cx="8" cy="8" r="1.5" />
+        <path d="m3 17 5-5 4 4 4-6 5 7" />
+      </svg>
+    );
+  if (id.startsWith("ip") || id.startsWith("domain"))
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <ellipse cx="12" cy="12" rx="4" ry="9" />
+        <path d="M3 12h18M5 6h14M5 18h14" />
+      </svg>
+    );
+  return <IconSearch size={size} />;
+}
+
 export default function RoutingPage() {
   const [classes, setClasses] = useState<ClassRow[] | null>(null);
-  const [selected, setSelected] = useState<string>("token.price");
+  const [selected, setSelected] = useState("token.price");
+  const [query, setQuery] = useState("");
+  const [group, setGroup] = useState<Group>("All");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let live = true;
     api
       .listClasses()
-      .then((r) => setClasses(r.classes))
-      .catch((e) => setError(e instanceof Error ? e.message : "Couldn't load the classes"));
+      .then((r) => {
+        if (!live) return;
+        setClasses(r.classes);
+        if (!r.classes.some((c) => c.id === "token.price"))
+          setSelected(r.classes[0]?.id ?? "");
+      })
+      .catch(
+        (e) =>
+          live &&
+          setError(
+            e instanceof Error ? e.message : "Couldn't load capabilities",
+          ),
+      );
+    return () => {
+      live = false;
+    };
   }, []);
 
-  const totals = useMemo(() => {
-    const c = classes ?? [];
-    return { classes: c.length, providers: c.reduce((n, x) => n + x.providers, 0), routable: c.reduce((n, x) => n + x.routable, 0) };
-  }, [classes]);
+  const totals = useMemo(
+    () =>
+      (classes ?? []).reduce(
+        (t, c) => ({
+          endpoints: t.endpoints + c.providers,
+          routable: t.routable + c.routable,
+        }),
+        { endpoints: 0, routable: 0 },
+      ),
+    [classes],
+  );
+  const visible = (classes ?? []).filter(
+    (c) =>
+      (group === "All" || groupOf(c.id) === group) &&
+      `${c.title} ${c.id} ${c.description}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
+  );
+
+  function selectCapability(id: string) {
+    setSelected(id);
+    if (window.matchMedia("(max-width: 850px)").matches) {
+      document.getElementById("capability-detail")?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
+        block: "start",
+      });
+    }
+  }
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <PageHeader
-        title="Routing"
-        description="Ask for a capability. Algebra compares live quotes, filters unhealthy or overpriced providers, and finds the best eligible route."
-      />
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <div>
+          <p className={styles.eyebrow}>
+            <IconGauge size={13} /> ROUTING WORKSPACE
+          </p>
+          <h1>
+            One request. <span>The right provider.</span>
+          </h1>
+          <p className={styles.subtitle}>
+            Explore a capability. Compare providers. Find your route.
+          </p>
+        </div>
+        <Link href="/console/connect" className={styles.headerLink}>
+          Connect your agent <IconArrowRight size={15} />
+        </Link>
+      </header>
 
-      {error && <ErrorNote>{error}</ErrorNote>}
-
-      <dl className="mt-6 grid grid-cols-3 gap-3">
-        {[
-          { label: "Classes of work", value: classes ? String(totals.classes) : "…" },
-          { label: "Endpoints classified", value: classes ? String(totals.providers) : "…" },
-          { label: "Routable with one input", value: classes ? String(totals.routable) : "…" },
-        ].map((s) => (
-          <div key={s.label} className="rounded-xl border border-border bg-surface px-4 py-3">
-            <dt className="text-xs text-muted">{s.label}</dt>
-            <dd className="font-display mt-1 text-lg font-semibold text-foreground tabular-nums">{s.value}</dd>
+      <div className={styles.overview}>
+        <dl className={styles.metrics}>
+          <div>
+            <dt>Capabilities</dt>
+            <dd>{classes ? classes.length : "—"}</dd>
           </div>
-        ))}
-      </dl>
-
-      <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {!classes && !error && [0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-24" />)}
-        {classes?.map((c) => {
-          const on = c.id === selected;
-          return (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setSelected(c.id)}
-              aria-pressed={on}
-              className={`rounded-xl border px-4 py-3 text-left transition-colors ${
-                on ? "border-primary bg-primary-tint/50" : "border-border bg-surface hover:border-border-strong"
-              }`}
-            >
-              <span className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-sm font-medium text-foreground">{c.title}</span>
-                <span className="shrink-0 font-mono text-[0.7rem] text-muted">{c.id}</span>
-              </span>
-              <span className="mt-2 flex items-center gap-3 text-xs text-muted">
-                <span>
-                  <span className="font-medium text-foreground tabular-nums">{c.routable}</span> routable of {c.providers}
-                </span>
-                {c.median_price_minor > 0 && <span>usually {formatUSDC(c.median_price_minor)}</span>}
-              </span>
-            </button>
-          );
-        })}
+          <div>
+            <dt>Catalog endpoints</dt>
+            <dd>{classes ? totals.endpoints.toLocaleString() : "—"}</dd>
+          </div>
+          <div>
+            <dt>Routable endpoints</dt>
+            <dd>
+              {classes ? totals.routable.toLocaleString() : "—"}
+              <span className={styles.dot} />
+            </dd>
+          </div>
+        </dl>
+        <div className={styles.guardNote}>
+          <IconShield size={18} />
+          <div>
+            <strong>Your rules, every route</strong>
+            <span>Spend Pass limits always apply</span>
+          </div>
+        </div>
       </div>
-
-      {selected && <ClassPanel key={selected} id={selected} />}
+      {error && <ErrorNote>{error}</ErrorNote>}
+      <div className={styles.workspace}>
+        <section
+          className={styles.browser}
+          aria-labelledby="capabilities-title"
+        >
+          <div className={styles.sectionHeading}>
+            <h2 id="capabilities-title">What do you want to do?</h2>
+            <span>
+              {classes ? `${classes.length} capabilities` : "Loading…"}
+            </span>
+          </div>
+          <div className={styles.search}>
+            <IconSearch size={17} />
+            <input
+              aria-label="Search capabilities"
+              placeholder="Search capabilities…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setQuery("")}
+              >
+                <IconX size={14} />
+              </button>
+            )}
+            <span className={styles.searchHint}>Explore</span>
+          </div>
+          <div className={styles.filters} aria-label="Capability categories">
+            {GROUPS.map((g) => (
+              <button
+                key={g}
+                type="button"
+                aria-pressed={group === g}
+                onClick={() => setGroup(g)}
+                className={group === g ? styles.activeFilter : ""}
+              >
+                {g}
+                {g === "All" && <span>{classes?.length ?? "—"}</span>}
+              </button>
+            ))}
+          </div>
+          <div className={styles.cards}>
+            {!classes &&
+              !error &&
+              Array.from({ length: 6 }, (_, i) => (
+                <Skeleton key={i} className="h-32" />
+              ))}
+            {visible.map((c) => {
+              const on = selected === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-pressed={on}
+                  aria-controls="capability-detail"
+                  onClick={() => selectCapability(c.id)}
+                  className={`${styles.card} ${on ? styles.selectedCard : ""}`}
+                >
+                  <span className={styles.cardTop}>
+                    <span
+                      className={styles.capabilityIcon}
+                      data-group={groupOf(c.id)}
+                    >
+                      <CapabilityIcon id={c.id} />
+                    </span>
+                    <span className={styles.cardArrow}>
+                      {on ? (
+                        <IconCheck size={15} />
+                      ) : (
+                        <IconArrowRight size={15} />
+                      )}
+                    </span>
+                  </span>
+                  <strong>{c.title}</strong>
+                  <code>{c.id}</code>
+                  <span className={styles.cardBottom}>
+                    <span>
+                      <i className={styles.dot} />
+                      {c.routable} <span>routable</span>
+                    </span>
+                    <span>
+                      {c.median_price_minor > 0 ? (
+                        <>
+                          <b>
+                            {formatUSDC(c.median_price_minor).replace(
+                              " USDC",
+                              "",
+                            )}
+                          </b>{" "}
+                          <small>USDC</small>
+                        </>
+                      ) : (
+                        <small>Price varies</small>
+                      )}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {classes && visible.length === 0 && (
+            <div className={styles.empty}>
+              <IconSearch size={25} />
+              <h3>No capabilities found</h3>
+              <p>Try another search or category.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setGroup("All");
+                }}
+              >
+                Reset filters <IconArrowRight size={14} />
+              </button>
+            </div>
+          )}
+          <p className={styles.catalogNote}>
+            <IconGrid size={13} /> Prices shown are catalog medians. Test a
+            route for live quotes.
+          </p>
+        </section>
+        {selected ? (
+          <ClassPanel key={selected} id={selected} />
+        ) : (
+          classes && (
+            <div className={styles.empty}>No capabilities are listed yet.</div>
+          )
+        )}
+      </div>
+      <StrategySettings />
     </div>
   );
 }
@@ -97,30 +357,40 @@ function ClassPanel({ id }: { id: string }) {
   const [health, setHealth] = useState<EndpointHealth[]>([]);
   const [probing, setProbing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const r = await api.getClass(id);
-      setDetail(r.class);
-      setHealth(r.health ?? []);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load the class");
-    }
-  }, [id]);
+  const [view, setView] = useState<"providers" | "test">("providers");
+  const [routableOnly, setRoutableOnly] = useState(false);
+  const [sort, setSort] = useState("routable");
+  const [expanded, setExpanded] = useState(false);
+  const [input, setInput] = useState("");
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching from the REST API on mount
-    load();
-  }, [load]);
+    let live = true;
+    api
+      .getClass(id)
+      .then((r) => {
+        if (!live) return;
+        setDetail(r.class);
+        setHealth(r.health ?? []);
+        setInput(JSON.stringify(r.class.sample, null, 2));
+      })
+      .catch(
+        (e) =>
+          live &&
+          setError(e instanceof Error ? e.message : "Couldn't load providers"),
+      );
+    return () => {
+      live = false;
+    };
+  }, [id]);
 
   async function probe() {
     setProbing(true);
+    setError(null);
     try {
       const r = await api.probeClass(id);
       setHealth(r.health);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "The probe failed");
+      setError(e instanceof Error ? e.message : "The health check failed");
     } finally {
       setProbing(false);
     }
@@ -135,122 +405,330 @@ function ClassPanel({ id }: { id: string }) {
     }
     return m;
   }, [health]);
-
-  const sample = detail ? JSON.stringify(detail.sample) : "";
+  const members = [...(detail?.members ?? [])]
+    .filter((m) => !routableOnly || m.routable)
+    .sort((a, b) =>
+      sort === "price"
+        ? (a.price_minor || Infinity) - (b.price_minor || Infinity)
+        : sort === "name"
+          ? a.provider_name.localeCompare(b.provider_name)
+          : Number(b.routable) - Number(a.routable),
+    );
+  const brands = (detail?.members ?? [])
+    .filter(
+      (m, i, all) => all.findIndex((x) => x.provider === m.provider) === i,
+    )
+    .slice(0, 4);
+  let sample: Record<string, unknown> | null = null;
+  try {
+    const parsed: unknown = JSON.parse(input);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+      sample = parsed as Record<string, unknown>;
+  } catch {
+    /* The editor displays validation below. */
+  }
 
   return (
-    <Panel className="mt-6">
-      {error && <ErrorNote>{error}</ErrorNote>}
-      {!detail && !error && <Skeleton className="h-40" />}
+    <aside
+      className={styles.inspector}
+      id="capability-detail"
+      aria-label="Selected capability"
+    >
+      {error && (
+        <div className={styles.panelPadding}>
+          <ErrorNote>{error}</ErrorNote>
+        </div>
+      )}
+      {!detail && !error && (
+        <div className={styles.panelPadding}>
+          <Skeleton className="h-96" />
+        </div>
+      )}
       {detail && (
         <>
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <h2 className="font-display text-lg font-semibold text-foreground">{detail.title}</h2>
-              <p className="mt-1 max-w-2xl text-sm text-muted">{detail.description}</p>
-              <p className="mt-2 text-xs text-muted">
-                Ask for it as <code className="rounded bg-primary-tint px-1.5 py-0.5 font-mono text-foreground">{detail.id}</code> with input{" "}
-                <code className="rounded bg-primary-tint px-1.5 py-0.5 font-mono text-foreground">{sample}</code>
-              </p>
+          <div className={styles.detailHeader}>
+            <div className={styles.detailEyebrow}>
+              <span>CAPABILITY INSPECTOR</span>
+              <span>
+                <i className={styles.dot} />
+                {detail.routable} routable
+              </span>
             </div>
-            <div className="flex shrink-0 gap-2">
-              <Button variant="secondary" onClick={probe} disabled={probing} title="An unpaid request to each provider: no money moves">
-                {probing ? <Spinner size={14} /> : <IconRefresh size={14} />} Probe now
-              </Button>
+            <div className={styles.detailTitle}>
+              <span className={styles.capabilityIcon} data-group={groupOf(id)}>
+                <CapabilityIcon id={id} size={24} />
+              </span>
+              <div>
+                <h2 aria-live="polite">{detail.title}</h2>
+                <code>{id}</code>
+              </div>
+            </div>
+            <div className={styles.providerStack}>
+              <div>
+                {brands.map((m) => (
+                  <ProviderLogo
+                    key={m.provider}
+                    name={m.provider_name}
+                    logo={m.logo_url}
+                    host={hostOf(m.url)}
+                    fqn={m.provider}
+                    size={29}
+                  />
+                ))}
+              </div>
+              <span>
+                <strong>{detail.members.length}</strong> catalog endpoints
+              </span>
+            </div>
+            <div className={styles.routeFlow} aria-label="Routing process">
+              <span>
+                <IconChat size={17} />
+                <small>Request</small>
+              </span>
+              <IconArrowRight size={13} />
+              <span className={styles.flowCore}>
+                <Logo size={21} />
+                <small>Algebra</small>
+              </span>
+              <IconArrowRight size={13} />
+              <span>
+                <IconShield size={17} />
+                <small>Your rules</small>
+              </span>
+              <IconArrowRight size={13} />
+              <span>
+                <IconCheck size={17} />
+                <small>Best route</small>
+              </span>
+            </div>
+          </div>
+          <div className={styles.detailViews} aria-label="Inspector view">
+            <button
+              type="button"
+              aria-pressed={view === "providers"}
+              onClick={() => setView("providers")}
+              className={view === "providers" ? styles.activeView : ""}
+            >
+              Providers <span>{detail.members.length}</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "test"}
+              onClick={() => setView("test")}
+              className={view === "test" ? styles.activeView : ""}
+            >
+              <IconGauge size={14} />
+              Test a route
+            </button>
+          </div>
+          {view === "providers" ? (
+            <>
+              <div className={styles.providerToolbar}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={routableOnly}
+                    onChange={(e) => {
+                      setRoutableOnly(e.target.checked);
+                      setExpanded(false);
+                    }}
+                  />
+                  Routable only
+                </label>
+                <select
+                  aria-label="Sort providers"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value)}
+                >
+                  <option value="routable">Routable first</option>
+                  <option value="price">Lowest listed price</option>
+                  <option value="name">Name A–Z</option>
+                </select>
+              </div>
+              <div className={styles.providerList}>
+                {members.slice(0, expanded ? members.length : 5).map((m, i) => (
+                  <MemberRow
+                    key={`${m.provider}-${m.url}-${i}`}
+                    m={m}
+                    h={byMember.get(memberKey(m.provider, m.url))}
+                    median={detail.median_price_minor}
+                  />
+                ))}
+              </div>
+              {members.length === 0 && (
+                <p className={styles.panelEmpty}>
+                  No {routableOnly ? "routable " : ""}providers for this
+                  capability.
+                </p>
+              )}
+              {members.length > 5 && (
+                <button
+                  type="button"
+                  className={styles.showMore}
+                  onClick={() => setExpanded(!expanded)}
+                >
+                  {expanded
+                    ? "Show fewer providers"
+                    : `View all ${members.length} endpoints`}
+                  <IconArrowRight size={14} />
+                </button>
+              )}
+              <div className={styles.detailFooter}>
+                <Button
+                  variant="secondary"
+                  onClick={probe}
+                  disabled={probing}
+                  title="Checks providers with unpaid requests"
+                >
+                  {probing ? <Spinner size={14} /> : <IconRefresh size={14} />}
+                  {probing ? "Checking…" : "Check health"}
+                </Button>
+                <span>
+                  <IconClock size={12} />
+                  Unpaid checks · every 15 min
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className={styles.testPanel}>
+              <div className={styles.testHeading}>
+                <h3>Preview before you pay</h3>
+                <span className={styles.freeBadge}>No payment</span>
+              </div>
+              <p className={styles.testDescription}>{detail.description}</p>
+              <label className={styles.inputLabel} htmlFor="route-input">
+                Request input <span>JSON</span>
+              </label>
+              <textarea
+                id="route-input"
+                spellCheck={false}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                rows={6}
+                className={styles.inputEditor}
+                aria-invalid={!sample}
+                aria-describedby={!sample ? "input-error" : undefined}
+              />
+              {!sample && (
+                <p id="input-error" className={styles.inputError}>
+                  Enter a valid JSON object to compare routes.
+                </p>
+              )}
+              <button
+                type="button"
+                className={styles.resetInput}
+                onClick={() => setInput(JSON.stringify(detail.sample, null, 2))}
+              >
+                <IconRefresh size={12} />
+                Reset sample
+              </button>
+              {sample && (
+                <CompareStrategies
+                  capability={detail.id}
+                  sample={sample}
+                  providers={detail.members}
+                />
+              )}
               <Link
                 href={`/console/firewall?class=${encodeURIComponent(detail.id)}`}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-tint hover:opacity-90"
+                className={styles.firewallLink}
               >
-                Would it pass? <IconArrowRight size={14} />
+                <IconShield size={15} />
+                Open in Spend Firewall <IconArrowRight size={14} />
               </Link>
             </div>
-          </div>
-
-          <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted">
-                  <th className="py-2 pr-3 font-medium">Provider</th>
-                  <th className="py-2 pr-3 font-medium">Listed</th>
-                  <th className="py-2 pr-3 font-medium">Live 402</th>
-                  <th className="py-2 pr-3 font-medium">Health</th>
-                  <th className="py-2 pr-3 font-medium">Network</th>
-                  <th className="py-2 font-medium">Router</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.members.map((m, i) => (
-                  <MemberRow key={`${m.provider}-${m.url}-${i}`} m={m} h={byMember.get(memberKey(m.provider, m.url))} median={detail.median_price_minor} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {detail.members.length === 0 && <p className="mt-4 text-sm text-muted">No catalog lists this kind of work yet.</p>}
-          <p className="mt-4 flex items-center gap-1.5 text-xs text-muted">
-            <IconGauge size={14} /> Health is a free probe every 15 minutes: the same unpaid request a quote is. A provider that asks more than its
-            listing, or many times what its peers ask, is never paid.
-          </p>
+          )}
         </>
       )}
-    </Panel>
+    </aside>
   );
 }
 
-function MemberRow({ m, h, median }: { m: ClassMember; h?: EndpointHealth; median: number }) {
-  const outlier = median > 0 && m.price_minor > 50_000 && m.price_minor > median * 10;
+function MemberRow({
+  m,
+  h,
+  median,
+}: {
+  m: ClassMember;
+  h?: EndpointHealth;
+  median: number;
+}) {
+  const outlier =
+    median > 0 && m.price_minor > 50_000 && m.price_minor > median * 10;
   return (
-    <tr className="border-b border-border/60 align-top last:border-0">
-      <td className="py-2.5 pr-3">
-        <span className="flex items-center gap-2.5">
-          <ProviderLogo name={m.provider_name} logo={m.logo_url} host={hostOf(m.url)} size={24} />
-          <span className="min-w-0">
-            <span className="block max-w-[220px] truncate text-foreground">{m.provider_name}</span>
-            <span className="block max-w-[220px] truncate font-mono text-[0.7rem] text-muted">
-              {catalogName(m.source)} · {m.method} {pathOf(m.url)}
-            </span>
-          </span>
+    <div className={styles.providerRow}>
+      <ProviderLogo
+        name={m.provider_name}
+        logo={m.logo_url}
+        host={hostOf(m.url)}
+        fqn={m.provider}
+        size={36}
+      />
+      <div className={styles.providerIdentity}>
+        <strong title={m.provider_name}>{m.provider_name}</strong>
+        <span title={`${m.method} ${pathOf(m.url)}`}>
+          {catalogName(m.source)} · {m.method} {pathOf(m.url)}
         </span>
-      </td>
-      <td className="py-2.5 pr-3 tabular-nums text-foreground">
-        {m.price_minor > 0 ? formatUSDC(m.price_minor) : <span className="text-muted">not stated</span>}
-        {outlier && <Tag tone="danger">trap price</Tag>}
-      </td>
-      <td className="py-2.5 pr-3 tabular-nums">
-        {h?.live_price_minor ? (
-          <span className={h.overcharges ? "text-danger" : "text-foreground"}>
-            {formatUSDC(h.live_price_minor)}
-            {h.overcharges && <Tag tone="danger">over listing</Tag>}
+        <div className={styles.providerBadges}>
+          <span
+            className={m.routable ? styles.routableBadge : styles.listedBadge}
+            title={m.not_routable_reason}
+          >
+            {m.routable ? (
+              <>
+                <IconCheck size={10} />
+                Routable
+              </>
+            ) : (
+              "Listed only"
+            )}
           </span>
-        ) : (
-          <span className="text-muted">—</span>
+          {h ? (
+            <span
+              className={
+                h.status === "up" ? styles.healthUp : styles.healthOther
+              }
+              title={`${h.error || ""} · ${h.checks > 0 ? Math.round((h.ups / h.checks) * 100) : 0}% uptime across ${h.checks} checks`}
+            >
+              {
+                {
+                  up: "Healthy",
+                  down: "Down",
+                  input_rejected: "Input rejected",
+                  unpayable: "Unpayable",
+                }[h.status]
+              }{" "}
+              · {h.latency_ms} ms
+            </span>
+          ) : (
+            <span className={styles.unchecked}>Not checked</span>
+          )}
+        </div>
+      </div>
+      <div className={styles.providerPrice}>
+        <strong>
+          {m.price_minor > 0
+            ? formatUSDC(m.price_minor).replace(" USDC", "")
+            : "—"}
+        </strong>
+        <small>USDC · listed</small>
+        {h?.live_price_minor ? (
+          <span className={h.overcharges ? styles.priceWarning : ""} title={`Last quote checked ${h.checked_at}`}>
+            Quote {formatUSDC(h.live_price_minor)}
+          </span>
+        ) : null}
+        {(outlier || h?.overcharges) && (
+          <span className={styles.priceWarning}>
+            {outlier ? "Price outlier" : "Over listing"}
+          </span>
         )}
-      </td>
-      <td className="py-2.5 pr-3">{h ? <HealthTag h={h} /> : <span className="text-xs text-muted">not probed</span>}</td>
-      <td className="py-2.5 pr-3 text-xs text-muted">{(m.networks ?? []).map(networkLabel).join(", ") || "—"}</td>
-      <td className="py-2.5 text-xs">
-        {m.routable ? <span className="text-primary">routable</span> : <span className="text-muted" title={m.not_routable_reason}>{m.not_routable_reason || "listed only"}</span>}
-      </td>
-    </tr>
+        <span title={(m.networks ?? []).map(networkLabel).join(", ")}>
+          {(m.networks ?? []).map(networkLabel).join(", ") ||
+            "Network unstated"}
+        </span>
+      </div>
+    </div>
   );
-}
-
-function HealthTag({ h }: { h: EndpointHealth }) {
-  const tone = h.status === "up" ? "ok" : h.status === "down" ? "danger" : "warn";
-  const label = { up: "up", down: "down", input_rejected: "rejects input", unpayable: "can't pay" }[h.status];
-  const uptime = h.checks > 0 ? Math.round((h.ups / h.checks) * 100) : 0;
-  return (
-    <span className="flex flex-col gap-0.5" title={h.error}>
-      <Tag tone={tone}>{label}</Tag>
-      <span className="text-[0.7rem] text-muted tabular-nums">
-        {h.latency_ms} ms · {uptime}% of {h.checks}
-      </span>
-    </span>
-  );
-}
-
-function Tag({ tone, children }: { tone: "ok" | "warn" | "danger"; children: React.ReactNode }) {
-  const cls = { ok: "bg-primary-tint text-primary", warn: "bg-accent-tint text-accent", danger: "bg-danger-tint text-danger" }[tone];
-  return <span className={`ml-1.5 inline-flex rounded-full px-2 py-0.5 text-[0.7rem] font-medium ${cls}`}>{children}</span>;
 }
 
 function hostOf(u: string) {
@@ -260,7 +738,6 @@ function hostOf(u: string) {
     return undefined;
   }
 }
-
 function pathOf(u: string) {
   try {
     return new URL(u).pathname;

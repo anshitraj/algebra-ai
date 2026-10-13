@@ -1,407 +1,846 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { motion, useInView, useReducedMotion } from "motion/react";
 import * as api from "@/lib/api-client";
-import type { ProviderDetail, ProviderEndpoint, ProviderListing, ProviderSummary } from "@/lib/types";
+import type {
+  ProviderListing,
+  ProviderSummary,
+  CatalogStatus,
+} from "@/lib/types";
 import { CATALOGS, catalogName, categoryLabel } from "@/lib/paysh";
-import { formatEndpointPrice, formatPriceRange, formatUSDC } from "@/lib/money";
+import { formatPriceRange } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
-import { Button, ErrorNote, Input, PageHeader, Panel, Skeleton } from "@/components/console/ui";
-import { Copy, Snippet } from "@/components/console/snippet";
+import {
+  compactHost,
+  providerSummary,
+  providerTitle,
+  safeExternalUrl,
+} from "@/lib/provider-presentation";
+import { Button, ErrorNote, Skeleton } from "@/components/console/ui";
+import { Copy } from "@/components/console/snippet";
+import { ProviderEndpoints } from "@/components/console/provider-endpoints";
 import { ProviderLogo } from "@/components/provider-logo";
-import { IconChevronDown, IconExternal, IconSearch, Spinner } from "@/components/icons";
+import { Logo } from "@/components/logo";
+import {
+  IconArrowRight,
+  IconChat,
+  IconCheck,
+  IconClock,
+  IconExternal,
+  IconGrid,
+  IconList,
+  IconMail,
+  IconPlug,
+  IconRefresh,
+  IconSearch,
+  IconShield,
+  IconStore,
+  IconTag,
+  IconWallet,
+  IconX,
+  Spinner,
+} from "@/components/icons";
+import styles from "./providers.module.css";
 
-const SOURCES = [{ id: "", name: "All catalogs" }, ...CATALOGS.map((c) => ({ id: c.id, name: c.name }))];
-const PAGE = 100;
+const PAGE = 48;
+const QUICK_CATEGORIES = ["ai_ml", "finance", "search", "data", "media"];
+const CATALOG_DOMAINS: Record<string, string> = {
+  "pay.sh": "pay.sh",
+  circle: "circle.com",
+  payai: "payai.network",
+  cdp: "coinbase.com",
+  monid: "monid.ai",
+};
+
+function CategoryIcon({
+  category,
+  size = 18,
+}: {
+  category: string;
+  size?: number;
+}) {
+  if (category === "finance") return <IconWallet size={size} />;
+  if (category === "ai_ml" || category === "translation")
+    return <IconChat size={size} />;
+  if (category === "search") return <IconSearch size={size} />;
+  if (category === "security" || category === "identity")
+    return <IconShield size={size} />;
+  if (category === "messaging") return <IconMail size={size} />;
+  if (
+    category === "compute" ||
+    category === "infrastructure" ||
+    category === "devtools"
+  )
+    return <IconPlug size={size} />;
+  return <IconGrid size={size} />;
+}
+
+function CatalogLogo({ source, size = 24 }: { source: string; size?: number }) {
+  return (
+    <ProviderLogo
+      name={catalogName(source)}
+      website={CATALOG_DOMAINS[source]}
+      size={size}
+    />
+  );
+}
+
+function subscribeVisibility(callback: () => void) {
+  document.addEventListener("visibilitychange", callback);
+  return () => document.removeEventListener("visibilitychange", callback);
+}
+function pageIsVisible() {
+  return document.visibilityState === "visible";
+}
+function serverIsVisible() {
+  return false;
+}
+
+/** Decorative discovery diagram. Looping motion stops off-screen and in hidden tabs. */
+function CatalogNetwork() {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref);
+  const reducedMotion = useReducedMotion();
+  const visible = useSyncExternalStore(
+    subscribeVisibility,
+    pageIsVisible,
+    serverIsVisible,
+  );
+  const animate = inView && visible && !reducedMotion;
+  return (
+    <div className={styles.networkSketch} ref={ref} aria-hidden="true">
+      <svg className={styles.networkLines} viewBox="0 0 290 110" fill="none">
+        <path
+          d="M38 29H92L145 55 198 29h54M38 81H92L145 55 198 81h54"
+          stroke="currentColor"
+          strokeWidth="1"
+        />
+        {[29, 81].map((y, i) => (
+          <motion.g
+            key={y}
+            animate={
+              animate
+                ? {
+                    x: [0, 54, 107],
+                    y: [0, 0, y === 29 ? 26 : -26],
+                    opacity: [0, 1, 0],
+                  }
+                : { x: 0, y: 0, opacity: 0 }
+            }
+            transition={
+              animate
+                ? {
+                    duration: 3,
+                    repeat: Infinity,
+                    delay: i * 1.5,
+                    ease: "linear",
+                    times: [0, 0.5, 1],
+                  }
+                : { duration: 0 }
+            }
+          >
+            <circle cx="38" cy={y} r="2.5" fill="currentColor" />
+          </motion.g>
+        ))}
+      </svg>
+      <span className={styles.networkCore}>
+        <Logo size={25} />
+      </span>
+      {["pay.sh", "circle", "payai", "cdp"].map((source, i) => (
+        <span key={source} className={styles.networkNode} data-position={i}>
+          <CatalogLogo source={source} size={29} />
+        </span>
+      ))}
+      <span className={styles.networkCaption}>
+        DISCOVER · COMPARE · CONNECT
+      </span>
+    </div>
+  );
+}
 
 export default function ProvidersPage() {
   const { network, demo } = useNetwork();
-  // A demo account reads every catalog; it pays in the sandbox, so no cluster narrows the list.
   const cluster = demo ? undefined : network;
+  const reducedMotion = useReducedMotion();
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
   const [category, setCategory] = useState("");
-  const [listing, setListing] = useState<ProviderListing | null>(null);
-  const [more, setMore] = useState<ProviderSummary[]>([]);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const [revision, setRevision] = useState(0);
+  const scope = JSON.stringify([query, source, category, cluster]);
+  const requestKey = JSON.stringify([scope, revision]);
+  const [result, setResult] = useState<{
+    key: string;
+    listing: ProviderListing;
+    more: ProviderSummary[];
+  } | null>(null);
+  const [paginationKey, setPaginationKey] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
+  const [selection, setSelection] = useState<{
+    provider: ProviderSummary;
+    scope: string;
+  } | null>(null);
+  const [recommendations, setRecommendations] = useState<{
+    cluster: string | undefined;
+    providers: ProviderSummary[];
+  } | null>(null);
+  const [catalogSnapshot, setCatalogSnapshot] = useState<{
+    cluster: string | undefined;
+    sources: CatalogStatus[];
+  } | null>(null);
+  const inspectorRef = useRef<HTMLElement>(null);
 
-  // Search as you type, without a request per keystroke.
   useEffect(() => {
-    const id = window.setTimeout(() => setQuery(q.trim()), 250);
-    return () => window.clearTimeout(id);
+    const timeout = window.setTimeout(() => setQuery(q.trim()), 250);
+    return () => window.clearTimeout(timeout);
   }, [q]);
 
   useEffect(() => {
     let live = true;
     api
-      .listProviders({ q: query, source, category, network: cluster, limit: PAGE })
-      .then((l) => {
-        if (!live) return;
-        setListing(l);
-        setMore([]);
-        setError(null);
+      .listProviders({
+        q: query,
+        source,
+        category,
+        network: cluster,
+        limit: PAGE,
       })
-      .catch((e) => live && setError(e instanceof Error ? e.message : "Couldn't load the catalogs"));
+      .then((listing) => {
+        if (live) {
+          setResult({ key: requestKey, listing, more: [] });
+          setFailure(null);
+        }
+      })
+      .catch(
+        (e) =>
+          live &&
+          setFailure({
+            key: requestKey,
+            message:
+              e instanceof Error ? e.message : "Couldn't load the directory",
+          }),
+      );
     return () => {
       live = false;
     };
-  }, [query, source, category, cluster]);
-
-  const providers = useMemo(() => [...(listing?.providers ?? []), ...more], [listing, more]);
-  const canLoadMore = listing !== null && providers.length < listing.total;
-
-  async function loadMore() {
-    setLoadingMore(true);
-    try {
-      const l = await api.listProviders({ q: query, source, category, network: cluster, limit: PAGE, offset: providers.length });
-      setMore((m) => [...m, ...l.providers]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load more");
-    } finally {
-      setLoadingMore(false);
-    }
-  }
-
-  const categories = listing?.categories ?? [];
-
-  return (
-    <div className="mx-auto max-w-5xl">
-      <PageHeader
-        title="Providers"
-        description={
-          demo
-            ? "Find your agent's next capability. Explore the live catalogs; a demo account pays in the sandbox only, so these are for looking. Create an account to pay them."
-            : `Find your agent's next capability. Explore live catalogs payable in USDC on Solana ${networkLabel(network).toLowerCase()}. Algebra checks the actual quote before a payment.`
-        }
-      />
-
-      <div className="mt-8 flex flex-col gap-3 md:flex-row md:items-center">
-        <label className="relative flex-1">
-          <span className="sr-only">Search providers</span>
-          <IconSearch size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: token security, OCR, web search, wallet PnL…" className="pl-9" />
-        </label>
-        <div className="flex shrink-0 flex-wrap gap-1 rounded-xl bg-primary-tint/50 p-1" role="tablist" aria-label="Catalog">
-          {SOURCES.map((s) => (
-            <button
-              key={s.id || "all"}
-              type="button"
-              role="tab"
-              aria-selected={source === s.id}
-              onClick={() => setSource(s.id)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${source === s.id ? "bg-surface text-foreground shadow-[0_1px_3px_rgb(0_0_0/0.08)]" : "text-muted hover:text-foreground"}`}
-            >
-              {s.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {categories.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          <CategoryChip on={category === ""} onClick={() => setCategory("")}>
-            All categories
-          </CategoryChip>
-          {categories.map((c) => (
-            <CategoryChip key={c.name} on={category === c.name} onClick={() => setCategory(category === c.name ? "" : c.name)}>
-              {categoryLabel(c.name)} <span className="text-muted">{c.count}</span>
-            </CategoryChip>
-          ))}
-        </div>
-      )}
-
-      <CatalogStatusLine listing={listing} network={cluster} />
-
-      <div className="mt-5 space-y-3">
-        {error && <ErrorNote>{error}</ErrorNote>}
-        {!listing && !error && [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-20" />)}
-        {listing?.total === 0 && (
-          <p className="rounded-2xl border border-dashed border-border-strong px-6 py-12 text-center text-sm text-muted">
-            {network === "solana-devnet"
-              ? "Few paid APIs take devnet USDC, and none match. Try other words, or switch to mainnet at the top."
-              : "Nothing matches. Try other words, or another catalog."}
-          </p>
-        )}
-        {providers.map((p) => (
-          <ProviderRow key={p.id} provider={p} open={open === p.id} onToggle={() => setOpen(open === p.id ? null : p.id)} />
-        ))}
-        {canLoadMore && (
-          <div className="flex justify-center pt-2">
-            <Button variant="secondary" onClick={loadMore} disabled={loadingMore}>
-              {loadingMore && <Spinner size={13} />} Show more ({listing!.total - providers.length} left)
-            </Button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CategoryChip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors ${
-        on ? "border-primary bg-primary-tint text-foreground" : "border-border-strong text-foreground hover:border-foreground/35"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function CatalogStatusLine({ listing, network }: { listing: ProviderListing | null; network?: string }) {
-  if (!listing?.sources?.length) return null;
-  return (
-    <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
-      <span className="text-foreground">
-        {listing.total} provider{listing.total === 1 ? "" : "s"}
-        {network ? ` on ${networkLabel(network).toLowerCase()}` : ""}
-      </span>
-      {listing.sources.map((s) => (
-        <span key={s.name} className="inline-flex items-center gap-1.5">
-          <span className={`h-1.5 w-1.5 rounded-full ${s.error ? "bg-danger" : s.stale ? "bg-accent" : "bg-primary"}`} />
-          {catalogName(s.name)}: {s.error ? "couldn't be reached" : `${s.total}${s.stale ? " (older copy)" : ""}`}
-        </span>
-      ))}
-    </p>
-  );
-}
-
-function SourceBadge({ source }: { source: string }) {
-  return (
-    <span className="rounded-full border border-border px-2 py-0.5 text-[0.6875rem] font-medium whitespace-nowrap text-muted">
-      {catalogName(source)}
-    </span>
-  );
-}
-
-function NetworkBadges({ networks }: { networks: string[] }) {
-  return (
-    <>
-      {networks.map((n) => (
-        <span
-          key={n}
-          className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-medium whitespace-nowrap ${n === "solana" ? "bg-primary-tint text-primary" : "bg-accent-tint text-accent"}`}
-        >
-          {networkLabel(n)}
-        </span>
-      ))}
-    </>
-  );
-}
-
-function ProviderRow({ provider: p, open, onToggle }: { provider: ProviderSummary; open: boolean; onToggle: () => void }) {
-  return (
-    <div className={`rounded-2xl border bg-surface transition-colors ${open ? "border-primary/40" : "border-border"}`}>
-      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-start gap-4 px-5 py-4 text-left">
-        <ProviderLogo name={p.name} logo={p.logo_url} website={p.website} host={p.host} fqn={p.fqn} size={36} />
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="font-display text-[0.95rem] font-semibold text-foreground">{p.name}</span>
-            <SourceBadge source={p.source} />
-            <NetworkBadges networks={p.networks ?? []} />
-            {p.billing === "monid-balance" && (
-              <span
-                className="rounded-full bg-border px-2 py-0.5 text-[0.6875rem] font-medium whitespace-nowrap text-muted"
-                title="Billed to a prepaid Monid balance, not x402: listed for comparison, Algebra can't pay it yet"
-              >
-                Monid balance · not payable yet
-              </span>
-            )}
-            <span className="text-xs text-muted">{categoryLabel(p.category)}</span>
-          </span>
-          {p.description && <span className="mt-1 line-clamp-2 block text-sm leading-relaxed text-muted">{p.description}</span>}
-          <span className="mt-1.5 block font-mono text-[0.6875rem] text-muted/80">
-            {p.id} · {p.host}
-          </span>
-        </span>
-        <span className="hidden shrink-0 text-right sm:block">
-          <span className="block font-mono text-xs text-foreground tabular-nums">{formatPriceRange(p.min_price_minor, p.max_price_minor)}</span>
-          <span className="mt-0.5 block text-xs text-muted">
-            {p.endpoint_count} endpoint{p.endpoint_count === 1 ? "" : "s"}
-          </span>
-          {(p.payers_30d ?? 0) > 0 && (
-            <span className="mt-0.5 block text-xs text-muted" title="What the directory reports: payments in the last 30 days, and the most distinct payers one endpoint had">
-              {p.payers_30d} payer{p.payers_30d === 1 ? "" : "s"} · 30 d
-            </span>
-          )}
-        </span>
-        <IconChevronDown size={18} className={`mt-1 shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && <ProviderEndpoints provider={p} />}
-    </div>
-  );
-}
-
-function ProviderEndpoints({ provider }: { provider: ProviderSummary }) {
-  const { network, demo } = useNetwork();
-  const [detail, setDetail] = useState<ProviderDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
+  }, [query, source, category, cluster, requestKey]);
 
   useEffect(() => {
     let live = true;
     api
-      .getProvider(provider.id)
-      .then((d) => live && setDetail(d))
-      .catch((e) => live && setError(e instanceof Error ? e.message : "Couldn't load the endpoints"));
+      .listProviders({ network: cluster, limit: 1 })
+      .then((listing) => {
+        if (live)
+          setCatalogSnapshot({ cluster, sources: listing.sources ?? [] });
+      })
+      .catch(() => {
+        /* The primary listing still reports catalog errors. */
+      });
+    api
+      .listProviders({ source: "circle", network: cluster, limit: 100 })
+      .then((listing) => {
+        const names = ["birdeye", "exa", "allium", "alchemy"];
+        const providers = names.flatMap((name) => {
+          const p = listing.providers.find((p) =>
+            p.name.toLowerCase().includes(name),
+          );
+          return p ? [p] : [];
+        });
+        if (live) setRecommendations({ cluster, providers });
+      })
+      .catch(() => {
+        if (live) setRecommendations({ cluster, providers: [] });
+      });
     return () => {
       live = false;
     };
-  }, [provider.id]);
+  }, [cluster, revision]);
 
-  const payableHere = (e: ProviderEndpoint) => !demo && (e.payments?.length ? e.payments.some((p) => p.network === network) : network === "solana");
-  const endpoints = useMemo(() => {
-    const f = filter.trim().toLowerCase();
-    return (detail?.endpoints ?? []).filter((e) => !f || `${e.method} ${e.path} ${e.description}`.toLowerCase().includes(f));
-  }, [detail, filter]);
-  const chosen = detail?.endpoints.find((e) => e.capability === picked) ?? null;
+  const error = failure?.key === requestKey ? failure.message : null;
+  const loading = result?.key !== requestKey && !error;
+  const listing = result?.listing;
+  const providers =
+    result?.key === requestKey
+      ? [...result.listing.providers, ...result.more]
+      : [];
+  const selected = selection?.scope === scope ? selection.provider : null;
+  const suggestions =
+    recommendations && recommendations.cluster === cluster
+      ? recommendations.providers
+      : [];
+  const categories = listing?.categories ?? [];
+  const catalogStatuses =
+    catalogSnapshot && catalogSnapshot.cluster === cluster
+      ? catalogSnapshot.sources
+      : result?.key === requestKey
+        ? (listing?.sources ?? [])
+        : [];
+  const filtered = Boolean(q.trim() || source || category);
+  // These are real entries from the same catalog set, kept at the front of the unfiltered view.
+  // Pagination continues from the server's page offset; displayed IDs are deduplicated separately.
+  const starters = !filtered && !loading && !error ? suggestions : [];
+  const displayedProviders = Array.from(
+    new Map([...starters, ...providers].map((p) => [p.id, p])).values(),
+  );
+  const loadingMore = paginationKey === requestKey;
+  const canLoadMore = !loading && listing && providers.length < listing.total;
+
+  async function loadMore() {
+    if (loadingMore || loading) return;
+    setPaginationKey(requestKey);
+    try {
+      const next = await api.listProviders({
+        q: query,
+        source,
+        category,
+        network: cluster,
+        limit: PAGE,
+        offset: providers.length,
+      });
+      setResult((current) =>
+        current?.key === requestKey
+          ? { ...current, more: [...current.more, ...next.providers] }
+          : current,
+      );
+      setFailure((current) => (current?.key === requestKey ? null : current));
+    } catch (e) {
+      setFailure({
+        key: requestKey,
+        message:
+          e instanceof Error ? e.message : "Couldn't load more providers",
+      });
+    } finally {
+      setPaginationKey((key) => (key === requestKey ? null : key));
+    }
+  }
+
+  function pick(provider: ProviderSummary) {
+    if (selected?.id === provider.id) {
+      setSelection(null);
+      return;
+    }
+    setSelection({ provider, scope });
+  }
+  function clearFilters() {
+    setQ("");
+    setSource("");
+    setCategory("");
+    setSelection(null);
+  }
+  const activeCategory = categories.find((c) => c.name === category);
+
+  useEffect(() => {
+    if (selected)
+      inspectorRef.current?.scrollIntoView({
+        behavior: reducedMotion ? "instant" : "smooth",
+        block: "start",
+      });
+  }, [selected, reducedMotion]);
 
   return (
-    <div className="border-t border-border px-5 pt-4 pb-5">
-      {error && <ErrorNote>{error}</ErrorNote>}
-      {!detail && !error && (
-        <p className="flex items-center gap-2 text-sm text-muted">
-          <Spinner size={14} /> Reading the endpoints from {catalogName(provider.source)}…
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <div>
+          <p className={styles.eyebrow}>
+            <IconStore size={13} /> PROVIDER DIRECTORY
+          </p>
+          <h1>
+            Your next capability. <span>One call away.</span>
+          </h1>
+          <p className={styles.subtitle}>
+            Discover APIs across five catalogs. Find the right tool for your
+            agent.
+          </p>
+        </div>
+        <CatalogNetwork />
+      </header>
+
+      <div className={styles.overview}>
+        <p className={styles.overviewSummary}>
+          <span className={styles.statusDot} />
+          <strong>
+            {loading ? "—" : (listing?.total.toLocaleString() ?? "—")}
+          </strong>
+          {filtered ? "matching providers" : "providers"}
+          <span className={styles.metaSeparator}>/</span>
+          <IconPlug size={12} />
+          {demo ? "All networks" : networkLabel(network)}
+          <span className={styles.metaSeparator}>/</span>USDC
+        </p>
+        <Button
+          variant="secondary"
+          onClick={() => setRevision((v) => v + 1)}
+          disabled={loading}
+          className={styles.refreshButton}
+          aria-label="Refresh directory"
+        >
+          {loading ? <Spinner size={14} /> : <IconRefresh size={14} />}
+          <span className={styles.refreshLabel}>Refresh directory</span>
+        </Button>
+      </div>
+      {demo && (
+        <p className={styles.demoNote}>
+          <IconShield size={14} />
+          Demo mode: explore every catalog. Payments stay in the sandbox.
         </p>
       )}
-      {detail && (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-muted">
-              {detail.endpoints.length} endpoint{detail.endpoints.length === 1 ? "" : "s"},{" "}
-              {demo
-                ? "none payable from a demo account (it pays in the sandbox)."
-                : `${detail.endpoints.filter((e) => e.callable && payableHere(e)).length} callable on ${networkLabel(network).toLowerCase()} through Algebra today.`}
-            </p>
-            <div className="flex items-center gap-3">
-              {detail.endpoints.length > 8 && (
-                <div className="w-48">
-                  <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter endpoints" />
-                </div>
+
+      <section aria-label="Browse catalogs">
+        <div className={styles.catalogHeading}>
+          <h2>Choose your catalog</h2>
+          <button
+            type="button"
+            onClick={() => setSource("")}
+            aria-pressed={!source}
+          >
+            All catalogs <IconArrowRight size={12} />
+          </button>
+        </div>
+        <div className={styles.catalogs}>
+          {CATALOGS.map((catalog) => (
+            <CatalogCard
+              key={catalog.id}
+              catalog={catalog}
+              status={catalogStatuses.find((s) => s.name === catalog.id)}
+              selected={source === catalog.id}
+              onClick={() => {
+                setSource(source === catalog.id ? "" : catalog.id);
+                setSelection(null);
+              }}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className={styles.directory} aria-labelledby="directory-title">
+        <div className={styles.searchRow}>
+          <label className={styles.search}>
+            <IconSearch size={18} />
+            <span className="sr-only">Search providers</span>
+            <input
+              aria-label="Search providers"
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setSelection(null);
+              }}
+              placeholder="Search providers, APIs, or capabilities…"
+            />
+            {q && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setQ("")}
+              >
+                <IconX size={14} />
+              </button>
+            )}
+          </label>
+          <label className={styles.categorySelect}>
+            <span className="sr-only">Provider category</span>
+            <select
+              value={category}
+              onChange={(e) => {
+                setCategory(e.target.value);
+                setSelection(null);
+              }}
+            >
+              <option value="">All categories</option>
+              {category && !activeCategory && (
+                <option value={category}>{categoryLabel(category)}</option>
               )}
-              <Link href={`/console/providers/${encodeURIComponent(provider.id)}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                Full details
-              </Link>
-              <a href={detail.page_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                {catalogName(detail.source)} <IconExternal size={12} />
-              </a>
+              {categories.map((c) => (
+                <option value={c.name} key={c.name}>
+                  {categoryLabel(c.name)} ({c.count})
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className={styles.quickCategories}>
+          <button
+            type="button"
+            aria-pressed={!category}
+            onClick={() => {
+              setCategory("");
+              setSelection(null);
+            }}
+          >
+            <IconGrid size={13} />
+            All capabilities
+          </button>
+          {QUICK_CATEGORIES.filter((id) =>
+            categories.some((c) => c.name === id),
+          ).map((id) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={category === id}
+              onClick={() => {
+                setCategory(category === id ? "" : id);
+                setSelection(null);
+              }}
+            >
+              <CategoryIcon category={id} size={13} />
+              {categoryLabel(id)}
+            </button>
+          ))}
+        </div>
+        <div className={styles.resultsBar}>
+          <h2 id="directory-title">
+            {source ? catalogName(source) : "Explore providers"}
+            <span aria-live="polite">
+              {loading
+                ? "Updating…"
+                : `${displayedProviders.length} of ${listing?.total.toLocaleString() ?? 0}`}
+            </span>
+          </h2>
+          <div className={styles.resultActions}>
+            {filtered && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className={styles.clearFilters}
+              >
+                <IconX size={12} />
+                Clear filters
+              </button>
+            )}
+            <div className={styles.viewToggle} aria-label="Provider layout">
+              <button
+                type="button"
+                aria-label="Grid view"
+                aria-pressed={view === "grid"}
+                onClick={() => setView("grid")}
+              >
+                <IconGrid size={15} />
+              </button>
+              <button
+                type="button"
+                aria-label="List view"
+                aria-pressed={view === "list"}
+                onClick={() => setView("list")}
+              >
+                <IconList size={15} />
+              </button>
             </div>
           </div>
-          <ul className="mt-3 max-h-[420px] divide-y divide-border overflow-y-auto rounded-xl border border-border">
-            {endpoints.map((e) => (
-              <EndpointRow
-                key={`${e.method} ${e.path}`}
-                e={e}
-                here={payableHere(e)}
-                selected={picked === e.capability}
-                onPick={() => setPicked(picked === e.capability ? null : e.capability)}
-              />
+        </div>
+        {error && (
+          <div className={styles.error}>
+            <ErrorNote>{error}</ErrorNote>
+            <Button
+              variant="secondary"
+              onClick={() => setRevision((v) => v + 1)}
+            >
+              Try again
+            </Button>
+          </div>
+        )}
+
+        {selected && (
+          <motion.section
+            ref={inspectorRef}
+            id="provider-inspector"
+            className={styles.inspector}
+            initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            aria-label="Selected provider"
+          >
+            <div className={styles.inspectorHeader}>
+              <ProviderIdentity provider={selected} size={44} />
+              <div>
+                <span className={styles.detailEyebrow}>PROVIDER DETAILS</span>
+                <h3>{providerTitle(selected)}</h3>
+                <span className={styles.inspectorSource}>
+                  {catalogName(selected.source)} · {selected.endpoint_count}{" "}
+                  endpoints
+                </span>
+              </div>
+              <button
+                type="button"
+                aria-label="Close provider details"
+                onClick={() => setSelection(null)}
+              >
+                <IconX size={17} />
+              </button>
+            </div>
+            <details className={styles.identityDetails}>
+              <summary>
+                Catalog identity &amp; description <IconExternal size={11} />
+              </summary>
+              <p>{selected.name}</p>
+              <p>{selected.description}</p>
+              <div>
+                <code>{selected.id}</code>
+                <Copy text={selected.id} label="Copy ID" />
+              </div>
+              {safeExternalUrl(selected.website) && (
+                <a
+                  href={safeExternalUrl(selected.website)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Provider website <IconExternal size={11} />
+                </a>
+              )}
+            </details>
+            <ProviderEndpoints key={selected.id} provider={selected} />
+          </motion.section>
+        )}
+
+        <div
+          className={`${styles.providers} ${view === "list" ? styles.listView : ""}`}
+          aria-busy={loading}
+        >
+          {loading &&
+            Array.from({ length: 6 }, (_, i) => (
+              <div className={styles.cardSkeleton} key={i}>
+                <Skeleton className="size-11" />
+                <Skeleton className="mt-4 h-4 w-2/3" />
+                <Skeleton className="mt-2 h-3 w-5/6" />
+                <Skeleton className="mt-6 h-4 w-full" />
+              </div>
             ))}
-          </ul>
-          {chosen && <UseIt provider={detail} e={chosen} network={network} />}
-        </>
-      )}
+          {displayedProviders.map((provider) => (
+            <ProviderCard
+              key={provider.id}
+              provider={provider}
+              selected={selected?.id === provider.id}
+              onClick={() => pick(provider)}
+              reducedMotion={Boolean(reducedMotion)}
+            />
+          ))}
+        </div>
+        {!loading && !error && listing?.total === 0 && (
+          <div className={styles.empty}>
+            <span>
+              <IconSearch size={25} />
+            </span>
+            <h3>No providers found</h3>
+            <p>
+              {!demo && network === "solana-devnet"
+                ? "Few APIs accept devnet USDC. Try another search or browse Mainnet at the top."
+                : "Try another search, category, or catalog."}
+            </p>
+            <Button variant="secondary" onClick={clearFilters}>
+              Reset filters <IconArrowRight size={14} />
+            </Button>
+          </div>
+        )}
+        {canLoadMore && (
+          <div className={styles.loadMore}>
+            <span>
+              {displayedProviders.length} of {listing!.total.toLocaleString()}{" "}
+              providers
+            </span>
+            <Button
+              variant="secondary"
+              onClick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? <Spinner size={14} /> : <IconGrid size={14} />}
+              {loadingMore ? "Loading providers…" : "Load more providers"}
+            </Button>
+          </div>
+        )}
+        <div className={styles.directoryFooter}>
+          <span>
+            <IconShield size={14} />
+            Listed prices are estimates. Algebra checks the quote before
+            payment.
+          </span>
+          <Link href="/console/routing">
+            Explore routing <IconArrowRight size={13} />
+          </Link>
+        </div>
+      </section>
     </div>
   );
 }
 
-function MethodBadge({ method }: { method: string }) {
-  const tone = method === "GET" ? "bg-primary-tint text-primary" : method === "POST" ? "bg-accent-tint text-accent" : "bg-border text-muted";
-  return <span className={`w-14 shrink-0 rounded-md px-1.5 py-0.5 text-center font-mono text-[0.6875rem] font-medium ${tone}`}>{method}</span>;
-}
-
-function EndpointRow({ e, here, selected, onPick }: { e: ProviderEndpoint; here: boolean; selected: boolean; onPick: () => void }) {
-  const { demo } = useNetwork();
-  const prices = e.payments?.length ? e.payments : [{ network: "solana", price_minor: e.price_minor }];
+function CatalogCard({
+  catalog,
+  status,
+  selected,
+  onClick,
+}: {
+  catalog: (typeof CATALOGS)[number];
+  status?: CatalogStatus;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const label =
+    catalog.id === "circle"
+      ? "Circle"
+      : catalog.id === "cdp"
+        ? "Coinbase"
+        : catalog.name;
+  const subtitle =
+    catalog.id === "circle"
+      ? "Agent Marketplace"
+      : catalog.id === "cdp"
+        ? "Bazaar"
+        : catalog.id === "monid"
+          ? "Tool directory"
+          : "API catalog";
   return (
-    <li className={`flex items-start gap-3 px-3.5 py-2.5 ${selected ? "bg-primary-tint/50" : ""} ${here ? "" : "opacity-60"}`}>
-      <MethodBadge method={e.method} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-xs text-foreground" title={e.path}>
-          /{e.path}
-        </p>
-        {e.description && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{e.description}</p>}
-        {e.callable && e.path_params && e.path_params.length > 0 && (
-          <p className="mt-0.5 text-xs text-muted">
-            Takes {e.path_params.map((p) => `{${p}}`).join(", ")} in the path: give each in the input.
-          </p>
-        )}
-        {!e.callable && e.not_callable_reason && <p className="mt-0.5 text-xs text-accent">Listed only: {e.not_callable_reason}.</p>}
-        {e.callable && !here && (
-          <p className="mt-0.5 text-xs text-muted">{demo ? "A demo account can't pay this: it pays in the sandbox." : "Not payable on this network: switch at the top."}</p>
-        )}
-      </div>
-      <span className="shrink-0 text-right font-mono text-xs whitespace-nowrap text-foreground tabular-nums">
-        {prices.length === 1
-          ? formatEndpointPrice(prices[0].price_minor, e.free)
-          : prices.map((p) => (
-              <span key={p.network} className="block">
-                {formatUSDC(p.price_minor)} <span className="text-muted">{networkLabel(p.network).toLowerCase()}</span>
-              </span>
-            ))}
+    <button
+      type="button"
+      className={`${styles.catalogCard} ${selected ? styles.selectedCatalog : ""}`}
+      aria-pressed={selected}
+      onClick={onClick}
+      title={catalog.blurb}
+    >
+      <span className={styles.catalogCardTop}>
+        <CatalogLogo source={catalog.id} size={30} />
+        <span className={styles.catalogCheck}>
+          {selected ? <IconCheck size={12} /> : <IconArrowRight size={12} />}
+        </span>
       </span>
-      {e.callable && here && (
-        <button
-          type="button"
-          onClick={onPick}
-          className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium ${selected ? "bg-primary text-primary-tint" : "border border-border-strong text-foreground hover:bg-primary-tint"}`}
-        >
-          {selected ? "Hide" : "Use"}
-        </button>
-      )}
-    </li>
+      <strong>{label}</strong>
+      <span>{subtitle}</span>
+      <div
+        className={styles.catalogStatus}
+        data-state={status?.error ? "error" : status?.stale ? "stale" : "ready"}
+      >
+        <i />
+        {status?.error
+          ? "Unavailable"
+          : status?.stale
+            ? "Cached"
+            : status
+              ? `${status.total.toLocaleString()} provider${status.total === 1 ? "" : "s"}`
+              : "Loading…"}
+      </div>
+    </button>
   );
 }
 
-function UseIt({ provider, e, network }: { provider: ProviderDetail; e: ProviderEndpoint; network: string }) {
-  const price = e.payments?.find((p) => p.network === network)?.price_minor ?? e.price_minor;
-  const budget = Math.max(price * 2, 10_000);
-  // A templated path takes its parameters from the input: one field for each.
-  const input = Object.fromEntries((e.path_params ?? []).map((p) => [p, `<${p}>`]));
-  const body = {
-    capability: e.capability,
-    providers: [provider.id],
-    input,
-    budget_max_minor: budget,
-    constraints: { allowed_networks: [network] },
-  };
-  const curl = `curl -X POST "$ALGEBRA_API/execute" \\
-  -H "Authorization: Bearer $SPEND_PASS_TOKEN" \\
-  -H "Content-Type: application/json" \\
-  -d '${JSON.stringify(body)}'`;
-  const mcp = `algebra.execute({
-  capability: "${e.capability}",
-  providers: ["${provider.id}"],
-  input: ${JSON.stringify(input).replace(/"([A-Za-z_]+)":/g, "$1: ").replace(/^{}$/, "{ ... }")},
-  max_price_usdc: "${(budget / 1_000_000).toString()}"
-})`;
+function ProviderIdentity({
+  provider,
+  size = 40,
+}: {
+  provider: ProviderSummary;
+  size?: number;
+}) {
+  const fallbackCategory =
+    provider.category === "other" &&
+    /inference|language model|llm/i.test(provider.description)
+      ? "ai_ml"
+      : provider.category;
+  const fallback = (
+    <span
+      className={styles.providerGlyph}
+      style={{ width: size, height: size }}
+    >
+      <CategoryIcon category={fallbackCategory} size={Math.round(size * 0.5)} />
+    </span>
+  );
   return (
-    <Panel className="mt-4 bg-background">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium text-foreground">Call it through Algebra on {networkLabel(network).toLowerCase()}</p>
-        <span className="flex items-center gap-2 font-mono text-xs text-muted">
-          {e.capability} <Copy text={e.capability} label="Copy ID" />
+    <ProviderLogo
+      name={providerTitle(provider)}
+      logo={provider.logo_url}
+      website={provider.website}
+      host={provider.host}
+      fqn={provider.fqn}
+      size={size}
+      fallback={fallback}
+    />
+  );
+}
+
+function ProviderCard({
+  provider: p,
+  selected,
+  onClick,
+  reducedMotion,
+}: {
+  provider: ProviderSummary;
+  selected: boolean;
+  onClick: () => void;
+  reducedMotion: boolean;
+}) {
+  const priceId = `provider-price-${encodeURIComponent(p.id)}`;
+  return (
+    <motion.button
+      type="button"
+      className={`${styles.providerCard} ${selected ? styles.selectedProvider : ""}`}
+      onClick={onClick}
+      aria-expanded={selected}
+      aria-controls="provider-inspector"
+      aria-label={`Inspect ${providerTitle(p)} from ${catalogName(p.source)} (${compactHost(p.host)})`}
+      aria-describedby={priceId}
+      initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.08 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+    >
+      <span className={styles.providerCardHeader}>
+        <ProviderIdentity provider={p} />
+        <span className={styles.sourceBadge}>
+          <CatalogLogo source={p.source} size={15} />
+          {p.source === "circle"
+            ? "Circle"
+            : p.source === "cdp"
+              ? "Coinbase"
+              : catalogName(p.source)}
         </span>
-      </div>
-      <p className="mt-1 text-xs leading-relaxed text-muted">
-        Put the request&apos;s parameters in <code className="font-mono">input</code>: query parameters for a GET, the JSON body for a POST.
-        Algebra prices the call first, checks it against the agent&apos;s Spend Pass, pays in USDC on Solana {networkLabel(network).toLowerCase()}, and
-        returns the result with a signed receipt. Or just ask in Agent chat.
-      </p>
-      <div className="mt-4 space-y-4">
-        <Snippet title="REST" code={curl} />
-        <Snippet title="MCP tool call" code={mcp} />
-        {e.input_schema != null && <Snippet title="Input, as the catalog describes it" code={JSON.stringify(e.input_schema, null, 2)} />}
-      </div>
-    </Panel>
+        <span className={styles.cardArrow}>
+          {selected ? <IconX size={14} /> : <IconArrowRight size={14} />}
+        </span>
+      </span>
+      <span className={styles.providerCardBody}>
+        <strong title={p.name}>{providerTitle(p)}</strong>
+        <span className={styles.providerHost} title={p.host}>
+          {compactHost(p.host)}
+        </span>
+        <span className={styles.providerDescription} title={p.description}>
+          {providerSummary(p)}
+        </span>
+        <span className={styles.tags}>
+          <span>
+            <CategoryIcon category={p.category} size={11} />
+            {categoryLabel(p.category)}
+          </span>
+          {p.billing === "monid-balance" ? (
+            <span title="Algebra cannot pay a prepaid Monid balance">
+              Listed only
+            </span>
+          ) : (
+            (p.networks ?? []).map((n) => (
+              <span key={n}>
+                <i />
+                {networkLabel(n)}
+              </span>
+            ))
+          )}
+        </span>
+      </span>
+      <span className={styles.providerCardFooter} id={priceId}>
+        <span>
+          <IconTag size={12} />
+          <strong>
+            {formatPriceRange(p.min_price_minor, p.max_price_minor)}
+          </strong>
+        </span>
+        <span>
+          {p.endpoint_count} API{p.endpoint_count === 1 ? "" : "s"}
+        </span>
+      </span>
+      {(p.payers_30d ?? 0) > 0 && (
+        <span className={styles.usageNote}>
+          <IconClock size={10} />
+          {p.payers_30d} directory-reported payers · 30 days
+        </span>
+      )}
+    </motion.button>
   );
 }

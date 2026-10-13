@@ -1,0 +1,64 @@
+.section { padding-top: 110px; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+.step { min-width: 0; }
+.annotation { display: flex; align-items: center; justify-content: center; gap: 9px; height: 52px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
+.annotation svg { width: 43px; height: 32px; opacity: .6; }
+.card { height: calc(100% - 52px); padding: 29px 24px 30px; border: 1px solid var(--dark-border); border-radius: 22px; background: var(--dark); color: var(--dark-text); text-align: center; box-shadow: 0 12px 20px -20px var(--ink); }
+.card h3 { font-size: 16px; font-weight: 550; letter-spacing: -.45px; }
+.card > p { margin-top: 15px; color: var(--dark-muted); font-size: 12px; line-height: 1.9; max-width: 280px; margin-inline: auto; }
+.illustration { height: 248px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: 23px; font-size: 10px; text-align: left; }
+.funding, .authority, .proof { isolation: isolate; }
+.wallet { display: flex; align-items: center; gap: 10px; width: 182px; padding: 13px; border: 1px solid var(--dark-border); border-radius: 10px; background: var(--dark-raised); }
+.wallet > svg { color: var(--signal); }
+.walletLine { margin-left: auto; width: 20px; height: 4px; border-radius: 4px; background: var(--dark-border); }
+.depositLine { display: flex; align-items: center; justify-content: center; position: relative; width: 1px; height: 46px; color: var(--dark-muted); }
+.depositLine > span { position: absolute; top: 1px; bottom: 9px; border-left: 1px dashed var(--dark-muted); }
+.depositLine > small { position: absolute; left: 16px; width: 85px; font-family: var(--font-mono); font-size: 7px; letter-spacing: .5px; }
+.vault { position: relative; width: 236px; border: 1px solid var(--dark-border); border-radius: 12px; background: var(--dark-inset); padding: 17px; box-shadow: 0 12px 16px -12px var(--dark-inset); }
+.vault > div:first-child { display: flex; align-items: center; gap: 8px; color: var(--dark-muted); }
+.vault > div:first-child > svg:last-child { margin-left: auto; color: var(--signal); }
+.vault > strong { display: block; margin-top: 18px; font-size: 26px; font-weight: 550; letter-spacing: -1px; }
+.vault > small { display: block; margin-top: 8px; max-width: 132px; color: var(--dark-muted); font-size: 8px; line-height: 1.6; }
+.vaultDial { position: absolute; right: 20px; top: 61px; width: 40px; height: 40px; border: 1px solid var(--signal); border-radius: 50%; display: grid; place-items: center; color: var(--signal); }
+.vaultDial > span { width: 18px; height: 18px; border: 1px solid currentColor; border-radius: 50%; }
+.vaultDial > i { position: absolute; width: 28px; height: 1px; background: currentColor; transform: rotate(-35deg); }
+.agentLogos { display: flex; align-items: center; justify-content: center; gap: 13px; margin-bottom: 16px; }
+.agentLogos > span { display: grid; place-items: center; width: 37px; height: 37px; border-radius: 50%; background: var(--paper-raised); box-shadow: 0 0 0 5px var(--dark-inset); }
+.pass { width: 232px; padding: 15px; border: 1px solid var(--dark-border); border-radius: 11px; background: var(--dark-inset); }
+.pass > div { display: flex; align-items: center; gap: 8px; margin-bottom: 15px; }
+.pass > div > svg { color: var(--signal); }
+.pass > div > svg:last-child { margin-left: auto; }
+.pass > div > strong { font-size: 12px; font-weight: 550; }
+.card .pass > p { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 7px; border-top: 1px solid var(--dark-border); font-size: 9px; }
+.pass > p > span { color: var(--dark-muted); }
+.pass > p > strong { font-family: var(--font-mono); font-size: 8px; font-weight: 400; }
+.passBadge { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 15px; padding: 10px 14px; background: var(--signal-dim); color: var(--signal); border: 1px solid var(--dark-border); border-radius: 7px; font-size: 10px; }
+.receiptOrbit { position: absolute; width: 228px; height: 228px; border: 1px solid var(--dark-border); border-radius: 50%; }
+.receiptBack, .receiptBackTwo { position: absolute; width: 150px; height: 176px; border: 1px solid var(--dark-border); border-radius: 11px; background: var(--dark-raised); transform: rotate(-14deg) translate(-19px, 4px); }
+.receiptBackTwo { transform: rotate(14deg) translate(19px, 4px); }
+.receipt { position: relative; width: 161px; padding: 20px 15px 29px; background: var(--dark-inset); border: 1px solid var(--dark-border); border-radius: 9px; }
+.receipt > svg { color: var(--dark-muted); }
+.receipt > strong { display: block; margin: 10px 0 13px; font-size: 10px; font-weight: 550; }
+.card .receipt > p { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 8px; margin-top: 8px; color: var(--dark-muted); }
+.receipt > p > svg { color: var(--signal); }
+.receipt > small { display: block; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--dark-border); font-family: var(--font-mono); font-size: 7px; color: var(--dark-muted); }
+.verified { position: absolute; bottom: 9px; display: grid; place-items: center; width: 44px; height: 44px; background: var(--signal); color: var(--dark-inset); border: 5px solid var(--dark); border-radius: 50%; box-shadow: 0 9px 20px -12px var(--signal); }
+.section .note { margin-top: 18px; font-size: 9px; line-height: 1.7; color: var(--ink-soft); text-align: center; }
+@media (max-width: 1000px) {
+  .steps { gap: 14px; }
+  .card { padding-inline: 14px; }
+  .card h3 { font-size: 14px; }
+  .illustration { transform: scale(.85); margin-inline: -12px; }
+  .vault, .pass { width: 215px; }
+}
+@media (max-width: 700px) {
+  .section { padding-top: 70px; }
+  .steps { grid-template-columns: 1fr; gap: 20px; }
+  .annotation { justify-content: flex-start; padding-left: 18px; height: 38px; }
+  .card { height: auto; padding: 27px 24px; }
+  .card h3 { font-size: 17px; }
+  .illustration { transform: none; margin-inline: 0; margin-top: 17px; }
+  .vault { width: 236px; }
+  .pass { width: 232px; }
+  .card > p { font-size: 12px; }
+}
