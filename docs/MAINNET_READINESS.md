@@ -105,10 +105,13 @@ them in.
 - [ ] **Use the Cloud KMS signer.** It is built (`backend/internal/platform/gcpkms`,
       `SOLANA_MAINNET_KMS_KEY_VERSION`; setup in [SIGNER.md](SIGNER.md#cloud-kms)):
       the private key never enters the server, and with `APP_ENV=production` the
-      server refuses to start on mainnet with any other source. **It has been tested
-      against a fake KMS only, never against real Cloud KMS**; a first run on a
-      real key (devnet is enough to try it) is part of this item. The readiness
-      report's `signer` gate passes when the payer is a KMS key.
+      server refuses to start on mainnet with any other source. It was run against
+      real Cloud KMS on devnet on 2026-10-13: three vault payments and the recovery
+      of an unsettled channel, every signature from KMS
+      ([SIGNER.md](SIGNER.md#what-has-been-run-against-real-cloud-kms)). **Still to
+      do for this item:** an `hsm` key, the mainnet cluster, and the deployed server
+      holding the credentials. Try any new key with `go run ./cmd/kms-check` first.
+      The readiness report's `signer` gate passes when the payer is a KMS key.
 - [ ] Decide between one payer per organization and one shared payer with
       `SPEND_PASS_REQUIRED=mainnet`. The second is the minimum: with it, the
       payer never holds money that is not a pass's.

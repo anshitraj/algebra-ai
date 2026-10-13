@@ -63,12 +63,21 @@ half cannot be read by anyone, Algebra included, and each signature is a KMS cal
    algorithm `ec-sign-ed25519`, protection level `hsm` for mainnet.
 2. Give the service account the server runs as the role `roles/cloudkms.signerVerifier`
    **on that key only**: not on the project.
-3. Set `SOLANA_MAINNET_KMS_KEY_VERSION=projects/…/locations/…/keyRings/…/cryptoKeys/…/cryptoKeyVersions/N`
+3. Try the key before a server depends on it. `kms-check` prints the key's Solana
+   address (the one to fund and to pin), has KMS sign test messages and checks
+   the signatures, and confirms a wrong key name is refused; `-tx` also sends one
+   memo transaction on devnet with the key as the fee payer:
+
+   ```bash
+   GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json go run ./cmd/kms-check -version projects/…/cryptoKeyVersions/N
+   ```
+
+4. Set `SOLANA_MAINNET_KMS_KEY_VERSION=projects/…/locations/…/keyRings/…/cryptoKeys/…/cryptoKeyVersions/N`
    (one exact version; not a key, not "primary"), `SOLANA_ALLOW_MAINNET=yes`, and
    `SPEND_PASS_REQUIRED=mainnet`. The server logs the key's address at start
    (`mainnet payer key … (kms)`). Fund it with a little SOL for fees and set
    `SOLANA_MAINNET_SIGNER_PUBKEY` to it.
-4. Credentials are the host's application default credentials: automatic on Google
+5. Credentials are the host's application default credentials: automatic on Google
    Cloud (the service account), or on another host a credentials file at
    `GOOGLE_APPLICATION_CREDENTIALS`. `backend/start.sh` writes `GOOGLE_CREDENTIALS_JSON`
    (a service-account key limited to step 2's role) to a private file for hosts that
@@ -84,6 +93,29 @@ version is changing the payer: it strands existing vaults like any other new key
 
 A KMS error or outage stops a payment (nothing is signed) and a start (no other payer
 is made up). Signing is retried briefly on 429 and 5xx; a refusal is not retried.
+
+#### What has been run against real Cloud KMS
+
+On 2026-10-13, on **devnet**, with a `software` Ed25519 key and a service-account
+key file, from a development machine. The payer was
+[`Drx6tu2fNMiHLKZk8mD1qsDpahvJ3FPCK4iQ8J6b42JV`](https://explorer.solana.com/address/Drx6tu2fNMiHLKZk8mD1qsDpahvJ3FPCK4iQ8J6b42JV?cluster=devnet);
+every signature below came from KMS.
+
+| What | Result |
+|---|---|
+| `kms-check`: read the key, sign, verify, same signature twice, a 1232-byte message, a key name without a version, a version that does not exist | All as expected. A signature took about 40 ms. The refusals carried no response body |
+| `kms-check -tx`: one memo transaction with the key as fee payer | [confirmed](https://explorer.solana.com/tx/4nKPXtFE8nQHMjSf4bLtxvPVqVvptoAcD6uTD1XnkewvZwEqBYTcwWUPcvM8pi1chmgR7TJysefYHoC5AfCbm4HP?cluster=devnet) |
+| The server started with `SOLANA_DEVNET_KMS_KEY_VERSION` | `/api/v1/onchain/networks` reports `signer_mode: kms` and the address; the same after a restart; the right pin is accepted |
+| Starts that must fail: a wrong pin, a KMS key and a keypair file together, no credentials, a version that does not exist | Each refused to start with its reason, and no other key was made |
+| A fixed-price payment from a vault (x402 `exact`) | [pull](https://explorer.solana.com/tx/5jV4tbx1aMtGgZeEj8XiiMc4PPMRMZ1dqgYQd4MSE6EUyfZkYJ219ZJSVmEF4zisuMZmbMqfbxkPTnWe1fhLkzxX?cluster=devnet), [payment](https://explorer.solana.com/tx/4iEa3rSFdPYugkZR1VE7LfKY6T4Z2NjFgsmYonVycYimv5aMDrX2Fc6ngjfhVdnGHMANGn33LJREMfsqWwbE5W2H?cluster=devnet). The receipt names the KMS key as the payer and verifies |
+| A metered payment over a payment channel (x402 `upto`): 0.05 USDC pulled, 0.00296 spent | [pull](https://explorer.solana.com/tx/JVVo6cMkEoZDQyrjM2XHvJcR9otHSDphe9yuqPmoZ7Axavgdb3J1ETR72dit5FTJrRGDViVX2WQA2d8Hd9JsmJb?cluster=devnet), [settlement](https://explorer.solana.com/tx/hP6tYw1gkr3CpBYGY6ETon3Lh7eRwLiHLwASNvjD47oPXwy8weBhrcMkBnx6xFZkEXLEfr1i3P3fwnVoJPmu9zd?cluster=devnet), [0.04704 back to the vault](https://explorer.solana.com/tx/wcvKscPxVisFn6RcE7JB2Bz6XuDknrBkcA4hX5RtQLtghih2MTeojAJSevjCFgZUie5So1D6dA7GyudXXrtqqwz?cluster=devnet). KMS signed the pull, the channel's open and the refund; the voucher is the seller's to sign |
+| A seller that opened a channel and never settled it (`meterstall`): 0.04 USDC pulled, nothing spent | The payer's own exit, each step signed by KMS: [close requested](https://explorer.solana.com/tx/4ERbJ7V1UCfam2nwMygNbwJVdcDQPuYJhSSGDDSUczzGn7CqGWG6sDvZmasUWyivr8iGaSvanhbP9zQQE1BrSi3S?cluster=devnet), [sealed](https://explorer.solana.com/tx/3oQnHpu9FKUGggnhMoXpuPh8CXqpjCTa8hcSJYSZ4BJRPmNWHEGTvQVkrdRL3ksLS5yeaU8xfyGCQFTivVLZCuov?cluster=devnet), [withdrawn](https://explorer.solana.com/tx/2ypHsMTgFgh3Q3zxcWSexB4tVrYAaqme9Pf2bMjf6DVE8V3t78RaEHgV3PTbqc7RvaBvBfW7R3MvSLp1M1RivmXp?cluster=devnet), [all 0.04 back to the vault](https://explorer.solana.com/tx/4c619ySfYfKwMVWh16ATWt1ejkmXbJnisKfB4NsDRxmfYDpNSCivdZjFrbDCpKes64xbTRvAfj2MMtJdqcWJSsct?cluster=devnet) |
+
+The sellers were Algebra's own demo sellers and the vault owner was a keypair file
+standing in for a person's wallet. **Not run:** an `hsm` key, the mainnet cluster,
+the deployed server holding the credentials (`GOOGLE_CREDENTIALS_JSON`), a KMS
+outage in the middle of a payment (the retry and the refusal are covered by tests
+against a stand-in for KMS only), and workload identity federation.
 
 ### What the server will not do
 

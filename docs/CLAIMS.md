@@ -121,6 +121,7 @@ Evidence comes in four kinds, and they are not interchangeable:
 | A project's devnet API key paid from an on-chain pass vault | Chain: DEMO.md (2026-10-12), three finalized transactions |
 | After the trust and mainnet-gate changes a project's devnet API key still pays on devnet, a repeat pays nothing, the receipt verifies, and the same key is refused on mainnet (`ENVIRONMENT_NETWORK_MISMATCH`) | Chain: DEMO.md (2026-10-12, second run), one finalized transaction |
 | x402 `exact` and `upto` (payment channel) payments settle on devnet | Chain: DEMO.md (2026-10-07) |
+| With the payer key held in Cloud KMS (never in the server), a fixed-price payment, a metered payment over a payment channel and the recovery of a channel its seller never settled, each from an on-chain vault, landed on devnet | Chain: SIGNER.md (2026-10-13), ten linked transactions, a `software` key |
 | A pull's state moves only by compare-and-set, so two processes cannot both refund it | Unit test `TestPullStateMovesOnlyFromWhereItWas` |
 
 ### Swaps
@@ -135,6 +136,7 @@ Evidence comes in four kinds, and they are not interchangeable:
 |---|---|
 | "Works on mainnet" / "live on mainnet" | No mainnet payment has been made. The program is not deployed on mainnet. See [MAINNET_READINESS.md](MAINNET_READINESS.md) |
 | "Jupiter swaps executed" | No swap has landed on any chain. Tested against a fake cluster only |
+| "KMS signer in production" / "HSM-backed payer" | The Cloud KMS payer was run on devnet with a `software` key from a development machine. No `hsm` key, no mainnet, and the deployed server has not held the credentials |
 | "Audited" | Neither the program nor the server has had an independent review |
 | "Verified provider" as a statement about the seller's legal identity, reputation or future safety | The check mark means the six checks passed and a person recorded the evidence they reviewed. On 2026-10-12 no catalog endpoint is verified |
 | "Verified" for an endpoint that has only been paid | That is *payment tested*. It proves one transaction worked |
