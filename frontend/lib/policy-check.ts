@@ -42,14 +42,31 @@ export function hasOwnRules(p: SpendPass): boolean {
 /**
  * The pass's rules against one payment of paidMinor (0 or undefined when
  * nothing was paid yet). askedPerson: a person approved this payment.
+ *
+ * basis says where p.remaining_minor_units stands: "before" the payment (the
+ * pass as read when the turn began; spentBefore is what earlier payments in
+ * that same turn already took), or "now" (the pass as read afterwards, which
+ * already counts this payment, as on an invoice: the payment must not be taken
+ * off a second time).
  */
-export function policyReport(p: SpendPass, paidMinor: number | undefined, askedPerson: boolean, pending = false): PolicyReport {
+export function policyReport(
+  p: SpendPass,
+  paidMinor: number | undefined,
+  askedPerson: boolean,
+  pending = false,
+  basis: "before" | "now" = "before",
+  spentBefore = 0,
+): PolicyReport {
   const paid = paidMinor ?? 0;
   const checks: PolicyCheck[] = [];
-  const left = Math.max(0, p.remaining_minor_units - paid);
+  const left = Math.max(0, p.remaining_minor_units - spentBefore - paid);
   checks.push({
     label: "Budget",
-    result: pending ? `${usdc(p.remaining_minor_units)} left of ${usdc(p.budget_minor_units)}; this call would use ${usdc(paid)}` : `${usdc(left)} left of ${usdc(p.budget_minor_units)}${paid > 0 ? " after this call" : ""}`,
+    result: pending
+      ? `${usdc(p.remaining_minor_units)} left of ${usdc(p.budget_minor_units)}; this call would use ${usdc(paid)}`
+      : basis === "now"
+        ? `${usdc(p.remaining_minor_units)} left of ${usdc(p.budget_minor_units)} now`
+        : `${usdc(left)} left of ${usdc(p.budget_minor_units)}${paid > 0 ? " after this call" : ""}`,
     state: "pass",
   });
   checks.push(

@@ -89,7 +89,7 @@ export function Invoice({ intentId }: { intentId: string }) {
   const network = s?.network;
   const onChain = !!s?.transaction && (network === "solana" || network === "solana-devnet");
   const human = c?.authority.method === "human";
-  const report = pass && c ? policyReport(pass, s?.amount.minor_units ?? intent.committed_minor, human) : null;
+  const report = pass && c ? policyReport(pass, s?.amount.minor_units ?? intent.committed_minor, human, false, "now") : null;
   const number = `ALG-${(c?.jti ?? intent.id).replace(/[^A-Za-z0-9]/g, "").slice(-10).toUpperCase()}`;
 
   async function copyReceipt() {

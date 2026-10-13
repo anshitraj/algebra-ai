@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import * as api from "@/lib/api-client";
 import type { IntentReceiptClaims, ReceiptMoney, ReceiptVerification } from "@/lib/types";
 import { formatMoney } from "@/lib/money";
-import { explorerTx, networkWord } from "@/lib/explorer";
+import { explorerTx, isOnChain, networkWord } from "@/lib/explorer";
 import { IconCheck, IconExternal, IconX, Spinner } from "@/components/icons";
 
 const when = (unix: number) => new Date(unix * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -132,7 +132,13 @@ function Result({ v }: { v: ReceiptVerification }) {
         <Row label="Person" value={c.sub} mono />
       </dl>
 
-      {s?.transaction && (
+      {s?.transaction && !isOnChain(s.network) && (
+        <div className="border-t border-border px-5 py-3 text-sm">
+          <span className="block text-xs text-muted">Simulated payment: no transaction exists on Solana</span>
+          <span className="block truncate font-mono text-[0.8rem] text-foreground">{s.transaction}</span>
+        </div>
+      )}
+      {s?.transaction && isOnChain(s.network) && (
         <a
           href={explorerTx(s.transaction, s.network)}
           target="_blank"
