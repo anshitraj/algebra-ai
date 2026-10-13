@@ -33,21 +33,47 @@ type persona struct {
 	Down                  bool
 }
 
+// Each class has a cheap-but-slow seller, a fast one and (for some) a
+// premium one, so Cheapest, Balanced and Fastest pick different providers
+// once Algebra has timed them; token.price also keeps the misbehaving ones
+// the router's guards refuse.
 var personas = []persona{
 	{Name: "alpha", Title: "Alpha Prices (demo)", Class: "token.price", ListedMinor: 2_000, AskMinor: 2_000, Scheme: "exact", Method: "GET"},
 	{Name: "beta", Title: "Beta Prices (demo, slow)", Class: "token.price", ListedMinor: 1_000, AskMinor: 1_000, Scheme: "exact", Method: "GET", Delay: 1200 * time.Millisecond},
+	{Name: "gamma", Title: "Gamma Prices (demo)", Class: "token.price", ListedMinor: 1_200, AskMinor: 1_200, Scheme: "exact", Method: "GET", Delay: 30 * time.Millisecond},
 	{Name: "flaky", Title: "Flaky Prices (demo, down)", Class: "token.price", ListedMinor: 500, AskMinor: 500, Scheme: "exact", Method: "GET", Down: true},
 	{Name: "greedy", Title: "Greedy Prices (demo, overcharges)", Class: "token.price", ListedMinor: 1_000, AskMinor: 4_000, Scheme: "exact", Method: "GET"},
 	{Name: "trap", Title: "Trap Prices (demo, honeypot)", Class: "token.price", ListedMinor: 25_000_000, AskMinor: 25_000_000, Scheme: "exact", Method: "GET"},
+
+	{Name: "skycast", Title: "SkyCast Weather (demo)", Class: "weather.forecast", ListedMinor: 1_200, AskMinor: 1_200, Scheme: "exact", Method: "POST", Delay: 30 * time.Millisecond},
+	{Name: "nimbus", Title: "Nimbus Weather (demo, slow)", Class: "weather.forecast", ListedMinor: 1_000, AskMinor: 1_000, Scheme: "exact", Method: "POST", Delay: 1100 * time.Millisecond},
+	{Name: "stratus", Title: "Stratus Weather (demo, premium)", Class: "weather.forecast", ListedMinor: 3_000, AskMinor: 3_000, Scheme: "exact", Method: "POST"},
+
+	{Name: "sentinel", Title: "Sentinel Token Risk (demo)", Class: "solana.token-risk", ListedMinor: 4_000, AskMinor: 4_000, Scheme: "exact", Method: "POST"},
+	{Name: "rugwatch", Title: "RugWatch Token Risk (demo, slow)", Class: "solana.token-risk", ListedMinor: 2_000, AskMinor: 2_000, Scheme: "exact", Method: "POST", Delay: 900 * time.Millisecond},
+
+	{Name: "searchlight", Title: "Searchlight Web Search (demo)", Class: "web.search", ListedMinor: 3_000, AskMinor: 3_000, Scheme: "exact", Method: "POST"},
+	{Name: "scout", Title: "Scout Web Search (demo, slow)", Class: "web.search", ListedMinor: 1_200, AskMinor: 1_200, Scheme: "exact", Method: "POST", Delay: 1000 * time.Millisecond},
+
+	{Name: "wire", Title: "Wire News (demo)", Class: "news.search", ListedMinor: 2_000, AskMinor: 2_000, Scheme: "exact", Method: "POST"},
+	{Name: "herald", Title: "Herald News (demo, slow)", Class: "news.search", ListedMinor: 1_000, AskMinor: 1_000, Scheme: "exact", Method: "POST", Delay: 900 * time.Millisecond},
+
+	{Name: "ledgerly", Title: "Ledgerly Wallet Balances (demo)", Class: "wallet.balances", ListedMinor: 2_000, AskMinor: 2_000, Scheme: "exact", Method: "POST"},
+	{Name: "vaultview", Title: "VaultView Wallet Balances (demo, slow)", Class: "wallet.balances", ListedMinor: 1_000, AskMinor: 1_000, Scheme: "exact", Method: "POST", Delay: 1000 * time.Millisecond},
+
+	{Name: "geopin", Title: "GeoPin IP Lookup (demo)", Class: "ip.geolocate", ListedMinor: 500, AskMinor: 500, Scheme: "exact", Method: "POST"},
+	{Name: "locus", Title: "Locus IP Lookup (demo, slow)", Class: "ip.geolocate", ListedMinor: 300, AskMinor: 300, Scheme: "exact", Method: "POST", Delay: 800 * time.Millisecond},
+
 	{Name: "meter", Title: "Metered LLM (demo, x402 upto)", Class: "llm.chat", ListedMinor: 50_000, AskMinor: 50_000, Scheme: "upto", Method: "POST"},
 }
 
-func (p persona) endpoint() string {
-	if p.Class == "llm.chat" {
-		return "/" + p.Name + "/chat"
-	}
-	return "/" + p.Name + "/price"
+// suffixes name each class's path, so a request URL says what it buys.
+var suffixes = map[string]string{
+	"token.price": "price", "weather.forecast": "weather", "solana.token-risk": "risk", "web.search": "search",
+	"news.search": "news", "wallet.balances": "balances", "ip.geolocate": "geo", "llm.chat": "chat",
 }
+
+func (p persona) endpoint() string { return "/" + p.Name + "/" + suffixes[p.Class] }
 
 func (p persona) path() string { return p.endpoint() }
 
@@ -139,6 +165,9 @@ func (s *server) handle(p persona) http.HandlerFunc {
 				s.respond(w, c.body, c.settle, 0, "")
 				return
 			}
+			// A slow provider is slow on every request, its unpaid price
+			// check too: that is the first speed Algebra measures.
+			time.Sleep(p.Delay)
 			s.challenge(w, p, "")
 			return
 		}
@@ -233,22 +262,65 @@ func readInput(r *http.Request) map[string]any {
 	return in
 }
 
-// answer is the persona's (demo) data.
+// answer is the persona's (demo) data: the shape a real provider of the class
+// returns, made up but stable for the same input, and always marked demo.
 func (p persona) answer(in map[string]any, charged int64) []byte {
-	if p.Class == "llm.chat" {
-		prompt, _ := in["prompt"].(string)
-		return mustBytes(map[string]any{
-			"demo": true, "provider": "demo:" + p.Name, "model": "demo-echo-1",
-			"text":          "demo answer to: " + truncate(prompt, 200),
-			"charged_minor": charged, "ceiling_minor": p.AskMinor,
-		})
+	str := func(k string) string { s, _ := in[k].(string); return truncate(s, 200) }
+	seed := 0
+	for _, r := range fmt.Sprint(in) {
+		seed = (seed*31 + int(r)) % 9973
 	}
-	mint, _ := in["mint"].(string)
-	price := "1.0000"
-	if mint != "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" && mint != "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" {
-		price = fmt.Sprintf("%d.%02d", 100+len(mint)%50, len(mint)%100)
+	out := map[string]any{"demo": true, "note": "Demo data from Algebra's devnet demo provider: not real.", "provider": "demo:" + p.Name, "as_of": time.Now().UTC().Format(time.RFC3339)}
+	switch p.Class {
+	case "llm.chat":
+		out["model"], out["text"] = "demo-echo-1", "demo answer to: "+str("prompt")
+		out["charged_minor"], out["ceiling_minor"] = charged, p.AskMinor
+	case "weather.forecast":
+		conditions := []string{"clear", "partly cloudy", "light rain", "overcast", "windy"}
+		out["location"] = str("location")
+		out["temperature_c"] = 8 + seed%22
+		out["conditions"] = conditions[seed%len(conditions)]
+		out["humidity_pct"] = 35 + seed%55
+		out["wind_kph"] = 3 + seed%30
+	case "solana.token-risk":
+		score := seed % 100
+		level := "low"
+		if score > 66 {
+			level = "high"
+		} else if score > 33 {
+			level = "medium"
+		}
+		out["mint"], out["risk_score"], out["risk_level"] = str("mint"), score, level
+		out["checks"] = map[string]any{"mint_authority_revoked": score < 50, "freeze_authority_revoked": score < 70, "top10_holders_pct": 20 + seed%60}
+	case "web.search", "news.search":
+		q := str("query")
+		var results []map[string]any
+		for i := 1; i <= 3; i++ {
+			results = append(results, map[string]any{
+				"title": fmt.Sprintf("%s: demo result %d", q, i), "url": fmt.Sprintf("https://example.com/%s/%d", p.Name, i),
+				"snippet": "A made-up result from Algebra's devnet demo provider.",
+			})
+		}
+		out["query"], out["results"] = q, results
+	case "wallet.balances":
+		out["wallet"] = str("wallet")
+		out["balances"] = []map[string]any{
+			{"token": "SOL", "amount": fmt.Sprintf("%d.%03d", seed%40, seed%1000)},
+			{"token": "USDC", "amount": fmt.Sprintf("%d.%02d", seed%500, seed%100)},
+		}
+	case "ip.geolocate":
+		places := [][3]string{{"Lisbon", "PT", "Europe/Lisbon"}, {"Mumbai", "IN", "Asia/Kolkata"}, {"Austin", "US", "America/Chicago"}, {"Berlin", "DE", "Europe/Berlin"}}
+		pl := places[seed%len(places)]
+		out["ip"], out["city"], out["country"], out["timezone"] = str("ip"), pl[0], pl[1], pl[2]
+	default: // token.price
+		mint := str("mint")
+		price := "1.0000"
+		if mint != "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" && mint != "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" {
+			price = fmt.Sprintf("%d.%02d", 100+len(mint)%50, len(mint)%100)
+		}
+		out["mint"], out["price_usd"] = mint, price
 	}
-	return mustBytes(map[string]any{"demo": true, "provider": "demo:" + p.Name, "mint": mint, "price_usd": price, "as_of": time.Now().UTC().Format(time.RFC3339)})
+	return mustBytes(out)
 }
 
 func mustBytes(v any) []byte {

@@ -14,7 +14,7 @@ import { formatUSDC } from "@/lib/money";
 import { getOnchainPass } from "@/lib/onchain-pass";
 import type { Simulation } from "@/lib/routing-types";
 import { networkLabel, useNetwork } from "@/lib/network";
-import { IconArrowUp, IconRefresh, IconShield, IconStop } from "@/components/icons";
+import { IconArrowUp, IconLock, IconRefresh, IconShield, IconStop } from "@/components/icons";
 import { useConsoleData } from "../console-data";
 import { ApprovalCard, type ApprovalOutcome } from "./approval-card";
 import { ModelPicker, type ModelChoice, type ProviderEntry } from "./model-picker";
@@ -53,10 +53,10 @@ const SUGGESTIONS: Record<string, string[]> = {
     "Search the web for today's Solana news, under 0.02 USDC",
   ],
   "solana-devnet": [
-    "Which paid APIs take devnet USDC?",
-    "Make a test call on devnet for under 0.01 USDC",
-    "Find a devnet API for token prices and call it",
-    "Show me what a paid call returns, with its receipt",
+    "What's the weather in Lisbon and the SOL price? Under 0.01 USDC each",
+    "Is the token EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v risky? Pay at most 0.01 USDC",
+    "Search the web for Solana payment channels, under 0.01 USDC",
+    "Make a test call on devnet and show me its receipt",
   ],
   // A demo account: the sandbox serves token prices and token risk, from providers that misbehave like real ones.
   sandbox: [
@@ -574,6 +574,7 @@ export function AgentWorkspace() {
             <div className="flex flex-wrap items-center gap-2 px-2.5 pt-1 pb-2.5">
               <ModelPicker providers={providers} value={choice} onChange={pickModel} lockedProvider={lockedProvider} />
               <PassPicker passes={fitting} vaults={vaults} value={pass ? passId : ""} onChange={pickPass} disabled={running} sandbox={network === "sandbox"} />
+              {pass && <AskBeforePaying />}
               <span className="hidden text-xs text-muted/80 xl:ml-auto xl:inline">
                 <kbd className="font-mono">Enter</kbd> to send
               </span>
@@ -708,6 +709,21 @@ function TurnView({
 }
 
 /** Which Spend Pass the chat pays under. Only active USDC passes can pay for API calls. */
+/**
+ * "Ask before paying" is always on in the chat: the agent compares providers and shows cards, and nothing is
+ * paid until the person picks one and presses Pay. That press is recorded on the server as their approval.
+ */
+function AskBeforePaying() {
+  return (
+    <span
+      title="Every payment waits for you: the agent shows the options as cards, and nothing is paid until you pick one and press Pay. The agent can't pay on its own."
+      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-foreground"
+    >
+      <IconLock size={13} className="text-primary" /> Asks before paying
+    </span>
+  );
+}
+
 function PassPicker({
   passes,
   vaults,

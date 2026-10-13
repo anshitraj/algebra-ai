@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/intel"
@@ -110,7 +111,9 @@ func (g guards) before(view *IntentView, c routing.Candidate) (routing.Candidate
 			return reject(RejectPriceAboveListing, fmt.Sprintf("its last probe asked %s; it lists %s", usd(h.LivePriceMinor), usd(h.ListedPriceMinor)))
 		}
 		if c.EstimatedLatencyMS == 0 && h.Status == HealthUp && h.LatencyMS > 0 {
-			c.EstimatedLatencyMS = h.LatencyMS
+			// One probe's time, in the same steps as a price check's, so a few
+			// milliseconds of noise never reorder two providers.
+			c.EstimatedLatencyMS = priceCheckBucket(time.Duration(h.LatencyMS) * time.Millisecond)
 		}
 	}
 	if r := g.outlier(c.PriceMinor); r != "" {
