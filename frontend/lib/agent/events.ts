@@ -2,6 +2,8 @@
 // line (NDJSON). The route emits these as the provider loop runs, so the UI
 // can show each tool call as a live step instead of a spinner.
 
+import type { Simulation } from "../routing-types";
+
 export type StepStatus = "running" | "done" | "error" | "blocked" | "waiting";
 
 export type AgentEvent =
@@ -17,7 +19,7 @@ export type AgentEvent =
     }
   | { type: "text"; text: string }
   /** A paid call is waiting for the person: approve or cancel it in the card. */
-  | { type: "approval"; intentId: string; provider?: string; askedFirst?: boolean }
+  | { type: "approval"; intentId: string; provider?: string; askedFirst?: boolean; decision?: Simulation }
   /** The agent asked 1-4 multiple-choice questions; the turn ends and the picks come back as the next message. */
   | { type: "question"; questions: AskedQuestion[] }
   /** USDC paid for a delivered call (micro-USDC). */
@@ -57,6 +59,8 @@ export type StepDetail = {
   note?: string;
   /** What the Spend Pass's rules said about this payment. */
   policy?: import("../policy-check").PolicyReport;
+  /** The server's dry-run decision: provider, total, seller, network, rules, ALLOW / HOLD / BLOCK. */
+  decision?: Simulation;
 };
 
 export type AskedQuestion = { question: string; options: string[] };

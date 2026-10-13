@@ -169,6 +169,8 @@ export async function simulate(identity: ServerIdentity, b: ExecuteBody): Promis
       currency: "USDC",
       constraints: { allowed_networks: [identity.network] },
       spend_pass_id: identity.passId,
+      // The dry run shows what a real request would meet, including the yes the person asked for.
+      require_approval: identity.askFirst || undefined,
       live_quotes: true,
     },
   });

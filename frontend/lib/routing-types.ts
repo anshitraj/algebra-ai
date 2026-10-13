@@ -67,14 +67,30 @@ export type KillSwitchState = { engaged: boolean; frozen_passes: number; live_pa
 
 export type Verdict = "ALLOW" | "REQUIRE_APPROVAL" | "DENY";
 
+/** What the console calls a verdict: ALLOW runs, HOLD waits for a person's yes, BLOCK pays nothing. */
+export type Decision = "ALLOW" | "HOLD" | "BLOCK";
+
+/** What Algebra knows about who it would pay, as separate facts. A payment that worked is not a verified identity. */
+export type Seller = {
+  known: boolean;
+  /** "verified" is identity verification: every check of the standard passed and a person reviewed who runs it. */
+  trust?: "verified" | "unverified" | "blocked";
+  payment_tested: boolean;
+  payee_pinned: boolean;
+};
+
 export type CandidateVerdict = {
   provider: string;
   candidate_id?: string;
   network?: string;
   price_minor: number;
+  /** The estimated total cost: the provider's price plus any fee. */
+  total_minor: number;
   price_source: "live" | "listed";
   verdict: Verdict;
+  decision: Decision;
   reasons?: string[];
+  seller: Seller;
 };
 
 export type RoutedOffer = {
@@ -94,7 +110,10 @@ export type Rejection = { candidate_id?: string; provider?: string; code: string
 
 export type Simulation = {
   verdict: Verdict;
+  decision: Decision;
   reasons: string[] | null;
+  /** How the plan was ranked: CHEAPEST, FASTEST or AUTO (shown as Balanced). */
+  strategy?: string;
   would_pay?: CandidateVerdict;
   plan?: { mode: string; plan_hash: string; offers: RoutedOffer[] };
   candidates: CandidateVerdict[];

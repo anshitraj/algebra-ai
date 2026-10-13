@@ -43,22 +43,57 @@ const (
 	VerdictDeny            Verdict = "DENY"
 )
 
+// Decision is a verdict in the words the console shows: ALLOW runs, HOLD
+// waits for a person's yes, BLOCK is refused and nothing is paid.
+func (v Verdict) Decision() string {
+	switch v {
+	case VerdictAllow:
+		return "ALLOW"
+	case VerdictRequireApproval:
+		return "HOLD"
+	}
+	return "BLOCK"
+}
+
+// Seller is what Algebra knows about who it would pay, as separate facts: a
+// listing is not a quote, a payment that worked is not a verified identity.
+type Seller struct {
+	// Known: the provider registry has this endpoint at all.
+	Known bool `json:"known"`
+	// Trust is "verified" (identity: every check of the standard passed and a
+	// person reviewed who runs it), "unverified" or "blocked". Empty when unknown.
+	Trust string `json:"trust,omitempty"`
+	// PaymentTested: Algebra has paid this endpoint and it delivered. It says
+	// a transaction worked and nothing about who the seller is.
+	PaymentTested bool `json:"payment_tested"`
+	// PayeePinned: a payee is pinned, so a different one is refused.
+	PayeePinned bool `json:"payee_pinned"`
+}
+
 // CandidateVerdict is one provider's fate in a dry run.
 type CandidateVerdict struct {
-	Provider    string   `json:"provider"`
-	CandidateID string   `json:"candidate_id,omitempty"`
-	Network     string   `json:"network,omitempty"`
-	PriceMinor  int64    `json:"price_minor"`
+	Provider    string `json:"provider"`
+	CandidateID string `json:"candidate_id,omitempty"`
+	Network     string `json:"network,omitempty"`
+	PriceMinor  int64  `json:"price_minor"`
+	// TotalMinor is the estimated total cost: the provider's price plus any fee.
+	TotalMinor  int64    `json:"total_minor"`
 	PriceSource string   `json:"price_source"` // "live" or "listed"
 	Verdict     Verdict  `json:"verdict"`
+	Decision    string   `json:"decision"`
 	Reasons     []string `json:"reasons,omitempty"`
+	Seller      Seller   `json:"seller"`
 }
 
 // Simulation is the dry run's answer: the verdict, why, what the plan would
 // be and what each provider would meet. Nothing was reserved or paid.
 type Simulation struct {
-	Verdict Verdict  `json:"verdict"`
-	Reasons []string `json:"reasons"`
+	Verdict Verdict `json:"verdict"`
+	// Decision is Verdict as ALLOW, HOLD or BLOCK.
+	Decision string   `json:"decision"`
+	Reasons  []string `json:"reasons"`
+	// Strategy is how the plan was ranked: CHEAPEST, FASTEST or AUTO.
+	Strategy string `json:"strategy,omitempty"`
 	// WouldPay is the first plan step: who would be paid and how much.
 	WouldPay   *CandidateVerdict   `json:"would_pay,omitempty"`
 	Plan       *RoutingSummary     `json:"plan,omitempty"`
@@ -82,6 +117,17 @@ type Simulation struct {
 // created, nothing is reserved, and nothing is paid; with LiveQuotes the only
 // thing that leaves Algebra is the same unpaid request a quote is.
 func (s *ExecutionService) Simulate(ctx context.Context, req SimulateRequest) (*Simulation, error) {
+	sim, err := s.simulate(ctx, req)
+	if sim != nil {
+		sim.Decision = sim.Verdict.Decision()
+		for i := range sim.Candidates {
+			sim.Candidates[i].Decision = sim.Candidates[i].Verdict.Decision()
+		}
+	}
+	return sim, err
+}
+
+func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*Simulation, error) {
 	p, err := s.econ.passes.GetByAgent(ctx, req.AgentID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: this agent has no Spend Pass", shared.ErrUnauthorized)
@@ -146,7 +192,10 @@ func (s *ExecutionService) Simulate(ctx context.Context, req SimulateRequest) (*
 			continue
 		}
 		seen[c.ID] = true
-		cv := CandidateVerdict{Provider: c.Provider, CandidateID: c.ID, Network: c.Network, PriceMinor: c.PriceMinor, PriceSource: "listed", Verdict: VerdictAllow}
+		cv := CandidateVerdict{Provider: c.Provider, CandidateID: c.ID, Network: c.Network, PriceMinor: c.PriceMinor, TotalMinor: c.PriceMinor, PriceSource: "listed", Verdict: VerdictAllow}
+		if e, ok := g.trust[c.ID]; ok {
+			cv.Seller = Seller{Known: true, Trust: string(e.Trust), PaymentTested: e.TestedAt != nil, PayeePinned: e.PinnedPayTo != ""}
+		}
 		deny := func(r routing.Rejection) {
 			cv.Verdict, cv.Reasons = VerdictDeny, append(cv.Reasons, r.Code+": "+r.Detail)
 			sim.Rejected = append(sim.Rejected, r)
@@ -169,7 +218,7 @@ func (s *ExecutionService) Simulate(ctx context.Context, req SimulateRequest) (*
 				sim.Candidates = append(sim.Candidates, cv)
 				continue
 			}
-			q, cv.PriceSource, cv.PriceMinor = live.q, "live", live.q.Cost.ProviderMinor
+			q, cv.PriceSource, cv.PriceMinor, cv.TotalMinor = live.q, "live", live.q.Cost.ProviderMinor, live.q.Cost.Total()
 			if r := g.after(c, q); r != nil {
 				deny(*r)
 				sim.Candidates = append(sim.Candidates, cv)
@@ -217,6 +266,7 @@ func (s *ExecutionService) Simulate(ctx context.Context, req SimulateRequest) (*
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", shared.ErrConflict, err)
 	}
+	sim.Strategy = string(mode)
 	switch {
 	case len(opts) > 0:
 		steps := routing.Rank(mode, opts)
@@ -235,6 +285,11 @@ func (s *ExecutionService) Simulate(ctx context.Context, req SimulateRequest) (*
 		if approvalAtCreate || (sim.WouldPay != nil && sim.WouldPay.Verdict == VerdictRequireApproval) {
 			sim.Verdict = VerdictRequireApproval
 			sim.Reasons = append(sim.Reasons, whole.ReasonCodes...)
+		}
+		// The request asked for a person's yes: stricter, never looser.
+		if req.Spec.AskFirst && sim.Verdict == VerdictAllow {
+			sim.Verdict = VerdictRequireApproval
+			sim.Reasons = append(sim.Reasons, ReasonAskedFirst)
 		}
 	case len(gatedOnly) > 0:
 		sim.Verdict = VerdictRequireApproval

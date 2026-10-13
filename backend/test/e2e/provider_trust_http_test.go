@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -117,7 +118,10 @@ func TestProviderRegistryOverHTTP_OpenToReadDecidedByAPerson(t *testing.T) {
 		t.Errorf("the sandbox catalog is not among the sources: %v", st["sources"])
 	}
 
-	status, _, out = call(t, "GET", base+"/api/v1/intel/endpoints?source=sandbox&q=alpha&limit=200", "", nil)
+	// Narrowed to this server's own alpha: on a long-lived database the sandbox sellers of every earlier test
+	// server are listed too, and a page holds at most 200.
+	alphaURL := base + "/api/v1/sandbox/x402/prices/alpha"
+	status, _, out = call(t, "GET", base+"/api/v1/intel/endpoints?source=sandbox&limit=200&q="+url.QueryEscape(alphaURL), "", nil)
 	var found map[string]any
 	eps, _ := out["endpoints"].([]any)
 	for _, e := range eps {

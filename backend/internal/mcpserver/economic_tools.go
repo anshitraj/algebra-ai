@@ -81,7 +81,7 @@ func (srv *Server) registerEconomicTools(s *gomcp.Server) {
 		}
 		strategy := in.Strategy
 		if strings.TrimSpace(strategy) == "" && srv.Tenancy != nil {
-			strategy = srv.Tenancy.DefaultStrategy(ctx, ag)
+			strategy = srv.Tenancy.DefaultStrategy(ctx, ag, executor)
 		}
 		res, err := srv.Execution.Do(ctx, app.DoRequest{
 			AgentID: executor,
@@ -219,11 +219,15 @@ func (srv *Server) simulate(ctx context.Context, in simulateToolInput) (map[stri
 	if err != nil {
 		return nil, err
 	}
+	simStrategy := in.Strategy
+	if strings.TrimSpace(simStrategy) == "" && srv.Tenancy != nil {
+		simStrategy = srv.Tenancy.DefaultStrategy(ctx, ag, executor)
+	}
 	sim, err := srv.Execution.Simulate(ctx, app.SimulateRequest{
 		AgentID: executor,
 		Spec: econ.Spec{
 			Capability: capability, Input: raw, Window: "simulate", Currency: "USDC", BudgetMaxMinor: budget,
-			ProviderPolicy: econ.ProviderPolicy{Strategy: in.Strategy},
+			ProviderPolicy: econ.ProviderPolicy{Strategy: simStrategy},
 			Constraints:    econ.Constraints{AllowedNetworks: in.AllowedNetworks},
 		},
 		Candidates: candidates, LiveQuotes: in.LiveQuotes,
