@@ -1,0 +1,108 @@
+.card {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background: var(--color-surface);
+  box-shadow: 0 4px 20px -12px rgb(var(--shadow-ink) / 0.15);
+}
+.cover {
+  min-width: 0;
+  padding: 18px;
+}
+.eyebrow,
+.eyebrow > span,
+.openButton {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.eyebrow {
+  justify-content: space-between;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.live {
+  color: var(--color-success);
+}
+.live::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.folder {
+  display: flex;
+  justify-content: center;
+  margin: 5px 0 18px;
+}
+.glass :global(.gf-title) {
+  max-width: 230px;
+}
+.card .glass {
+  font-family: var(--font-sans);
+}
+.card .glass:global([data-open]) {
+  --gf-lift: -68px;
+  --gf-stack: 18px;
+  --gf-spread: 24px;
+  --gf-fan: 4deg;
+}
+.glass :global(.gf-meta) {
+  letter-spacing: 0;
+}
+.balance {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--color-muted);
+  font-size: 11px;
+}
+.balance strong {
+  color: var(--color-foreground);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+.openButton {
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.openButton:hover {
+  color: var(--color-accent);
+}
+.openButton:disabled {
+  color: var(--color-muted);
+  cursor: default;
+}
+.expanded {
+  grid-column: 1 / -1;
+}
+.details {
+  min-width: 0;
+  border-top: 1px solid var(--color-border);
+  padding-bottom: 4px;
+}
+.details[hidden] {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .expanded {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+  .expanded .details {
+    border-top: 0;
+    border-left: 1px solid var(--color-border);
+  }
+}

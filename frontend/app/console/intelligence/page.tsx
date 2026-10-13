@@ -6,8 +6,9 @@ import type { IntelChange, IntelEndpoint, IntelEndpointDetail, IntelQuery, Intel
 import { catalogName } from "@/lib/paysh";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel } from "@/lib/network";
-import { Button, ErrorNote, Input, PageHeader, Panel, Skeleton, timeAgo } from "@/components/console/ui";
-import { IconBan, IconCheck, IconChevronDown, IconRefresh, IconSearch, IconShield, Spinner } from "@/components/icons";
+import { Button, ErrorNote, Input, Skeleton, timeAgo } from "@/components/console/ui";
+import { IconBan, IconCheck, IconChevronDown, IconRefresh, IconSearch, IconShield, IconSettings, IconX, Spinner } from "@/components/icons";
+import styles from "./intelligence.module.css";
 
 const PAGE = 50;
 
@@ -59,6 +60,7 @@ export default function IntelligencePage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   const loadStatus = useCallback(async () => {
     const [s, c] = await Promise.all([api.getIntelStatus(), api.listIntelChanges({ suspicious: true, limit: 6 })]);
@@ -129,98 +131,108 @@ export default function IntelligencePage() {
 
   const set = (patch: IntelQuery) => setFilter((f) => ({ ...f, ...patch }));
   const sources = useMemo(() => status?.sources.map((s) => s.name) ?? [], [status]);
+  const filterCount = [filter.network, filter.source, filter.protocol, filter.trust, filter.level].filter(Boolean).length;
+  const hasFilters = Boolean(q || filterCount || filter.sort);
+  const clearFilters = () => { setQ(""); setFilter({}); };
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <PageHeader
-        title="Provider intelligence"
-        description="Every paid endpoint the catalogs list, refreshed every six hours. A listing is not a recommendation: Algebra pays only endpoints that are executable, and refuses any payee other than the one it pinned for an endpoint."
-        actions={
-          canManage ? (
-            <Button variant="secondary" onClick={refresh} disabled={refreshing}>
-              {refreshing ? <Spinner size={14} /> : <IconRefresh size={15} />} {refreshing ? "Refreshing…" : "Refresh now"}
-            </Button>
-          ) : undefined
-        }
-      />
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <div>
+          <p className={styles.eyebrow}>DIRECTORY</p>
+          <h1>Provider intelligence</h1>
+          <p className={styles.description}>Discover paid APIs. See what Algebra knows before your agent calls.</p>
+        </div>
+        {canManage && (
+          <Button variant="secondary" onClick={refresh} disabled={refreshing}>
+            {refreshing ? <Spinner size={14} /> : <IconRefresh size={15} />} {refreshing ? "Refreshing…" : "Refresh catalogs"}
+          </Button>
+        )}
+      </header>
 
       {error && <div className="mt-6"><ErrorNote>{error}</ErrorNote></div>}
-      <RefreshLine status={status} />
       <Summary status={status} />
+      <RefreshLine status={status} />
       {suspicious && suspicious.length > 0 && <Suspicious changes={suspicious} />}
 
-      <div className="mt-8 flex flex-col gap-3 lg:flex-row lg:items-center">
-        <label className="relative flex-1">
+      <section className={styles.directory} aria-label="Endpoint directory">
+      <div className={styles.toolbar}>
+        <label className={styles.search}>
           <span className="sr-only">Search the registry</span>
-          <IconSearch size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Provider, capability or URL" className="pl-9" />
+          <IconSearch size={17} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search providers, capabilities or URLs…" />
+          {q && <button type="button" aria-label="Clear search" onClick={() => setQ("")}><IconX size={15} /></button>}
         </label>
-        <div className="flex flex-wrap gap-2">
+        <button type="button" className={styles.filterButton} aria-expanded={showFilters} aria-controls="directory-filters" onClick={() => setShowFilters(!showFilters)}>
+          <IconSettings size={15} /> Filters {filterCount > 0 && <span>{filterCount}</span>}
+        </button>
+        <label className={styles.sort}>
+          <span>Sort by</span>
+          <select aria-label="Sort" value={filter.sort ?? ""} onChange={(e) => set({ sort: e.target.value || undefined })}>
+            {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+        </label>
+      </div>
+      {showFilters && <div id="directory-filters" className={styles.filters}>
+        <label><span>Network</span>
           <select aria-label="Network" className={select} value={filter.network ?? ""} onChange={(e) => set({ network: e.target.value || undefined })}>
             {NETWORKS.map((n) => <option key={n.id} value={n.id}>{n.label}</option>)}
           </select>
+        </label>
+        <label><span>Catalog</span>
           <select aria-label="Catalog" className={select} value={filter.source ?? ""} onChange={(e) => set({ source: e.target.value || undefined })}>
             <option value="">Every catalog</option>
             {sources.map((s) => <option key={s} value={s}>{sourceName(s)}</option>)}
           </select>
+        </label>
+        <label><span>Payment protocol</span>
           <select aria-label="Payment protocol" className={select} value={filter.protocol ?? ""} onChange={(e) => set({ protocol: e.target.value || undefined })}>
             <option value="">Any protocol</option>
             <option value="x402">x402</option>
             <option value="mpp">MPP</option>
             <option value="monid-balance">Monid balance</option>
           </select>
+        </label>
+        <label><span>Identity</span>
           <select aria-label="Trust" className={select} value={filter.trust ?? ""} onChange={(e) => set({ trust: e.target.value || undefined })}>
             <option value="">Any trust</option>
             <option value="verified">Verified</option>
             <option value="unverified">Unverified</option>
             <option value="blocked">Blocked</option>
           </select>
-          <select aria-label="Sort" className={select} value={filter.sort ?? ""} onChange={(e) => set({ sort: e.target.value || undefined })}>
-            {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </label>
+        <label><span>Evidence</span>
+          <select aria-label="Evidence" className={select} value={filter.level ?? ""} onChange={(e) => set({ level: e.target.value || undefined })}>
+            {LEVELS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
           </select>
-        </div>
+        </label>
+      </div>}
+      <div className={styles.results}>
+        <p aria-live="polite">{rows ? <><strong>{total.toLocaleString()}</strong> endpoint{total === 1 ? "" : "s"}{filterCount || q ? " matching your search" : " across the catalogs"}</> : "Loading endpoints…"}</p>
+        {hasFilters && <button type="button" onClick={clearFilters}>Reset filters <IconX size={12} /></button>}
       </div>
-      <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="What is known">
-        {LEVELS.map((l) => (
-          <button
-            key={l.id || "all"}
-            type="button"
-            aria-pressed={(filter.level ?? "") === l.id}
-            onClick={() => set({ level: l.id || undefined })}
-            className={`inline-flex h-8 items-center rounded-full border px-3 text-xs transition-colors ${
-              (filter.level ?? "") === l.id ? "border-primary bg-primary-tint text-foreground" : "border-border-strong text-foreground hover:border-foreground/35"
-            }`}
-          >
-            {l.label}
-          </button>
-        ))}
-      </div>
-
-      <p className="mt-4 text-xs text-muted">
-        {rows ? `${total.toLocaleString()} endpoint${total === 1 ? "" : "s"}` : "Loading…"} · Listed, Quoted, Tested, Verified and Executable are separate facts, each recorded from Algebra&apos;s own calls.
-      </p>
-
-      <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-surface">
-        <table className="w-full min-w-[880px] text-left text-sm">
-          <thead className="border-b border-border text-xs text-muted">
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <caption className="sr-only">Paid endpoints. Expand an endpoint to see its evidence and history.</caption>
+          <thead>
             <tr>
-              <th className="px-4 py-2.5 font-medium">Endpoint</th>
-              <th className="px-3 py-2.5 font-medium">Network</th>
-              <th className="px-3 py-2.5 text-right font-medium">Listed price</th>
-              {LEVEL_COLUMNS.map((c) => (
-                <th key={c.key} className="px-2 py-2.5 text-center font-medium" title={c.hint}>{c.label}</th>
-              ))}
-              <th className="px-3 py-2.5 font-medium">Trust</th>
-              <th className="w-8" />
+              <th scope="col">Provider / endpoint</th>
+              <th scope="col" className={styles.networkColumn}>Network</th>
+              <th scope="col" className={styles.priceColumn}>Listed price</th>
+              <th scope="col" className={styles.availabilityColumn}>Availability</th>
+              <th scope="col">Identity</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {!rows && [0, 1, 2, 3, 4].map((i) => (
-              <tr key={i}><td colSpan={10} className="px-4 py-3"><Skeleton className="h-8" /></td></tr>
+              <tr key={i}><td colSpan={5} className="px-4 py-3"><Skeleton className="h-8" /></td></tr>
             ))}
             {rows?.length === 0 && (
-              <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-muted">
-                {status && status.summary.endpoints === 0 ? "The registry is empty: the first refresh runs a minute after the API starts." : "Nothing matches these filters."}
+              <tr><td colSpan={5} className={styles.empty}>
+                <IconSearch size={22} className="mx-auto mb-3 text-muted" />
+                <p className="font-medium text-foreground">{status && status.summary.endpoints === 0 ? "No endpoints yet" : "No matching endpoints"}</p>
+                <p className="mt-1 text-sm text-muted">{status && status.summary.endpoints === 0 ? "Endpoints will appear after the first catalog refresh." : "Try another search or adjust your filters."}</p>
+                {hasFilters && <button type="button" className="mt-4 text-sm underline" onClick={clearFilters}>Clear search and filters</button>}
               </td></tr>
             )}
             {rows?.map((e) => (
@@ -231,119 +243,154 @@ export default function IntelligencePage() {
         </table>
       </div>
       {rows && rows.length < total && (
-        <div className="mt-4 flex justify-center">
+        <div className={styles.pagination}>
+          <span>Showing {rows.length.toLocaleString()} of {total.toLocaleString()}</span>
           <Button variant="secondary" onClick={loadMore} disabled={loadingMore}>
-            {loadingMore && <Spinner size={13} />} Show more ({(total - rows.length).toLocaleString()} left)
+            {loadingMore && <Spinner size={13} />} {loadingMore ? "Loading…" : "Load more endpoints"}
           </Button>
         </div>
       )}
-      <p className="mt-6 text-xs leading-relaxed text-muted">
-        {status?.discovery?.parallel_ai ? `Open-web discovery (Parallel AI): ${status.discovery.parallel_ai}.` : ""} Three facts are kept apart. <strong className="font-medium text-foreground">Payment tested</strong>: Algebra paid the endpoint and it delivered, which proves one transaction worked and nothing about who the seller is. <strong className="font-medium text-foreground">Identity verified</strong> (the check mark): every automatic check passed and a person reviewed evidence of who runs it; no listing, quote or payment ever grants it. <strong className="font-medium text-foreground">Execution approved</strong>: decided for each request by your Spend Pass and the router&apos;s guards, whatever an endpoint&apos;s trust. None is a guarantee about a provider. Executable says the router could pay it; mainnet payments stay off unless the operator enables them.
-      </p>
+      </section>
+      <details className={styles.guide}>
+        <summary><IconShield size={14} /> A listing is not a recommendation <IconChevronDown size={13} /></summary>
+        <div>
+          <p>Algebra pays only executable endpoints and refuses any payee other than the one pinned to an endpoint. Mainnet payments stay off unless the operator enables them.</p>
+          <dl>
+            <div><dt>Payment tested</dt><dd>Algebra paid the endpoint and it delivered. This proves one transaction worked; it does not verify the seller.</dd></div>
+            <div><dt>Identity verified</dt><dd>Every automatic check passed and a person reviewed evidence of who runs the endpoint. Listings, quotes and payments never grant verification.</dd></div>
+            <div><dt>Execution approved</dt><dd>Your Spend Pass and the router&apos;s guards decide approval for every request. Executable means the router could pay it, not that your request is approved.</dd></div>
+          </dl>
+          <p>Listed, quoted, tested, verified and executable are independent facts. None is a guarantee about a provider.</p>
+          {status?.discovery?.parallel_ai && <p>Open-web discovery (Parallel AI): {status.discovery.parallel_ai}.</p>}
+        </div>
+      </details>
     </div>
   );
 }
 
 function RefreshLine({ status }: { status: IntelStatus | null }) {
-  if (!status) return <Skeleton className="mt-6 h-5 w-2/3" />;
+  if (!status) return <Skeleton className="mt-4 h-4 w-48" />;
   const last = status.runs?.find((r) => r.status !== "running");
   const running = status.runs?.find((r) => r.status === "running");
+  const issues = status.sources.filter((s) => s.last_error || s.stale).length;
   return (
-    <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted">
-      <span className="text-foreground">
-        {running ? "Refreshing now…" : last ? `Last refresh ${timeAgo(last.finished_at ?? last.started_at)}: ${last.status}` : "Not refreshed yet"}
-        {last && ` (${last.seen.toLocaleString()} seen, ${last.added} new, ${last.changed} changed, ${last.removed} removed)`}
-      </span>
-      {status.job?.next_run_at && <span>Next: {new Date(status.job.next_run_at).toUTCString().slice(17, 22)} UTC · schedule {status.schedule}</span>}
-      {status.sources.map((s) => (
-        <span key={s.name} className="inline-flex items-center gap-1.5" title={s.last_error || undefined}>
-          <span className={`h-1.5 w-1.5 rounded-full ${s.last_error ? "bg-danger" : s.stale ? "bg-accent" : "bg-primary"}`} />
-          {sourceName(s.name)}: {s.last_success_at ? `read ${timeAgo(s.last_success_at)}` : "not read yet"}
-          {s.stale && s.last_success_at ? " (stale)" : ""}
-        </span>
-      ))}
-    </div>
+    <details className={styles.sync}>
+      <summary>
+        {running ? <Spinner size={12} /> : <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${issues || last?.status === "failed" || last?.status === "partial" ? "bg-accent" : last ? "bg-success" : "bg-muted"}`} />}
+        <span>{running ? "Refreshing catalogs…" : last ? `Updated ${timeAgo(last.finished_at ?? last.started_at)}` : "Waiting for the first refresh"}</span>
+        <span className={styles.syncMeta}>{issues ? `${issues} catalog${issues === 1 ? "" : "s"} need attention` : `${status.sources.length} catalogs · every 6 hours`}</span>
+        <IconChevronDown size={12} />
+      </summary>
+      <div className={styles.syncDetails}>
+        <div className={styles.syncStats}>
+          {last && <p>Last refresh: {last.status} · {last.seen.toLocaleString()} seen · {last.added} new · {last.changed} changed · {last.removed} removed</p>}
+          {status.job?.next_run_at && <p>Next refresh: {new Date(status.job.next_run_at).toUTCString()} · Schedule: {status.schedule} (UTC)</p>}
+          {last?.error && <p className="text-danger">{last.error}</p>}
+        </div>
+        <ul>
+          {status.sources.map((s) => <li key={s.name}>
+            <span>{sourceName(s.name)}</span>
+            <span className={s.last_error ? "text-danger" : s.stale ? "text-accent" : "text-muted"}>{s.last_error || (s.last_success_at ? `${s.stale ? "Stale · " : ""}Read ${timeAgo(s.last_success_at)}` : "Not read yet")}</span>
+          </li>)}
+        </ul>
+        <dl className={styles.evidenceStats}>
+          {[["New this week", status.summary.new_this_week], ["Quoted", status.summary.quoted], ["Payment tested", status.summary.tested], ["Identity verified", status.summary.by_trust.verified ?? 0], ["Blocked", status.summary.by_trust.blocked ?? 0]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{Number(value).toLocaleString()}</dd></div>)}
+        </dl>
+      </div>
+    </details>
   );
 }
 
 function Summary({ status }: { status: IntelStatus | null }) {
   const s = status?.summary;
   const tiles = [
-    { label: "Endpoints", value: s?.endpoints },
-    { label: "Providers", value: s?.providers },
-    { label: "New this week", value: s?.new_this_week },
-    { label: "Quoted", value: s?.quoted },
-    { label: "Tested", value: s?.tested },
-    { label: "Verified", value: s?.by_trust?.verified ?? 0 },
-    { label: "Executable", value: s?.executable },
-    { label: "Blocked", value: s?.by_trust?.blocked ?? 0, danger: true },
+    { label: "Cataloged endpoints", value: s?.endpoints, hint: "Across connected catalogs" },
+    { label: "Providers", value: s?.providers, hint: "Distinct providers in the directory" },
+    { label: "Executable endpoints", value: s?.executable, hint: "Subject to your Spend Pass" },
   ];
   return (
-    <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-8">
+    <dl className={styles.summary}>
       {tiles.map((t) => (
-        <div key={t.label} className="rounded-lg border border-border bg-surface px-3.5 py-3">
-          <p className="text-[0.6875rem] text-muted">{t.label}</p>
-          <p className={`mt-1 font-mono text-lg tabular-nums ${t.danger && (t.value ?? 0) > 0 ? "text-danger" : "text-foreground"}`}>
+        <div key={t.label}>
+          <dt>{t.label}</dt>
+          <dd>
             {t.value === undefined ? "—" : t.value.toLocaleString()}
-          </p>
+          </dd>
+          <p>{t.hint}</p>
         </div>
       ))}
-    </div>
+    </dl>
   );
 }
 
 function Suspicious({ changes }: { changes: IntelChange[] }) {
   return (
-    <Panel className="mt-5 border-danger/30 py-4">
-      <p className="flex items-center gap-2 text-sm font-medium text-foreground"><IconShield size={16} className="text-danger" /> Suspicious changes</p>
-      <ul className="mt-2 space-y-1.5 text-xs text-muted">
+    <details className={styles.security}>
+      <summary>
+        <IconShield size={17} className="shrink-0 text-danger" />
+        <span><strong>Suspicious changes detected</strong><small>Review recent payee and trust changes.</small></span>
+        <span className={styles.review}>Review <IconChevronDown size={14} /></span>
+      </summary>
+      <div className={styles.securityDetails}>
+      <p className="mb-3 text-xs text-muted">Latest {changes.length} flagged change{changes.length === 1 ? "" : "s"}. A changed payee cannot receive payment while the endpoint is blocked.</p>
+      <ul>
         {changes.map((c) => (
-          <li key={c.id} className="flex flex-wrap gap-x-2">
+          <li key={c.id}>
             <span className="font-mono text-foreground">{c.provider_id}</span>
             <span>{describe(c)}</span>
             <span>· {timeAgo(c.created_at)}</span>
           </li>
         ))}
       </ul>
-    </Panel>
+      </div>
+    </details>
   );
 }
 
-function Tick({ on }: { on: boolean }) {
-  return on ? <IconCheck size={15} className="mx-auto text-primary" aria-label="yes" /> : <span className="block text-center text-muted/60" aria-label="no">–</span>;
-}
-
 function TrustBadge({ e }: { e: IntelEndpoint }) {
-  const tone = e.trust === "verified" ? "bg-primary-tint text-primary" : e.trust === "blocked" ? "bg-danger-tint text-danger" : "bg-border text-muted";
+  const tone = e.trust === "verified" ? "bg-primary-tint text-primary" : e.trust === "blocked" ? "bg-danger-tint text-danger" : "text-muted";
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${tone}`} title={e.trust_reason || undefined}>
       {e.trust === "verified" && <IconCheck size={12} />}
       {e.trust === "blocked" && <IconBan size={12} />}
-      {e.trust}
+      {e.trust === "unverified" ? "Unverified" : e.trust === "verified" ? "Verified" : "Blocked"}
     </span>
   );
+}
+
+function availabilityLabel(e: IntelEndpoint) {
+  if (e.trust === "blocked") return "Blocked";
+  if (e.status === "removed") return "Removed";
+  if (e.status === "unreachable") return "Unreachable";
+  return e.levels.executable ? "Executable" : "Not executable";
 }
 
 function Row({ e, open, onToggle, canManage, onChanged }: { e: IntelEndpoint; open: boolean; onToggle: () => void; canManage: boolean; onChanged: (e: IntelEndpoint) => void }) {
   return (
     <>
-      <tr className={`cursor-pointer align-top hover:bg-primary-tint/30 ${e.status === "removed" ? "opacity-60" : ""}`} onClick={onToggle}>
-        <td className="max-w-[360px] px-4 py-3">
-          <p className="truncate font-medium text-foreground">{e.provider_name || e.provider_id}</p>
-          <p className="truncate font-mono text-[0.6875rem] text-muted" title={e.url}>{e.method} {e.url.replace(/^https?:\/\//, "")}</p>
-          <p className="mt-0.5 text-[0.6875rem] text-muted">{sourceName(e.source)}{e.status !== "active" ? ` · ${e.status}` : ""}</p>
+      <tr className={`${styles.endpointRow} ${open ? styles.expanded : ""} ${e.status === "removed" ? "opacity-60" : ""}`}>
+        <td>
+          <button type="button" className={styles.endpointButton} onClick={onToggle} aria-expanded={open} aria-controls={`endpoint-${e.id}`}>
+            <IconChevronDown size={14} className={`shrink-0 text-muted ${open ? "rotate-180" : ""}`} />
+            <span>
+              <strong title={e.provider_name || e.provider_id}>{e.provider_name || e.provider_id}</strong>
+              <small title={`${e.method} ${e.url}`}>{sourceName(e.source)} <span>·</span> {e.capability || e.url.replace(/^https?:\/\//, "")}</small>
+              <span className={styles.mobileMeta}>{networkLabel(e.network) || "—"} · {e.listed_price_minor > 0 ? formatUSDC(e.listed_price_minor) : "Price not listed"}<span className="block mt-1">{availabilityLabel(e)}</span></span>
+            </span>
+          </button>
         </td>
-        <td className="px-3 py-3 text-xs whitespace-nowrap text-foreground">{networkLabel(e.network) || "—"}<span className="block text-muted">{e.protocol}</span></td>
-        <td className="px-3 py-3 text-right font-mono text-xs whitespace-nowrap text-foreground tabular-nums">
+        <td className={styles.networkColumn}>{networkLabel(e.network) || "—"}<span className={styles.cellMeta}>{e.protocol}</span></td>
+        <td className={styles.priceColumn}>
           {e.listed_price_minor > 0 ? formatUSDC(e.listed_price_minor) : "—"}
-          {e.latency_ms ? <span className="block text-muted">{e.latency_ms} ms</span> : null}
+          {e.latency_ms ? <span className={styles.cellMeta}>{e.latency_ms} ms</span> : null}
         </td>
-        {LEVEL_COLUMNS.map((c) => <td key={c.key} className="px-2 py-3"><Tick on={e.levels[c.key]} /></td>)}
-        <td className="px-3 py-3"><TrustBadge e={e} /></td>
-        <td className="px-2 py-3"><IconChevronDown size={16} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} /></td>
+        <td className={styles.availabilityColumn}>
+          <span className={styles.availability}><span className={`h-1.5 w-1.5 rounded-full ${e.trust === "blocked" ? "bg-danger" : e.status === "active" && e.levels.executable ? "bg-success" : "bg-border-strong"}`} />{availabilityLabel(e)}</span>
+        </td>
+        <td><TrustBadge e={e} /></td>
       </tr>
       {open && (
-        <tr><td colSpan={10} className="bg-background px-4 py-4"><Detail id={e.id} canManage={canManage} onChanged={onChanged} /></td></tr>
+        <tr id={`endpoint-${e.id}`}><td colSpan={5} className={styles.detail}><Detail id={e.id} canManage={canManage} onChanged={onChanged} /></td></tr>
       )}
     </>
   );
@@ -378,6 +425,10 @@ function Detail({ id, canManage, onChanged }: { id: string; canManage: boolean; 
   if (error && !d) return <ErrorNote>{error}</ErrorNote>;
   if (!d) return <p className="flex items-center gap-2 text-xs text-muted"><Spinner size={13} /> Loading its history…</p>;
   const facts: [string, string | undefined][] = [
+    ["Provider", d.provider_name || d.provider_id],
+    ["Endpoint", `${d.method} ${d.url}`],
+    ["Network / protocol", `${networkLabel(d.network) || d.network} · ${d.protocol}`],
+    ["Listed price", d.listed_price_minor > 0 ? formatUSDC(d.listed_price_minor) : "Not listed"],
     ["Capability", d.capability],
     ["Pinned payee", d.pinned_pay_to || "not pinned yet (pinned on its first paid delivery)"],
     ["Payee it last named", d.pay_to],
@@ -394,9 +445,16 @@ function Detail({ id, canManage, onChanged }: { id: string; canManage: boolean; 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
       <div>
+        <p className="mb-3 text-xs font-medium text-foreground">Endpoint evidence</p>
+        <ul className={styles.evidence}>
+          {LEVEL_COLUMNS.map((c) => <li key={c.key} title={c.hint}>
+            {d.levels[c.key] ? <IconCheck size={13} className="text-success" /> : <span className="text-muted">–</span>}
+            <span>{c.label}<span className="sr-only">: {d.levels[c.key] ? "yes" : "no"}. {c.hint}</span></span>
+          </li>)}
+        </ul>
         <dl className="space-y-1.5 text-xs">
           {facts.filter(([, v]) => v).map(([k, v]) => (
-            <div key={k} className="flex gap-3"><dt className="w-40 shrink-0 text-muted">{k}</dt><dd className="min-w-0 font-mono break-all text-foreground">{v}</dd></div>
+            <div key={k} className="flex flex-col gap-1 sm:flex-row sm:gap-3"><dt className="shrink-0 text-muted sm:w-40">{k}</dt><dd className="min-w-0 break-all text-foreground">{v}</dd></div>
           ))}
         </dl>
         {checks.length > 0 && (

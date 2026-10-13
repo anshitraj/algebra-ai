@@ -1,43 +1,66 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { motion, useReducedMotion } from "motion/react";
+import Link from "next/link";
+import { useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import * as api from "@/lib/api-client";
 import { firstName, useSession } from "@/lib/session";
 import type { OnboardingAnswers } from "@/lib/types";
 import { categoryLabel } from "@/lib/paysh";
 import { Logo } from "@/components/logo";
-import { IconArrowRight, IconCheck, Spinner } from "@/components/icons";
+import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconCheck,
+  Spinner,
+} from "@/components/icons";
+import styles from "./onboarding.module.css";
 
-// What agents can pay for, in the catalogs' own categories. The answer is a
-// starting point for the console, never a limit: limits live on Spend Passes.
-const USES = ["finance", "ai_ml", "search", "data", "media", "maps", "translation", "messaging", "infrastructure"];
-
+const USES = [
+  { id: "ai_ml", symbol: "✦", hint: "Models & inference" },
+  { id: "search", symbol: "⌕", hint: "Answers & discovery" },
+  { id: "data", symbol: "▥", hint: "Insights & enrichment" },
+  { id: "finance", symbol: "↗", hint: "Markets & onchain data" },
+  { id: "media", symbol: "◈", hint: "Images, audio & video" },
+  { id: "maps", symbol: "◎", hint: "Places & navigation" },
+  { id: "translation", symbol: "文", hint: "Language & localization" },
+  { id: "messaging", symbol: "▤", hint: "Messages & notifications" },
+  { id: "infrastructure", symbol: "⌘", hint: "Tools & compute" },
+];
+const STEPS = ["Welcome", "Your agents", "How it works"];
 const EASE = [0.16, 1, 0.3, 1] as const;
 
-/**
- * Onboarding is one screen: a name if we don't have one, what the agents
- * will pay for, then on to the quickstart (a project's sandbox Spend Pass
- * and an API key). The account's
- * legacy shopping guardrails get their defaults; nothing here asks for an
- * address, a card or a wallet.
- */
 export function OnboardingFlow() {
-  const router = useRouter();
   const reduce = useReducedMotion();
   const { user, status, setUser } = useSession();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const submitting = useRef(false);
+  const [step, setStep] = useState(0);
+  const [direction, setDirection] = useState(1);
   const [name, setName] = useState("");
   const [uses, setUses] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [destination, setDestination] = useState("/console/quickstart");
+  const needsName = !user?.name;
 
-  const needsName = status === "authenticated" && !user?.name;
+  function go(next: number) {
+    if (submitting.current) return;
+    setDirection(next > step ? 1 : -1);
+    setStep(next);
+    setError(null);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
 
-  function answers(): OnboardingAnswers {
-    return {
+  async function finish(skipped = false) {
+    if (submitting.current || status !== "authenticated") return;
+    submitting.current = true;
+    setBusy(true);
+    setError(null);
+    const answers: OnboardingAnswers = {
       name: name.trim() || undefined,
-      // Every paid call an agent makes through Algebra is a digital service.
+      provider_categories: uses,
       use_cases: ["digital_services"],
       priority: "best_value",
       household: "solo",
@@ -52,117 +75,518 @@ export function OnboardingFlow() {
         international_requires_approval: true,
       },
     };
-  }
-
-  async function finish(next: string) {
-    setBusy(true);
-    setError(null);
     try {
-      setUser(await api.completeOnboarding(answers()));
-      router.replace(next);
+      setUser(await api.completeOnboarding(answers));
+      setDestination(skipped ? "/console" : "/console/quickstart");
+      setDone(true);
+      window.scrollTo({ top: 0, behavior: "instant" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't finish setting up. Try again.");
+      const message =
+        err instanceof Error
+          ? err.message
+          : "We couldn’t save your setup. Please try again.";
+      setError(
+        message.startsWith("cross-origin request rejected")
+          ? "Your setup couldn’t be saved because this site’s connection is misconfigured. Your answers are still here; try again once the connection is restored."
+          : message,
+      );
+    } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
 
   return (
-    <div className="min-h-dvh bg-background">
-      <header className="flex items-center justify-between px-6 py-5 sm:px-10">
-        <span className="flex items-center gap-2.5 text-foreground">
-          <Logo size={22} />
-          <span className="font-display text-[1rem] font-semibold tracking-tight">Algebra</span>
-        </span>
-        <button type="button" onClick={() => finish("/console")} disabled={busy} className="text-sm text-muted hover:text-foreground disabled:opacity-50">
-          Skip for now
-        </button>
+    <div className={styles.root}>
+      <header className={styles.header}>
+        <Link href="/" className={styles.brand} aria-label="Algebra home">
+          <Logo size={30} />
+          <span>
+            algebra<span className={styles.brandDot}>.</span>
+          </span>
+        </Link>
+        {!done && status === "authenticated" && (
+          <button
+            className={styles.skip}
+            type="button"
+            onClick={() => finish(true)}
+            disabled={busy}
+          >
+            Set up later <IconArrowRight size={14} />
+          </button>
+        )}
+        {done && (
+          <span className={styles.saved}>
+            <IconCheck size={15} /> Setup complete
+          </span>
+        )}
       </header>
-
-      <motion.main
-        initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, ease: EASE }}
-        className="mx-auto max-w-xl px-6 pt-8 pb-20"
-      >
-        <h1 className="font-display text-[2rem] leading-tight font-semibold tracking-tight text-balance text-foreground">
-          {user?.name ? `Welcome, ${firstName(user)}.` : "Welcome to Algebra."}
-        </h1>
-        <p className="mt-3 text-[1.0125rem] leading-relaxed text-muted">
-          Algebra lets your AI agents pay for APIs in USDC on Solana, inside limits you set. Your agent gets an API key that
-          spends only through a Spend Pass, never a wallet key, and every payment ends in a signed receipt.
-        </p>
-
-        {needsName && (
-          <label className="mt-9 block">
-            <span className="text-sm font-medium text-foreground">What should we call you?</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoComplete="name"
-              maxLength={80}
-              placeholder="Your name"
-              className="mt-2 w-full rounded-xl border border-border-strong bg-surface px-3.5 py-2.5 text-[0.95rem] text-foreground placeholder:text-muted focus-visible:border-primary"
-            />
-          </label>
-        )}
-
-        <fieldset className="mt-9">
-          <legend className="text-sm font-medium text-foreground">What will your agents pay for?</legend>
-          <p className="mt-1 text-xs text-muted">Optional. It only decides what the console shows you first.</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {USES.map((u) => {
-              const on = uses.includes(u);
-              return (
-                <button
-                  key={u}
-                  type="button"
-                  role="checkbox"
-                  aria-checked={on}
-                  onClick={() => setUses((s) => (s.includes(u) ? s.filter((x) => x !== u) : [...s, u]))}
-                  className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-sm transition-colors ${
-                    on ? "border-primary bg-primary text-primary-tint" : "border-border-strong bg-surface text-foreground hover:border-foreground/35"
-                  }`}
-                >
-                  {on && <IconCheck size={13} strokeWidth={2.4} />}
-                  {categoryLabel(u)}
-                </button>
-              );
-            })}
-          </div>
-        </fieldset>
-
-        <ol className="mt-10 space-y-3 rounded-2xl border border-border bg-surface p-5 text-sm">
-          {[
-            ["Set the limits", "A Spend Pass for your project: a USDC budget, the most one call may cost, when to ask you, and which providers it may pay."],
-            ["Get an API key and connect your agent", "Over MCP or REST. The key spends only through that pass, starting in the sandbox with simulated USDC."],
-            ["Watch it work", "Every call, its price, the payment and the receipt, in Executions."],
-          ].map(([t, b], i) => (
-            <li key={t} className="flex gap-3">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary-tint text-xs font-medium text-primary">{i + 1}</span>
-              <span>
-                <span className="block font-medium text-foreground">{t}</span>
-                <span className="block text-muted">{b}</span>
-              </span>
-            </li>
-          ))}
-        </ol>
-
-        {error && (
-          <p role="alert" className="mt-6 rounded-xl bg-danger-tint px-4 py-3 text-sm text-danger">
-            {error}
-          </p>
-        )}
-
-        <button
-          type="button"
-          onClick={() => finish("/console/quickstart")}
-          disabled={busy}
-          className="mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-[0.95rem] font-medium text-primary-tint transition-opacity hover:opacity-95 disabled:opacity-70"
+      {status !== "authenticated" ? (
+        <main className={styles.loading} role="status">
+          <Spinner size={24} />
+          <span>Getting your workspace ready…</span>
+        </main>
+      ) : (
+        <main
+          className={`${styles.main} ${step === 2 && !done ? styles.wide : ""}`}
         >
-          {busy ? <Spinner size={16} /> : null}
-          Start the quickstart <IconArrowRight size={16} />
-        </button>
-      </motion.main>
+          {!done && (
+            <nav className={styles.progress} aria-label="Onboarding progress">
+              <ol>
+                {STEPS.map((label, i) => (
+                  <li
+                    key={label}
+                    aria-current={i === step ? "step" : undefined}
+                    className={i <= step ? styles.activeStep : ""}
+                  >
+                    <span>{i < step ? <IconCheck size={13} /> : i + 1}</span>
+                    <span className={styles.stepLabel}>{label}</span>
+                  </li>
+                ))}
+              </ol>
+              <div
+                className={styles.progressTrack}
+                role="progressbar"
+                aria-label="Setup progress"
+                aria-valuemin={0}
+                aria-valuemax={3}
+                aria-valuenow={step + 1}
+              >
+                <motion.span
+                  initial={false}
+                  animate={{ width: `${((step + 1) / 3) * 100}%` }}
+                  transition={{ duration: reduce ? 0 : 0.35, ease: EASE }}
+                />
+              </div>
+            </nav>
+          )}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={done ? "complete" : step}
+              initial={reduce ? false : { opacity: 0, y: 12, x: direction * 8 }}
+              animate={{ opacity: 1, y: 0, x: 0 }}
+              exit={
+                reduce
+                  ? { opacity: 0 }
+                  : { opacity: 0, y: -8, x: direction * -8 }
+              }
+              transition={{ duration: reduce ? 0 : 0.25, ease: EASE }}
+              onAnimationComplete={() => {
+                if (step > 0 || done)
+                  heading.current?.focus({ preventScroll: true });
+              }}
+            >
+              {done ? (
+                <>
+                  <Confetti />
+                  <div className={styles.completeArt} aria-hidden="true">
+                    <span className={styles.completeRing} />
+                    <span className={styles.completeCheck}>
+                      <IconCheck size={40} strokeWidth={2} />
+                    </span>
+                    <span className={styles.sparkOne}>✦</span>
+                    <span className={styles.sparkTwo}>✧</span>
+                  </div>
+                  <div className={styles.center}>
+                    <span className={styles.eyebrow}>A GOOD START</span>
+                    <h1 ref={heading} tabIndex={-1} className={styles.title}>
+                      You’re all set<span className={styles.accent}>.</span>
+                    </h1>
+                    <p className={styles.description}>
+                      {firstName(user) ? `${firstName(user)}, your` : "Your"}{" "}
+                      workspace is ready. Let’s give your first agent a little
+                      spending power.
+                    </p>
+                  </div>
+                  <div className={styles.readyCard}>
+                    <span className={styles.readyIcon}>
+                      <Logo size={28} />
+                    </span>
+                    <div>
+                      <strong>Your Algebra workspace</strong>
+                      <span>
+                        {uses.length
+                          ? uses.slice(0, 3).map(categoryLabel).join(" · ") +
+                            (uses.length > 3 ? ` +${uses.length - 3}` : "")
+                          : "Ready for your first agent"}
+                      </span>
+                    </div>
+                    <span className={styles.readyBadge}>
+                      Ready <IconCheck size={12} />
+                    </span>
+                  </div>
+                  <Link className={styles.primary} href={destination}>
+                    {destination === "/console"
+                      ? "Open my workspace"
+                      : "Let’s make the first call"}
+                    <IconArrowRight size={18} />
+                  </Link>
+                  {destination !== "/console" && (
+                    <Link href="/console" className={styles.secondaryLink}>
+                      Explore my workspace first
+                    </Link>
+                  )}
+                  <p className={styles.footnote}>
+                    Your first call runs in the sandbox with simulated USDC.
+                  </p>
+                </>
+              ) : (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (step === 2) void finish();
+                    else go(step + 1);
+                  }}
+                  aria-busy={busy}
+                >
+                  {step === 0 && (
+                    <>
+                      <div className={styles.welcomeArt} aria-hidden="true">
+                        <div className={styles.orbit} />
+                        <div className={styles.orbitInner} />
+                        <span className={styles.logoTile}>
+                          <Logo size={62} />
+                        </span>
+                        <span className={styles.orbitAgent}>AI</span>
+                        <span className={styles.orbitCheck}>
+                          <IconCheck size={17} />
+                        </span>
+                        <span className={styles.orbitSpark}>✦</span>
+                      </div>
+                      <div className={styles.center}>
+                        <span className={styles.eyebrow}>
+                          YOUR AGENTS. YOUR RULES.
+                        </span>
+                        <h1
+                          ref={heading}
+                          tabIndex={-1}
+                          className={styles.title}
+                        >
+                          A little power.
+                          <br />
+                          <span className={styles.wordart}>
+                            A lot of control.
+                          </span>
+                        </h1>
+                        <p className={styles.description}>
+                          Give your AI agents permission to pay for APIs.
+                          <br className={styles.desktopBreak} /> You set the
+                          limits. Algebra handles the rest.
+                        </p>
+                      </div>
+                      {needsName && (
+                        <label className={styles.nameField}>
+                          <span>
+                            First, what should we call you?{" "}
+                            <span className={styles.optional}>Optional</span>
+                          </span>
+                          <input
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            autoComplete="given-name"
+                            maxLength={80}
+                            placeholder="Your first name"
+                            disabled={busy}
+                          />
+                        </label>
+                      )}
+                      <button
+                        className={styles.primary}
+                        type="submit"
+                        disabled={busy}
+                      >
+                        Let’s get you started <IconArrowRight size={18} />
+                      </button>
+                      <p className={styles.footnote}>
+                        About a minute. Start in the sandbox, on your terms.
+                      </p>
+                    </>
+                  )}
+                  {step === 1 && (
+                    <>
+                      <div className={styles.questionHeader}>
+                        <span className={styles.eyebrow}>MAKE IT YOURS</span>
+                        <h1
+                          ref={heading}
+                          tabIndex={-1}
+                          className={styles.title}
+                        >
+                          What will your
+                          <br />
+                          <span className={styles.wordart}>
+                            agents work on?
+                          </span>
+                        </h1>
+                        <p className={styles.description}>
+                          Pick as many as you like. We’ll save these as your
+                          preferences.
+                        </p>
+                      </div>
+                      <fieldset className={styles.choices} disabled={busy}>
+                        <legend className="sr-only">
+                          Agent interests, select all that apply
+                        </legend>
+                        {USES.map(({ id, symbol, hint }) => (
+                          <label
+                            key={id}
+                            className={`${styles.choice} ${uses.includes(id) ? styles.selected : ""}`}
+                          >
+                            <input
+                              type="checkbox"
+                              name="interests"
+                              value={id}
+                              checked={uses.includes(id)}
+                              onChange={() =>
+                                setUses((prev) =>
+                                  prev.includes(id)
+                                    ? prev.filter((v) => v !== id)
+                                    : [...prev, id],
+                                )
+                              }
+                            />
+                            <span
+                              className={styles.choiceSymbol}
+                              aria-hidden="true"
+                            >
+                              {symbol}
+                            </span>
+                            <span className={styles.choiceCopy}>
+                              <strong>{categoryLabel(id)}</strong>
+                              <span>{hint}</span>
+                            </span>
+                            <span
+                              className={styles.choiceCheck}
+                              aria-hidden="true"
+                            >
+                              {uses.includes(id) && (
+                                <IconCheck size={12} strokeWidth={2.5} />
+                              )}
+                            </span>
+                          </label>
+                        ))}
+                      </fieldset>
+                      <div className={styles.selectionNote} aria-live="polite">
+                        {uses.length
+                          ? `${uses.length} ${uses.length === 1 ? "interest" : "interests"} selected`
+                          : "Just exploring? You can continue without choosing."}
+                      </div>
+                    </>
+                  )}
+                  {step === 2 && (
+                    <>
+                      <div
+                        className={`${styles.center} ${styles.walkthroughHeader}`}
+                      >
+                        <span className={styles.eyebrow}>
+                          THREE SIMPLE STEPS
+                        </span>
+                        <h1
+                          ref={heading}
+                          tabIndex={-1}
+                          className={styles.title}
+                        >
+                          Big possibilities.
+                          <br />
+                          <span className={styles.wordart}>
+                            Clear boundaries.
+                          </span>
+                        </h1>
+                        <p className={styles.description}>
+                          Here’s how your first paid API call comes together.
+                        </p>
+                      </div>
+                      <ol className={styles.walkthrough}>
+                        <WalkthroughCard
+                          index={0}
+                          title="Set the limits"
+                          description="Create a Spend Pass with a USDC budget, a per-call cap, and the providers your agent can pay."
+                        />
+                        <WalkthroughCard
+                          index={1}
+                          title="Connect your agent"
+                          description="Give your agent an API key over MCP or REST. Every call stays inside your Spend Pass."
+                        />
+                        <WalkthroughCard
+                          index={2}
+                          title="Watch it work"
+                          description="Follow each call, payment, and signed receipt. Start safely with simulated USDC in the sandbox."
+                        />
+                      </ol>
+                      <div className={styles.sandboxNote}>
+                        <span aria-hidden="true">✦</span> Your first call is a
+                        sandbox run. No wallet or real funds needed.
+                      </div>
+                    </>
+                  )}
+                  {error && (
+                    <div className={styles.error} role="alert">
+                      <strong>Couldn’t finish setup</strong>
+                      <p>{error}</p>
+                    </div>
+                  )}
+                  {step > 0 && (
+                    <div className={styles.actions}>
+                      <button
+                        type="button"
+                        className={styles.back}
+                        onClick={() => go(step - 1)}
+                        disabled={busy}
+                      >
+                        <IconArrowLeft size={17} /> Back
+                      </button>
+                      <button
+                        type="submit"
+                        className={styles.primary}
+                        disabled={busy}
+                      >
+                        {busy ? (
+                          <>
+                            <Spinner size={17} /> Saving your setup…
+                          </>
+                        ) : (
+                          <>
+                            {step === 2 ? "Finish setup" : "Continue"}
+                            <IconArrowRight size={18} />
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                  {step > 0 && (
+                    <p className={styles.footnote}>
+                      {step === 1
+                        ? "Your preferences don’t restrict what your agents can use."
+                        : "You’ll configure your Spend Pass in the quickstart."}
+                    </p>
+                  )}
+                </form>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      )}
+      <footer className={styles.footer}>
+        <span>Built for agents. Controlled by you.</span>
+        <Link href="/privacy">Privacy</Link>
+      </footer>
+    </div>
+  );
+}
+
+function WalkthroughCard({
+  index,
+  title,
+  description,
+}: {
+  index: number;
+  title: string;
+  description: string;
+}) {
+  return (
+    <li className={styles.walkthroughCard}>
+      <span className={styles.cardStep}>
+        STEP 0{index + 1}
+        <span aria-hidden="true">↴</span>
+      </span>
+      <h2>{title}</h2>
+      <div className={styles.diagram} aria-hidden="true">
+        {index === 0 && (
+          <>
+            <span className={styles.connector} />
+            <div className={styles.passArt}>
+              <span className={styles.artLabel}>
+                <Logo size={15} /> SPEND PASS <span className={styles.artDot} />
+              </span>
+              <strong>
+                100<span> USDC</span>
+              </strong>
+              <div className={styles.budgetTrack}>
+                <span />
+              </div>
+              <span className={styles.artRow}>
+                Per-call limit <b>0.05 USDC</b>
+              </span>
+            </div>
+            <div className={styles.artPill}>
+              Your rules <IconCheck size={12} />
+            </div>
+          </>
+        )}
+        {index === 1 && (
+          <>
+            <span className={styles.connector} />
+            <div className={styles.agentArt}>
+              AI<span>Your agent</span>
+            </div>
+            <div className={styles.keyArt}>
+              <span className={styles.keyDots}>•••• •••• ••••</span>
+              <span className={styles.keyBadge}>
+                <IconCheck size={12} /> API key connected
+              </span>
+            </div>
+            <div className={styles.artPill}>
+              MCP <span>↔</span> REST
+            </div>
+          </>
+        )}
+        {index === 2 && (
+          <>
+            <span className={styles.receiptBack} />
+            <div className={styles.receiptArt}>
+              <span className={styles.artLabel}>SIGNED RECEIPT</span>
+              <span className={styles.receiptLine} />
+              <span className={styles.receiptLineShort} />
+              <span className={styles.receiptBlocks}>
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className={styles.artRow}>
+                Paid <b>0.02 USDC</b>
+              </span>
+            </div>
+            <span className={styles.receiptCheck}>
+              <IconCheck size={25} strokeWidth={2.5} />
+            </span>
+          </>
+        )}
+      </div>
+      <p>{description}</p>
+    </li>
+  );
+}
+
+function Confetti() {
+  const reduce = useReducedMotion();
+  if (reduce) return null;
+  return (
+    <div className={styles.confetti} aria-hidden="true">
+      {Array.from({ length: 48 }, (_, i) => {
+        const side = i % 2 === 0 ? -1 : 1;
+        return (
+          <motion.i
+            key={i}
+            className={styles.confettiPiece}
+            style={{
+              background: `var(--ob-confetti-${i % 4})`,
+              left: side < 0 ? "8%" : "92%",
+              borderRadius: i % 3 === 0 ? "50%" : "2px",
+            }}
+            initial={{ opacity: 0, x: 0, y: 80, rotate: 0 }}
+            animate={{
+              opacity: [0, 1, 1, 0],
+              x: side * -(60 + ((i * 31) % 340)),
+              y: [80, -130 - ((i * 17) % 180), 420],
+              rotate: side * (160 + i * 13),
+            }}
+            transition={{
+              duration: 2.4 + (i % 5) * 0.12,
+              delay: (i % 8) * 0.025,
+              ease: "easeOut",
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
