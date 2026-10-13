@@ -470,11 +470,23 @@ export function AgentWorkspace() {
     send(text);
   }
 
+  // The approval card shows up while the agent is still writing its wrap-up. A yes given in that moment
+  // must not be lost because the chat is busy: it waits here and is sent the moment the chat is free.
+  const [queued, setQueued] = useState<string | null>(null);
+  useEffect(() => {
+    if (queued === null || running) return;
+    const text = queued;
+    setQueued(null);
+    void send(text);
+  }, [queued, running, send]);
+
   function onApprovalResolved(turnId: string, intentId: string, o: ApprovalOutcome) {
     updateTurn(turnId, (t) => ({ ...t, approvals: t.approvals.map((a) => (a.intentId === intentId ? { ...a, resolved: o } : a)) }));
     refreshConsole();
     setCallsKey((k) => k + 1);
-    send(o === "approved" ? "I approved it. Run it now." : "I cancelled it. Don't run this call.");
+    const text = o === "approved" ? "I approved it. Run it now." : "I cancelled it. Don't run this call.";
+    if (running) setQueued(text);
+    else void send(text);
   }
 
   function pickModel(c: ModelChoice) {
@@ -638,7 +650,7 @@ export function AgentWorkspace() {
               }
               className="block max-h-[200px] w-full resize-none bg-transparent px-4 pt-3.5 text-[0.95rem] leading-relaxed text-foreground placeholder:text-muted/80 focus:outline-none disabled:cursor-not-allowed"
             />
-            <div className="flex items-center gap-2 px-2.5 pt-1 pb-2.5">
+            <div className="flex flex-wrap items-center gap-2 px-2.5 pt-1 pb-2.5">
               <ModelPicker providers={providers} value={choice} onChange={pickModel} lockedProvider={lockedProvider} />
               <PassPicker passes={passes} vaults={vaults} value={passId} onChange={pickPass} disabled={running} />
               {passId && <AskFirstSwitch on={askFirst} onToggle={toggleAskFirst} disabled={running} />}
