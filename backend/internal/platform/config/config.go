@@ -416,6 +416,10 @@ func FromEnv() (*Config, error) {
 		"zepto.co.in,zeptonow.com,swiggy.com,amazon.in,flipkart.com,blinkit.com"))
 
 	cfg.CORSAllowedOrigins = splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"))
+	// A browser's Origin never ends in a slash; an address pasted from one often does.
+	for i, o := range cfg.CORSAllowedOrigins {
+		cfg.CORSAllowedOrigins[i] = strings.TrimRight(o, "/")
+	}
 
 	cfg.GoogleSearchAPIKey = os.Getenv("GOOGLE_SEARCH_API_KEY")
 	cfg.GoogleSearchEngineID = os.Getenv("GOOGLE_SEARCH_ENGINE_ID")

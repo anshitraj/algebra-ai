@@ -40,6 +40,16 @@ func (m *ResendMailer) SendWithAttachment(ctx context.Context, to, subject, text
 	})
 }
 
+// SendHTML sends the HTML body with the plain text beside it (a client shows
+// whichever it can), and attaches data as filename when there is any.
+func (m *ResendMailer) SendHTML(ctx context.Context, to, subject, text, htmlBody, filename string, data []byte) error {
+	email := map[string]any{"from": m.from, "to": []string{to}, "subject": subject, "text": text, "html": htmlBody}
+	if len(data) > 0 {
+		email["attachments"] = []map[string]string{{"filename": filename, "content": base64.StdEncoding.EncodeToString(data)}}
+	}
+	return m.post(ctx, email)
+}
+
 func (m *ResendMailer) post(ctx context.Context, email map[string]any) error {
 	body, err := json.Marshal(email)
 	if err != nil {
@@ -78,6 +88,16 @@ func (m LogMailer) Send(_ context.Context, to, subject, text string) error {
 func (m LogMailer) SendWithAttachment(_ context.Context, to, subject, text, filename string, data []byte) error {
 	m.logger().Warn("email not sent (no RESEND_API_KEY configured) — dev log mailer", "to", to, "subject", subject, "body", text,
 		"attachment", filename, "attachment_bytes", len(data))
+	return nil
+}
+
+// SendHTML logs the text of the email: the HTML says the same thing, laid out.
+func (m LogMailer) SendHTML(_ context.Context, to, subject, text, htmlBody, filename string, data []byte) error {
+	attrs := []any{"to", to, "subject", subject, "body", text, "html_bytes", len(htmlBody)}
+	if len(data) > 0 {
+		attrs = append(attrs, "attachment", filename, "attachment_bytes", len(data))
+	}
+	m.logger().Warn("email not sent (no RESEND_API_KEY configured) — dev log mailer", attrs...)
 	return nil
 }
 

@@ -240,6 +240,9 @@ async function run() {
     check(`GET ${a.length > 60 ? `${a.slice(0, 57)}...` : a}`, r.status === 200 && /immutable/.test(r.headers.get("cache-control") ?? ""), `status ${r.status}`);
   }
   for (const p of ["/robots.txt", "/sitemap.xml"]) check(`GET ${p}`, (await get(p)).status === 200);
+  // Every email shows this mark, fetched by the mail client from the public site.
+  const mark = await get("/email/algebra-mark.png");
+  check("GET /email/algebra-mark.png is a PNG", mark.status === 200 && /image\/png/.test(mark.headers.get("content-type") ?? ""), `status ${mark.status}`);
 }
 
 let stub;
