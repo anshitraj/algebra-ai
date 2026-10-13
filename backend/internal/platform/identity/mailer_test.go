@@ -82,3 +82,45 @@ func TestResendMailerReportsARefusal(t *testing.T) {
 		t.Fatalf("the refusal and its reason come back: %v", err)
 	}
 }
+
+func TestResendMailerSendsHTMLBesideTheText(t *testing.T) {
+	var mu sync.Mutex
+	var got []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var m map[string]any
+		_ = json.Unmarshal(body, &m)
+		mu.Lock()
+		got = append(got, m)
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"id":"email_1"}`))
+	}))
+	defer srv.Close()
+	m := NewResendMailer("re_test_key", "Algebra <no-reply@auth.example.test>")
+	m.endpoint = srv.URL
+
+	if err := m.SendHTML(context.Background(), "ada@example.test", "New sign-in to Algebra", "You signed in.", "<!doctype html><p>You signed in.</p>", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SendHTML(context.Background(), "ada@example.test", "Receipt", "Attached.", "<!doctype html><p>Attached.</p>", "r.pdf", []byte("%PDF")); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 2 {
+		t.Fatalf("%d requests", len(got))
+	}
+	// A client shows the HTML when it can and the text when it can't: both are always sent.
+	for i, e := range got {
+		if e["text"] == "" || e["text"] == nil || !strings.HasPrefix(e["html"].(string), "<!doctype html>") {
+			t.Fatalf("email %d carries both bodies: %v", i, e)
+		}
+	}
+	if _, has := got[0]["attachments"]; has {
+		t.Fatal("no file, no attachment")
+	}
+	files, _ := got[1]["attachments"].([]any)
+	if len(files) != 1 || files[0].(map[string]any)["filename"] != "r.pdf" {
+		t.Fatalf("the file is attached: %v", got[1]["attachments"])
+	}
+}

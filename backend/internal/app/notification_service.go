@@ -61,6 +61,7 @@ type NotificationService struct {
 	users    NotificationUsers
 	mailer   Mailer
 	webURL   string
+	brand    EmailBrand
 	sending  bool
 	receipts ReceiptVerifier
 	// receiptPDF lays a receipt out as a PDF (set by the API, which owns the layout).
@@ -82,7 +83,7 @@ func NewNotificationService(store NotificationStore, users NotificationUsers, ma
 		log = slog.Default()
 	}
 	return &NotificationService{
-		store: store, users: users, mailer: mailer, webURL: strings.TrimRight(webURL, "/"), sending: sending, log: log, now: time.Now,
+		store: store, users: users, mailer: mailer, webURL: strings.TrimRight(webURL, "/"), brand: BrandFor(webURL), sending: sending, log: log, now: time.Now,
 		lastSignIn: map[string]time.Time{}, receiptsSent: map[string][]time.Time{},
 	}
 }
@@ -244,10 +245,17 @@ func (s *NotificationService) SetEmail(ctx context.Context, u *account.User, ema
 		return nil, err
 	}
 	link := s.webURL + "/console/settings?confirm_email=" + url.QueryEscape(raw)
-	body := "Someone asked for Algebra's email notifications (sign-in alerts and receipts for paid calls) to be sent to this address.\n\n" +
-		"Confirm it by opening this link while signed in to that account. It works once and expires in 24 hours:\n\n" + link + "\n\n" +
-		"If this wasn't you, ignore this email: nothing more is sent to this address unless the link is opened.\n"
-	if err := s.mailer.Send(ctx, email, "Confirm your email for Algebra notifications", body); err != nil {
+	doc := EmailDoc{
+		Preheader: "Open the link to get Algebra's sign-in alerts and receipts at this address.",
+		Heading:   "Confirm your email",
+		Lead:      []string{"Someone asked for Algebra's email notifications (sign-in alerts and receipts for paid calls) to be sent to this address."},
+		Button:    &EmailLink{Label: "Confirm this email", URL: link},
+		Notes: []string{
+			"Open it while signed in to that account. It works once and expires in 24 hours.",
+			"If this wasn't you, ignore this email: nothing more is sent to this address unless the link is opened.",
+		},
+	}
+	if err := SendEmail(ctx, s.mailer, s.brand, email, "Confirm your email for Algebra notifications", doc, "", nil); err != nil {
 		// The address may be retried at once: nothing reached it.
 		st.PendingSentAt = nil
 		_ = s.store.SaveNotifySettings(ctx, st, now)
@@ -345,20 +353,35 @@ func (s *NotificationService) SignedIn(ctx context.Context, u *account.User, met
 	if n := oneLine(u.Name, 80); n != "" {
 		hello = "Hi " + n + ","
 	}
-	subject, lead, tail := "New sign-in to Algebra", "You signed in to Algebra.", ""
-	if created {
-		subject, lead = "Welcome to Algebra", "Your Algebra account is ready, and you are signed in."
-		tail = "Start here, in the sandbox, with simulated USDC:\n" + s.webURL + "/console/quickstart\n\n"
+	device := describeUserAgent(meta.UserAgent)
+	settings := s.webURL + "/console/settings"
+	doc := EmailDoc{
+		Preheader: "From " + device + ". If this wasn't you, sign that device out.",
+		Heading:   "New sign-in to your account",
+		Lead:      []string{hello, "You signed in to Algebra."},
+		Rows: []EmailRow{
+			{Label: "When", Value: now.Format("2 January 2006, 15:04 UTC")},
+			{Label: "Device", Value: device},
+			{Label: "IP address", Value: cmpOrDash(oneLine(meta.IP, 64))},
+		},
+		Button: &EmailLink{Label: "Review signed-in devices", URL: settings},
+		Notes: []string{
+			"If this was you, there is nothing to do.",
+			"If it wasn't, sign that device out under Account > Where you're signed in. That also revokes the agent it was using.",
+		},
+		Footer: []string{"You get this email after each sign-in. Turn it off under Account > Email notifications."},
 	}
-	body := hello + "\n\n" + lead + "\n\n" +
-		"When:    " + now.Format("2 January 2006, 15:04 UTC") + "\n" +
-		"Device:  " + describeUserAgent(meta.UserAgent) + "\n" +
-		"IP:      " + cmpOrDash(oneLine(meta.IP, 64)) + "\n\n" +
-		"If this was you, there is nothing to do.\n\n" +
-		"If it wasn't, sign that device out under Account > Where you're signed in. That also revokes the agent it was using:\n" +
-		s.webURL + "/console/settings\n\n" + tail +
-		"You get this email after each sign-in. Turn it off under Account > Email notifications.\n"
-	s.deliver(ctx, "sign_in", u.ID, to, subject, body, "", nil)
+	subject := "New sign-in to Algebra"
+	if created {
+		subject = "Welcome to Algebra"
+		doc.Preheader = "Your account is ready. Start in the sandbox, with simulated USDC."
+		doc.Heading = "Welcome to Algebra"
+		doc.Lead = []string{hello, "Your Algebra account is ready, and you are signed in. Start in the sandbox: a first paid call with simulated USDC, no wallet needed."}
+		doc.Button = &EmailLink{Label: "Start the quickstart", URL: s.webURL + "/console/quickstart"}
+		doc.Links = []EmailLink{{Label: "Review signed-in devices", URL: settings}}
+		doc.Notes = []string{"This sign-in is listed above. If it wasn't you, sign that device out under Account > Where you're signed in."}
+	}
+	s.deliver(ctx, "sign_in", u.ID, to, subject, doc, "", nil)
 }
 
 // ReceiptSigned emails the receipt of a payment that landed on a chain to
@@ -420,49 +443,50 @@ func (s *NotificationService) ReceiptSigned(ctx context.Context, v *IntentView) 
 	if c.Authority.Method == receipt.MethodHuman {
 		authority = "Approved by you"
 	}
-	var b strings.Builder
-	b.WriteString("Algebra paid for an API call under your Spend Pass.\n\n")
-	row := func(label, value string) { fmt.Fprintf(&b, "%-17s%s\n", label+":", value) }
-	row("Amount", amount)
-	row("Paid to", provider)
-	row("For", oneLine(v.Capability, 200))
-	row("Network", where)
-	row("Transaction", pay.Transaction)
-	for _, l := range links {
-		row(l[0], l[1])
-	}
-	row("Authority", authority)
-	row("Receipt ID", c.ID)
-	row("Signed at", time.Unix(c.IssuedAt, 0).UTC().Format("2 January 2006, 15:04:05 UTC"))
 	var pdf []byte
 	if s.receiptPDF != nil {
 		pdf = s.receiptPDF(v, ver)
 	}
-	if len(pdf) > 0 {
-		b.WriteString("\nThe receipt is attached as a PDF.")
+	invoice := s.webURL + "/console/executions/" + url.PathEscape(v.ID) + "/invoice"
+	doc := EmailDoc{
+		Preheader: amount + " to " + provider + " on " + where,
+		Heading:   "Receipt for a paid API call",
+		Lead:      []string{"Algebra paid for an API call under your Spend Pass."},
+		Hero:      &EmailHero{Value: amount, Caption: "paid to " + provider},
+		Rows: []EmailRow{
+			{Label: "For", Value: oneLine(v.Capability, 200)},
+			{Label: "Network", Value: where},
+			{Label: "Authority", Value: authority},
+			{Label: "Signed at", Value: time.Unix(c.IssuedAt, 0).UTC().Format("2 January 2006, 15:04:05 UTC")},
+			{Label: "Receipt ID", Value: c.ID, Wide: true},
+			{Label: "Transaction", Value: pay.Transaction, Wide: true},
+		},
+		Button: &EmailLink{Label: "View the signed receipt", URL: invoice},
+		Footer: []string{fmt.Sprintf("You get this email for each payment that lands on a chain, at most %d an hour. Turn it off under Account > Email notifications: %s/console/settings", ReceiptEmailsPerHour, s.webURL)},
 	}
-	b.WriteString("\nThe signed receipt, in your console:\n" + s.webURL + "/console/executions/" + url.PathEscape(v.ID) + "/invoice\n")
-	b.WriteString("Anyone can check its signature:\n" + s.webURL + "/verify\n\n")
-	b.WriteString("This is a receipt for a payment, not a tax invoice.\n")
-	fmt.Fprintf(&b, "You get this email for each payment that lands on a chain, at most %d an hour. Turn it off under Account > Email notifications:\n%s/console/settings\n", ReceiptEmailsPerHour, s.webURL)
-	s.deliver(ctx, "receipt", u.ID, to, subject, b.String(), "algebra-receipt-"+v.ID+".pdf", pdf)
+	if pay.Network == "solana-devnet" {
+		doc.Badge = "Devnet: test USDC, no real value"
+	}
+	for _, l := range links {
+		doc.Links = append(doc.Links, EmailLink{Label: l[0], URL: l[1]})
+	}
+	doc.Links = append(doc.Links, EmailLink{Label: "Check its signature", URL: s.webURL + "/verify"})
+	if len(pdf) > 0 {
+		doc.Notes = append(doc.Notes, "The receipt is attached as a PDF.")
+	}
+	doc.Notes = append(doc.Notes, "This is a receipt for a payment, not a tax invoice.")
+	s.deliver(ctx, "receipt", u.ID, to, subject, doc, "algebra-receipt-"+v.ID+".pdf", pdf)
 }
 
 // deliver hands one email to the mailer off the caller's path. A failure is
 // logged without the address; what the email reports already happened.
-func (s *NotificationService) deliver(ctx context.Context, kind, userID, to, subject, body, filename string, file []byte) {
+func (s *NotificationService) deliver(ctx context.Context, kind, userID, to, subject string, doc EmailDoc, filename string, file []byte) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 		defer cancel()
-		var err error
-		if am, ok := s.mailer.(AttachmentMailer); ok && len(file) > 0 {
-			err = am.SendWithAttachment(ctx, to, subject, body, filename, file)
-		} else {
-			err = s.mailer.Send(ctx, to, subject, body)
-		}
-		if err != nil {
+		if err := SendEmail(ctx, s.mailer, s.brand, to, subject, doc, filename, file); err != nil {
 			s.log.Warn("notifications: email not sent", "kind", kind, "user_id", userID, "err", err)
 		}
 	}()

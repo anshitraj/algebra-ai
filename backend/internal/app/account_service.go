@@ -450,10 +450,17 @@ func (s *AccountService) RequestPasswordReset(ctx context.Context, email, linkBa
 		return err
 	}
 	link := strings.TrimRight(linkBase, "/") + "/reset-password?token=" + raw
-	body := "Someone asked to reset the password for your Algebra account.\n\n" +
-		"Set a new password here (valid for 30 minutes, single use):\n" + link + "\n\n" +
-		"If this wasn't you, ignore this email — your password stays the same."
-	return s.mailer.Send(ctx, u.Email, "Reset your Algebra password", body)
+	doc := EmailDoc{
+		Preheader: "Set a new password. The link works once and lasts 30 minutes.",
+		Heading:   "Reset your password",
+		Lead:      []string{"Someone asked to reset the password for your Algebra account."},
+		Button:    &EmailLink{Label: "Set a new password", URL: link},
+		Notes: []string{
+			"The link works once and is valid for 30 minutes.",
+			"If this wasn't you, ignore this email: your password stays the same.",
+		},
+	}
+	return SendEmail(ctx, s.mailer, BrandFor(linkBase), u.Email, "Reset your Algebra password", doc, "", nil)
 }
 
 // ResetPassword consumes a reset token, sets the new password, and signs
