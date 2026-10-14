@@ -59,12 +59,16 @@ export type NewProviderRule = "allow" | "cap" | "approve";
 /** How a pass treats a provider whose identity no person has verified: pay, wait for a yes, or never pay. */
 export type UnverifiedRule = "allow" | "approve" | "deny";
 
+/** How a pass treats an endpoint its agent found on the open web: wait for a yes (the default), pay, or never pay. */
+export type WebFoundRule = "allow" | "approve" | "deny";
+
 export type PassControls = {
   max_calls_per_minute: number;
   max_calls_per_provider_per_minute: number;
   new_providers: NewProviderRule;
   new_provider_cap_minor_units: number;
   unverified_providers?: UnverifiedRule;
+  web_found_providers?: WebFoundRule;
 };
 
 export type KillSwitchState = { engaged: boolean; frozen_passes: number; live_passes: number; changed?: number };

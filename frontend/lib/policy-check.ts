@@ -35,7 +35,9 @@ export function hasOwnRules(p: SpendPass): boolean {
     (!!c &&
       ((c.max_calls_per_minute > 0 && c.max_calls_per_minute !== DEFAULT_PER_MINUTE) ||
         (c.max_calls_per_provider_per_minute > 0 && c.max_calls_per_provider_per_minute !== DEFAULT_PER_PROVIDER) ||
-        c.new_providers === "approve"))
+        c.new_providers === "approve" ||
+        // "approve" is what a web find gets when nothing is set: only a change is the person's own rule.
+        (!!c.web_found_providers && c.web_found_providers !== "approve")))
   );
 }
 

@@ -33,6 +33,8 @@ const REASONS: Record<string, string> = {
   PASS_NEW_PROVIDER_OVER_CAP: "A provider this pass has never paid asks more than its cap",
   PASS_UNVERIFIED_PROVIDER_BLOCKED: "The provider's identity isn't verified, and the pass pays verified providers only",
   PASS_UNVERIFIED_PROVIDER_NEEDS_APPROVAL: "The provider's identity isn't verified, and the pass asks you first",
+  PASS_WEB_FOUND_NEEDS_APPROVAL: "Found on the open web, not in a catalog: the pass asks you first",
+  PASS_WEB_FOUND_BLOCKED: "Found on the open web, not in a catalog: the pass doesn't pay those",
   CATEGORY_BLOCKED: "Category is blocked",
   quote_over_budget: "The endpoint asked for more than the limit",
   provider_not_allowed: "Provider isn't on the pass's list",

@@ -30,6 +30,9 @@ const (
 	// RejectUnverifiedProvider: the pass asks for a person's yes before paying
 	// a provider whose identity isn't verified, and there is none yet.
 	RejectUnverifiedProvider = "unverified_provider"
+	// RejectWebFoundProvider: the endpoint was found only on the open web, and
+	// the pass asks for a person's yes before paying one.
+	RejectWebFoundProvider = "web_found_provider"
 )
 
 // RejectNewProviderGate is the plan-level code for a provider held back by
@@ -37,6 +40,7 @@ const (
 const (
 	RejectNewProviderGate = "new_provider_gate"
 	RejectUnverifiedGate  = "unverified_provider_gate"
+	RejectWebFoundGate    = "web_found_gate"
 )
 
 // ProviderTrustReader is the provider registry as the coordinator needs it:
@@ -76,7 +80,7 @@ func providerVerifiedBy(ctx context.Context, t ProviderTrustReader, provider str
 // pass's lock: how many attempts it made in the last minute, overall and to
 // this provider, and whether its person has ever paid this provider. It
 // returns the rejection reason and reason codes, or "" to go ahead.
-func (s *EconomicService) passControls(u EconUnit, p *spendpass.Pass, in *econ.Intent, provider string, verified bool, hold int64, now time.Time) (string, []string, error) {
+func (s *EconomicService) passControls(u EconUnit, p *spendpass.Pass, in *econ.Intent, provider string, verified, foundOnWeb bool, hold int64, now time.Time) (string, []string, error) {
 	c := p.Controls.Effective()
 	since := now.Add(-time.Minute)
 	all, err := u.PassAttemptsSince(p.ID, "", since)
@@ -104,6 +108,16 @@ func (s *EconomicService) passControls(u EconUnit, p *spendpass.Pass, in *econ.I
 	case code == "":
 	case approvable:
 		return RejectUnverifiedProvider, []string{code}, nil
+	default:
+		return RejectAuthorityDenied, []string{code}, nil
+	}
+	// An endpoint nobody lists is held for a person by default, whatever the pass says
+	// about unverified providers in general: most listed providers are unverified,
+	// a web find is one no catalog stands behind.
+	switch code, approvable := c.WebFound(foundOnWeb, in.ApprovedAt != nil); {
+	case code == "":
+	case approvable:
+		return RejectWebFoundProvider, []string{code}, nil
 	default:
 		return RejectAuthorityDenied, []string{code}, nil
 	}
@@ -151,6 +165,9 @@ func (s *ExecutionService) escalateIfGated(ctx context.Context, view *IntentView
 	}
 	if slices.ContainsFunc(rep.Rejected, func(r routing.Rejection) bool { return r.Code == RejectUnverifiedGate }) {
 		codes = append(codes, spendpass.ReasonUnverifiedNeedsApproval)
+	}
+	if slices.ContainsFunc(rep.Rejected, func(r routing.Rejection) bool { return r.Code == RejectWebFoundGate }) {
+		codes = append(codes, spendpass.ReasonWebFoundNeedsApproval)
 	}
 	if len(codes) == 0 {
 		return err

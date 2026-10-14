@@ -11,7 +11,7 @@ import { motion } from "motion/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import * as api from "@/lib/api-client";
 import type { SpendPass } from "@/lib/types";
-import type { NewProviderRule, UnverifiedRule } from "@/lib/routing-types";
+import type { NewProviderRule, UnverifiedRule, WebFoundRule } from "@/lib/routing-types";
 import { formatUSDC } from "@/lib/money";
 import { hasOwnRules } from "@/lib/policy-check";
 import { IconArrowLeft, IconArrowRight, IconBan, IconCheck, IconGauge, IconShield, IconStore, IconTag, IconX, Spinner } from "@/components/icons";
@@ -41,6 +41,8 @@ type Draft = {
   newCap: string;
   /** A provider whose identity no person has verified in Algebra's registry. */
   unverified: UnverifiedRule;
+  /** An endpoint the agent found on the open web and supplied itself. */
+  webFound: WebFoundRule;
   speed: Speed;
 };
 
@@ -57,6 +59,7 @@ function draftOf(p: SpendPass): Draft {
     newRule: c?.new_providers ?? "cap",
     newCap: String((c?.new_provider_cap_minor_units ?? 50_000) / USDC),
     unverified: c?.unverified_providers ?? "allow",
+    webFound: c?.web_found_providers ?? "approve",
     speed,
   };
 }
@@ -96,6 +99,15 @@ function sentences(d: Draft, p: SpendPass): { icon: React.ReactNode; text: strin
           },
         ]
       : []),
+    {
+      icon: <IconShield size={15} />,
+      text:
+        d.webFound === "approve"
+          ? "An endpoint your agent finds on the open web, which no catalog lists, waits for your yes."
+          : d.webFound === "deny"
+            ? "Endpoints found on the open web are never paid."
+            : "Endpoints found on the open web are paid within the other rules.",
+    },
     { icon: <IconGauge size={15} />, text: `${SPEEDS[d.speed].label} speed: ${SPEEDS[d.speed].hint}` },
   ];
 }
@@ -292,6 +304,7 @@ function Guide({ pass, startAt = 0, onClose, onSaved }: { pass: SpendPass; start
         new_providers: d.newRule,
         new_provider_cap_minor_units: d.newRule === "cap" ? toMinor(d.newCap) : 0,
         unverified_providers: d.unverified,
+        web_found_providers: d.webFound,
       });
       onSaved();
     } catch (e) {
@@ -390,6 +403,20 @@ function Guide({ pass, startAt = 0, onClose, onSaved }: { pass: SpendPass; start
                       ).map(([id, label]) => (
                         <label key={id} className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
                           <input type="radio" name={`unverified-${pass.id}`} checked={d.unverified === id} onChange={() => set({ unverified: id })} className="accent-[var(--color-primary)]" />
+                          {label}
+                        </label>
+                      ))}
+                      <p className="pt-2 text-xs font-medium text-foreground">An endpoint your agent found on the open web:</p>
+                      <p className="text-[0.7rem] text-muted">No catalog lists it and nobody has reviewed it. Once it has been paid here a few times it counts as known.</p>
+                      {(
+                        [
+                          ["approve", "Ask me first"],
+                          ["allow", "Pay it within the other rules"],
+                          ["deny", "Never pay it"],
+                        ] as [WebFoundRule, string][]
+                      ).map(([id, label]) => (
+                        <label key={id} className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
+                          <input type="radio" name={`webfound-${pass.id}`} checked={d.webFound === id} onChange={() => set({ webFound: id })} className="accent-[var(--color-primary)]" />
                           {label}
                         </label>
                       ))}
