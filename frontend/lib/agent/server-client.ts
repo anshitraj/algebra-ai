@@ -15,9 +15,10 @@ export type ChatNetwork = "solana" | "solana-devnet" | "sandbox";
 export type ServerIdentity = {
   agentToken: string;
   /**
-   * The browser's session cookie, kept server-side for one thing only: when
-   * the person clicks a card to pay, that click is their approval, recorded on
-   * the intent with their own session (an agent token can never approve).
+   * The browser's session cookie, kept server-side and never sent to the model:
+   * when the person clicks a card to pay, that click is their approval, recorded
+   * on the intent with their own session (an agent token can never approve); and
+   * after a payment from an on-chain pass, it reads that pass's pull for the card.
    */
   cookie?: string;
   /** "demo" accounts: a person trying Algebra without signing up. */
@@ -113,6 +114,15 @@ export async function consumeAgentTurn(cookie: string): Promise<TurnQuota> {
   }
   await parse(res);
   return { ok: true };
+}
+
+/** The pulls an on-chain Spend Pass has made from its vault (session cookie). Empty for a pass that isn't on chain. */
+export async function getOnchainPulls(cookie: string, passId: string): Promise<{ intent_id: string; pull_signature: string; network: string }[]> {
+  const r = await sessionFetch<{ pulls: { intent_id: string; pull_signature: string; network: string }[] | null }>(
+    `/api/v1/me/passes/${encodeURIComponent(passId)}/onchain`,
+    cookie,
+  );
+  return r.pulls ?? [];
 }
 
 /** The person's Spend Passes (session cookie). */
