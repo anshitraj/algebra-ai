@@ -205,7 +205,7 @@ export function removeNotificationEmail() {
 }
 
 export function revokeSession(id: string) {
-  return apiFetch<{ ok: boolean }>(`/api/v1/me/sessions/${id}/revoke`, { method: "POST" });
+  return apiFetch<{ ok: boolean }>(`/api/v1/me/sessions/${encodeURIComponent(id)}/revoke`, { method: "POST" });
 }
 
 export function completeOnboarding(answers: OnboardingAnswers) {
