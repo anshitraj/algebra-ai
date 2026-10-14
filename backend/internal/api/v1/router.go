@@ -51,6 +51,9 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	if b.AuthConfig.TrustedProxyHops >= 0 {
 		trustedProxyHops = b.AuthConfig.TrustedProxyHops
 	}
+	// The web app's proxy proves itself with this key and passes the visitor's
+	// address (edgeClientIP). Empty: those headers are never read.
+	edgeSecret = []byte(b.AuthConfig.EdgeSharedSecret)
 	mux := http.NewServeMux()
 
 	// --- human accounts (first-party web app) ---

@@ -4,7 +4,7 @@ The quickest way to put Algebra on the internet for testing. Railway runs the AP
 
 **Not run by its author.** No Railway or Vercel account was available. Two things are unverified and decided by your plans, not by this code:
 - A paid call can take up to 80 seconds and the agent chat streams for up to 120 (`maxDuration` in `frontend/app/api/agent/chat/route.ts`). Vercel's plan limits on function and proxy time may cut those short; try a paid call first, and use the Pro plan if it does.
-- Railway and Vercel both sit in front of the API, so the client IP the API sees may be wrong. It only affects per-IP rate limits. `TRUSTED_PROXY_HOPS=2` is the starting value: sign in, open Account, and check "Where you're signed in".
+- Railway and Vercel both sit in front of the API, and both rewrite `X-Forwarded-For`, so the API sees Vercel's address for every visitor and gives the whole site one per-IP budget (ten sign-ins a minute, five demo accounts a day). Set the same secret as `EDGE_SHARED_SECRET` on Railway and `ALGEBRA_EDGE_SECRET` on Vercel (`openssl rand -hex 32`): the web app's proxy then sends the visitor's address and the API trusts it only with that secret. `TRUSTED_PROXY_HOPS=2` stays as the fallback.
 
 ## Order matters
 

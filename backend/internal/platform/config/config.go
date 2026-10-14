@@ -301,6 +301,15 @@ type AuthConfig struct {
 	// balancer (it appends the client and its own address). Per-IP limits key
 	// on that entry; everything left of it is client-supplied.
 	TrustedProxyHops int
+
+	// EdgeSharedSecret (EDGE_SHARED_SECRET) is the key the web app's proxy
+	// sends with the visitor's address (X-Algebra-Client-IP). When the web
+	// host proxies to this API, every address the API sees is the web host's,
+	// so all visitors would share one per-IP budget. With the secret set here
+	// and as ALGEBRA_EDGE_SECRET on the web app, the API takes the visitor's
+	// address from that header; without it (or without a matching secret on
+	// the request) it uses X-Forwarded-For as before. At least 32 characters.
+	EdgeSharedSecret string
 }
 
 // CookieSecure reports whether session cookies must be Secure.
@@ -533,6 +542,7 @@ func FromEnv() (*Config, error) {
 		DemoAgentTurnsPerDay:    int(demoAgentTurns),
 		DemoAccountsPerIPPerDay: int(demoPerIP),
 		TrustedProxyHops:        int(proxyHops),
+		EdgeSharedSecret:        strings.TrimSpace(os.Getenv("EDGE_SHARED_SECRET")),
 	}
 
 	growthINR, err := getInt64("GROWTH_PRICE_INR", 8499)
@@ -618,6 +628,9 @@ func (c *Config) ValidateProduction() error {
 	}
 	if t := c.Auth.OperatorToken; t != "" && len(t) < 32 {
 		problems = append(problems, "ALGEBRA_OPERATOR_TOKEN must be at least 32 characters (openssl rand -hex 32)")
+	}
+	if s := c.Auth.EdgeSharedSecret; s != "" && len(s) < 32 {
+		problems = append(problems, "EDGE_SHARED_SECRET must be at least 32 characters (openssl rand -hex 32)")
 	}
 	if e := c.Auth.LeadsNotifyEmail; e != "" {
 		if a, err := mail.ParseAddress(e); err != nil || a.Address != e {

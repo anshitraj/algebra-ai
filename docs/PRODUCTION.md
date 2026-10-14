@@ -51,6 +51,7 @@ PRIVY_APP_ID=...                                     # optional: sign-in with Pr
 PRIVY_VERIFICATION_KEY="-----BEGIN PUBLIC KEY-----
 ..."  # optional: the dashboard key; without it, fetched from Privy
 TRUSTED_PROXY_HOPS=2                                 # Google Cloud HTTPS LB; 1 for nginx / AWS ALB / most LBs (default)
+EDGE_SHARED_SECRET=...                               # only when a web host (Vercel) proxies to the API: the same value as ALGEBRA_EDGE_SECRET there; openssl rand -hex 32
 
 # Solana. One wallet per cluster; a dedicated, small hot wallet.
 SOLANA_MAINNET_KEYPAIR_FILE=/run/secrets/algebra-mainnet.json
@@ -129,6 +130,6 @@ The API's write timeout is 90 seconds, which is what bounds a paid call plus its
 - [ ] The API not publicly exposed; the web app on HTTPS with the security headers intact (`curl -I`)
 - [ ] A log sink and an alert on the 5xx rate, `/readyz` failures and a rail that failed to start
 - [ ] Legal build args set (entity, address, support email, Grievance Officer); Terms and Privacy reviewed by a lawyer
-- [ ] `TRUSTED_PROXY_HOPS` matches your topology: sign in, open Account, and check "Where you're signed in" shows your real IP, not a proxy's
+- [ ] `TRUSTED_PROXY_HOPS` matches your topology (and `EDGE_SHARED_SECRET` is set with the same value as `ALGEBRA_EDGE_SECRET` on the web app when a web host proxies to the API): sign in, open Account, and check "Where you're signed in" shows your real IP, not a proxy's
 - [ ] Sign up, issue a pass, run one request end to end on production
 - [ ] Download your data and delete a test account from Account → Your data
