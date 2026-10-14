@@ -30,10 +30,10 @@ export function IntegrateSection() {
             </h2>
             <p className="mt-4 text-[1.0625rem] leading-relaxed text-muted">
               Any agent that can make an HTTP call or speak MCP can use Algebra. Issue a Spend Pass in the console, hand
-              the agent its token, and it asks for outcomes: <code className="font-mono text-sm text-foreground">algebra.execute</code>{" "}
+              the agent its token, and it asks for outcomes: <code className="font-mono text-sm text-foreground">algebra_execute</code>{" "}
               over MCP, or <code className="font-mono text-sm text-foreground">POST /api/v1/execute</code> over REST.
               It can browse what is on offer with{" "}
-              <code className="font-mono text-sm text-foreground">algebra.discover</code>.
+              <code className="font-mono text-sm text-foreground">algebra_discover</code>.
             </p>
             <p className="mt-4 text-sm leading-relaxed text-muted">
               The pass is the agent&rsquo;s whole authority. It never receives a key, a card or a payment value, and every

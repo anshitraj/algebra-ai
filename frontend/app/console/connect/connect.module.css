@@ -270,6 +270,21 @@
   --mark-bg: #f2f2f0;
   background: var(--mark-bg);
 }
+.codex {
+  --mark-bg: #edf4ef;
+  background: var(--mark-bg);
+}
+.antigravity {
+  --mark-bg: #eef1f8;
+  background: var(--mark-bg);
+}
+/* An app without a mark of its own shows its initial. */
+.monogram {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+}
 .addButton,
 .closeButton {
   display: grid;

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import * as api from "@/lib/api-client";
 import type { PassConnect } from "@/lib/types";
+import { mcpSetup, type McpClient } from "@/lib/mcp-clients";
 import { Snippet } from "@/components/console/snippet";
 import {
   IconArrowRight,
@@ -28,6 +29,7 @@ const APPS = [
     description:
       "Give Claude access to paid APIs, with your spending rules built in.",
     tag: "Desktop & Code",
+    mark: "claude",
     guide:
       "Add this to Claude Desktop’s configuration file under mcpServers. Restart Claude to load the tools.",
     docs: "https://modelcontextprotocol.io/docs/develop/connect-local-servers",
@@ -40,9 +42,36 @@ const APPS = [
     description:
       "Bring paid API tools into your editor and keep building without switching tabs.",
     tag: "Code editor",
+    mark: "cursor",
     guide:
       "Add this to .cursor/mcp.json in your project, or ~/.cursor/mcp.json for all projects. Enable Algebra in Cursor’s MCP settings.",
     docs: "https://cursor.com/docs/context/mcp",
+  },
+  {
+    id: "codex",
+    name: "Codex",
+    publisher: "OpenAI",
+    category: "Developer tools",
+    description:
+      "Let Codex call paid APIs from your terminal or editor, inside your limits.",
+    tag: "CLI & IDE",
+    mark: "openai",
+    guide:
+      "Add this to ~/.codex/config.toml, or .codex/config.toml in a trusted project. The Codex CLI and the IDE extension both read it.",
+    docs: "https://developers.openai.com/codex/mcp",
+  },
+  {
+    id: "antigravity",
+    name: "Antigravity",
+    publisher: "Google",
+    category: "Developer tools",
+    description:
+      "Give Antigravity’s agents paid API tools, with your Spend Pass in charge.",
+    tag: "Agentic IDE",
+    mark: null,
+    guide:
+      "In the agent panel, open the … menu, choose MCP Servers, then Manage MCP Servers, then View raw config, and add this. The file is ~/.gemini/config/mcp_config.json.",
+    docs: "https://antigravity.google/docs/mcp",
   },
   {
     id: "openai",
@@ -52,6 +81,7 @@ const APPS = [
     description:
       "Let your agent discover, price, and call APIs through the Agents SDK.",
     tag: "Agents SDK",
+    mark: "openai",
     guide:
       "Use the Python Agents SDK to attach Algebra’s MCP server to your agent.",
     docs: "https://openai.github.io/openai-agents-python/mcp/",
@@ -64,35 +94,41 @@ const APPS = [
     description:
       "Connect any MCP-compatible client, or build directly with the REST API.",
     tag: "MCP & REST",
+    mark: null,
     guide:
       "Add the server URL and Authorization header to a client that supports Streamable HTTP. For stdio clients, use the npx adapter below.",
     docs: "https://modelcontextprotocol.io/docs/develop/connect-remote-servers",
   },
 ] as const;
 type Connector = (typeof APPS)[number];
+const CUSTOM = APPS[APPS.length - 1];
+// The three marks in the picture at the top of the page.
+const PICTURED = APPS.filter((app) =>
+  ["claude", "cursor", "openai"].includes(app.id),
+);
 const FILTERS = ["All apps", "Desktop apps", "Developer tools"];
 const TOKEN = "$ALGEBRA_API_KEY";
 const TOOLS = [
   [
-    "algebra.discover",
+    "algebra_discover",
     "Browse paid APIs and endpoint capability IDs across catalogs.",
   ],
   [
-    "algebra.classes",
+    "algebra_classes",
     "Find the kinds of work Algebra can route, with a shared input shape.",
   ],
-  ["algebra.quote", "Compare real prices with a free, unpaid request."],
+  ["algebra_quote", "Compare real prices with a free, unpaid request."],
   [
-    "algebra.execute",
+    "algebra_execute",
     "Run a task within your budget and get a signed receipt.",
   ],
   [
-    "algebra.simulate",
+    "algebra_simulate",
     "Check a request against your rules without making a payment.",
   ],
-  ["algebra.status", "Read a request’s result, provider, cost, and receipt."],
-  ["algebra.receipt", "Retrieve and verify a signed receipt."],
-  ["algebra.spend_pass", "Read your pass’s limits and remaining budget."],
+  ["algebra_status", "Read a request’s result, provider, cost, and receipt."],
+  ["algebra_receipt", "Retrieve and verify a signed receipt."],
+  ["algebra_spend_pass", "Read your pass’s limits and remaining budget."],
 ];
 const ROUTES = [
   ["GET /providers?q=&category=&source=", "Search the combined catalogs."],
@@ -104,47 +140,34 @@ const ROUTES = [
 
 function AppMark({ app }: { app: Connector }) {
   return (
-    <span className={`${styles.appMark} ${styles[app.id]}`} aria-hidden="true">
-      {app.id === "custom" ? (
-        <IconPlug size={27} />
-      ) : (
+    <span
+      className={`${styles.appMark} ${styles[app.id] ?? ""}`}
+      aria-hidden="true"
+    >
+      {app.mark ? (
         <Image
-          src={`/connectors/${app.id}.svg`}
+          src={`/connectors/${app.mark}.svg`}
           width={32}
           height={32}
           alt=""
         />
+      ) : app.id === "custom" ? (
+        <IconPlug size={27} />
+      ) : (
+        <span className={styles.monogram}>{app.name[0]}</span>
       )}
     </span>
   );
 }
 
-function configuration(app: Connector, mcp: string, mode: string) {
-  if (app.id === "claude" && mode === "code")
-    return `claude mcp add --transport http algebra "${mcp}" \\\n  --header "Authorization: Bearer ${TOKEN}"`;
-  if (app.id === "openai")
-    return `import os\nfrom agents import Agent\nfrom agents.mcp import MCPServerStreamableHttp\n\nalgebra = MCPServerStreamableHttp(params={\n    "url": "${mcp}",\n    "headers": {"Authorization": "Bearer " + os.environ["ALGEBRA_API_KEY"]},\n})\nagent = Agent(name="Researcher", mcp_servers=[algebra])`;
-  if (app.id === "custom")
-    return `npx -y mcp-remote "${mcp}" \\\n  --header "Authorization: Bearer ${TOKEN}"`;
-  return JSON.stringify(
-    {
-      mcpServers: {
-        algebra: {
-          command: "npx",
-          args: [
-            "-y",
-            "mcp-remote",
-            mcp,
-            "--header",
-            "Authorization: Bearer ${ALGEBRA_API_KEY}",
-          ],
-          env: { ALGEBRA_API_KEY: "<your API key>" },
-        },
-      },
-    },
-    null,
-    2,
-  );
+// Which client's format the dialog shows: each app has one, and Claude has
+// two (the desktop app's config file, or Claude Code's command).
+function clientOf(app: Connector, mode: string): McpClient {
+  if (app.id === "claude")
+    return mode === "code" ? "claude-code" : "claude-desktop";
+  if (app.id === "openai") return "openai-agents";
+  if (app.id === "custom") return "stdio";
+  return app.id;
 }
 
 export default function ConnectPage() {
@@ -211,7 +234,7 @@ export default function ConnectPage() {
         <button
           type="button"
           className={styles.primaryButton}
-          onClick={() => open(APPS[3])}
+          onClick={() => open(CUSTOM)}
         >
           <IconPlus size={17} /> Add custom agent
         </button>
@@ -223,7 +246,7 @@ export default function ConnectPage() {
           </span>
           <span className={styles.connectionLine} />
           <span className={styles.brandCluster}>
-            {APPS.slice(0, 3).map((app) => (
+            {PICTURED.map((app) => (
               <AppMark key={app.id} app={app} />
             ))}
           </span>
@@ -494,17 +517,7 @@ export default function ConnectPage() {
                       note={`Header: Authorization: Bearer ${TOKEN}`}
                     />
                   )}
-                  <Snippet
-                    title={
-                      selected.id === "openai"
-                        ? "Python configuration"
-                        : selected.id === "custom" || mode === "code"
-                          ? "Connection command"
-                          : "MCP configuration"
-                    }
-                    code={configuration(selected, mcp, mode)}
-                    note="Set ALGEBRA_API_KEY to a key from Projects & API keys. It is shown once: keep it in the environment of whatever runs your agent."
-                  />
+                  <Snippet {...mcpSetup(clientOf(selected, mode), mcp)} />
                 </>
               ) : (
                 <p className={styles.setupNotice} role="status">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 /** A small copy-to-clipboard button. */
 export function Copy({ text, label = "Copy" }: { text: string; label?: string }) {
@@ -25,7 +25,7 @@ export function Copy({ text, label = "Copy" }: { text: string; label?: string })
 }
 
 /** A titled block of code with a copy button. */
-export function Snippet({ title, code, note }: { title: string; code: string; note?: string }) {
+export function Snippet({ title, code, note }: { title: string; code: string; note?: ReactNode }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-2">

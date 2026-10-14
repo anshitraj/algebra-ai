@@ -6,6 +6,7 @@ import * as api from "@/lib/api-client";
 import type { IssuedKey, Project } from "@/lib/platform-types";
 import type { Simulation } from "@/lib/routing-types";
 import type { PassConnect, SpendPass } from "@/lib/types";
+import { mcpSetup } from "@/lib/mcp-clients";
 import { formatUSDC } from "@/lib/money";
 import { Button, ErrorNote, PageHeader, Panel, Skeleton } from "@/components/console/ui";
 import { Copy, Snippet } from "@/components/console/snippet";
@@ -118,14 +119,7 @@ export default function QuickstartPage() {
   body: JSON.stringify(${JSON.stringify(body())}),
 });
 const { summary, response, receipt } = await res.json();`;
-  const mcp = `{
-  "mcpServers": {
-    "algebra": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "${connect?.mcp_url ?? "https://YOUR_ALGEBRA_HOST/mcp"}", "--header", "Authorization: Bearer \${ALGEBRA_API_KEY}"]
-    }
-  }
-}`;
+  const mcp = mcpSetup("claude-desktop", connect?.mcp_url ?? "https://YOUR_ALGEBRA_HOST/mcp");
   const last = out?.attempts?.[out.attempts.length - 1]?.result;
 
   return (
@@ -235,7 +229,7 @@ const { summary, response, receipt } = await res.json();`;
             <div className="mt-3 space-y-3">
               <Snippet title="REST" code={rest} />
               <Snippet title="TypeScript (fetch)" code={ts} />
-              <Snippet title="MCP client configuration" code={mcp} />
+              <Snippet title="MCP client configuration (Claude Desktop)" code={mcp.code} note={<>{mcp.note} Cursor, Codex and Antigravity each have their own format on the <Link href="/console/connect" className="text-primary hover:underline">Connect page</Link>.</>} />
             </div>
           </Step>
 

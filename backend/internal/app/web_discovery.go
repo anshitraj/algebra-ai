@@ -26,7 +26,7 @@ import (
 // It never moves money and never chooses for the agent. It returns endpoints,
 // each marked verified (it answered like an x402 resource, in USDC on a network
 // Algebra can pay) or not, and the agent passes the ones it wants to
-// algebra.execute as `candidates`, where the Spend Pass decides, exactly as for
+// algebra_execute as `candidates`, where the Spend Pass decides, exactly as for
 // an endpoint the agent found itself.
 
 // WebFound is an endpoint the open web says does some work. Nothing about it is
@@ -83,7 +83,7 @@ type WebEndpoint struct {
 	Reason     string `json:"not_verified_reason,omitempty"`
 	PriceMinor int64  `json:"price_minor,omitempty"`
 	Network    string `json:"network,omitempty"`
-	// Candidate is what to pass in algebra.execute's `candidates` to use it.
+	// Candidate is what to pass in algebra_execute's `candidates` to use it.
 	Candidate CandidateInput `json:"candidate"`
 }
 
@@ -195,7 +195,7 @@ func webWant(req WebDiscoveryRequest) (want, capability string, sample json.RawM
 			}
 		} else if query == "" {
 			// A provider's own capability name says little; ask in words.
-			return "", "", nil, fmt.Errorf("%w: say in `query` what you want done, or use a class from algebra.classes", shared.ErrConflict)
+			return "", "", nil, fmt.Errorf("%w: say in `query` what you want done, or use a class from algebra_classes", shared.ErrConflict)
 		}
 	}
 	if query != "" {
