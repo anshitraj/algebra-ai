@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { policyReport } from "../lib/policy-check.ts";
 import { explorerTx, solscanTx, isOnChain } from "../lib/explorer.ts";
+import { approvalRule } from "../lib/pass-rules.ts";
 
 const pass = (over = {}) => ({
   id: "pass_1",
@@ -54,4 +55,11 @@ test("the sandbox's simulated transactions are not on chain", () => {
   assert.equal(isOnChain("solana-devnet"), true);
   assert.equal(isOnChain("sandbox"), false);
   assert.equal(isOnChain(undefined), false);
+});
+
+test("zero on a pass means ask before every call, not never", () => {
+  assert.deepEqual(approvalRule({}), { kind: "never" });
+  assert.deepEqual(approvalRule({ approve_above_minor_units: null }), { kind: "never" });
+  assert.deepEqual(approvalRule({ approve_above_minor_units: 0 }), { kind: "always" });
+  assert.deepEqual(approvalRule({ approve_above_minor_units: 50_000 }), { kind: "above", minor: 50_000 });
 });
