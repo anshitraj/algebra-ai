@@ -88,7 +88,7 @@ const DONE: Record<OwnerAction, { kind: TxKind; title: string }> = {
 };
 
 export function OnchainPassPanel({ passId, label, active }: { passId: string; /** The pass's name, for the notification a transaction leaves. */ label?: string; active: boolean }) {
-  // The real cluster the person last chose: a vault lives on a chain even while the console is in practice mode.
+  // The real cluster the person last chose: a vault lives on a chain even while the console is in demo mode.
   const { cluster: network, wallets: balances, refreshWallets } = useNetwork();
   const { user } = useSession();
   // The account wallet: the one Privy made at sign-in. It signs by default.

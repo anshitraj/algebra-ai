@@ -18,7 +18,7 @@ type ChatRequestBody = {
   history?: unknown[];
   /** The Spend Pass this chat pays under; one of the signed-in person's active USDC passes. */
   spend_pass_id?: string;
-  /** "solana" (mainnet), "solana-devnet" or "sandbox" (practice mode). A demo account is always put in the sandbox, whatever this says. */
+  /** "solana" (mainnet), "solana-devnet" or "sandbox" (demo mode). A demo account is always put in the sandbox, whatever this says. */
   network?: string;
   /** The person's first name, for the greeting only (see cleanName). */
   name?: string;

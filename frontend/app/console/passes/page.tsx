@@ -509,7 +509,7 @@ function PassCard({ pass: p, onRevoked }: { pass: SpendPass; onRevoked: () => vo
           <div className={`h-full rounded-full ${used >= 0.9 ? "bg-danger" : "bg-primary"}`} style={{ width: `${used * 100}%` }} />
         </div>
       </div>
-      {/* A practice pass spends play money: it has no vault to make. */}
+      {/* A demo pass spends play money: it has no vault to make. */}
       {p.currency === "USDC" && !demo && p.environment !== "sandbox" && <OnchainPassPanel passId={p.id} label={p.label} active={status === "Active"} />}
     </Panel>
   );

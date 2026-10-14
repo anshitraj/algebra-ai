@@ -69,7 +69,7 @@ export function GetStarted() {
     loadPasses();
   }, [demo, user, loadWallets, loadPasses]);
 
-  // The pass that goes on chain: not the practice pass, which spends play money and has no vault to make.
+  // The pass that goes on chain: not the demo pass, which spends play money and has no vault to make.
   const pass = passes?.find((p) => p.active && p.currency === "USDC" && p.environment !== "sandbox") ?? null;
   useEffect(() => {
     if (!pass) return;
@@ -130,7 +130,7 @@ export function GetStarted() {
   if (demo) {
     return (
       <Panel className="mt-8">
-        <h2 className="text-sm font-semibold text-foreground">You are in practice mode</h2>
+        <h3 className="text-sm font-semibold text-foreground">You are in demo mode</h3>
         <p className="mt-1 text-sm leading-relaxed text-muted">
           The demo uses play money, so there is nothing to fund. To pay real sellers with test money from your own wallet, make an account with your email or an external wallet.{" "}
           <Link href="/signup" className="font-medium text-primary hover:underline">
@@ -146,7 +146,7 @@ export function GetStarted() {
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <Panel className="py-5">
-        <h2 className="text-base font-semibold text-foreground">Try it first, in practice mode</h2>
+        <h3 className="text-base font-semibold text-foreground">Try it first, in demo mode</h3>
         <p className="mt-1 text-sm leading-relaxed text-muted">
           Ask for a token price or a risk check and pay with play money. No wallet and no funds needed: you get a real answer with a signed receipt in seconds.
         </p>
@@ -157,12 +157,12 @@ export function GetStarted() {
               router.push(`/console/agent?prompt=${encodeURIComponent(TRY_PRACTICE)}`);
             }}
           >
-            Open practice chat
+            Open demo chat
           </Button>
         </div>
       </Panel>
 
-      <h2 className="pt-4 text-sm font-semibold text-foreground">Then go real, with free test money</h2>
+      <h3 className="pt-4 text-sm font-semibold text-foreground">Then go real, with free test money</h3>
 
       <Card n={1} done={funded} title="Get free test money" body="Test SOL for fees and test USDC to spend, sent straight to your wallet. Once a day.">
         {address ? (
@@ -278,7 +278,7 @@ function Card({ n, title, body, done, children }: { n: number; title: string; bo
           {done ? <IconCheck size={15} /> : n}
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <h3 className="text-base font-semibold text-foreground">{title}</h3>
           <p className="mt-1 text-sm leading-relaxed text-muted">{body}</p>
           {children}
         </div>

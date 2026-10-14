@@ -38,7 +38,7 @@ const REASONS: Record<string, string> = {
   CATEGORY_BLOCKED: "Category is blocked",
   quote_over_budget: "The endpoint asked for more than the limit",
   provider_not_allowed: "Provider isn't on the pass's list",
-  DEMO_SANDBOX_ONLY: "A demo account works in practice mode only",
+  DEMO_SANDBOX_ONLY: "A demo account works in demo mode only",
   NETWORK_NOT_ALLOWED: "The call isn't allowed on that network",
   authority_denied: "The Spend Pass doesn't allow it",
   already_committed: "Already paid for once; a repeat is blocked",
@@ -120,8 +120,8 @@ export function friendlyFailure(message: string): string {
   return message.replace(/^payment authority refused: /, "");
 }
 
-/** Where a payment happened, as a step card says it: "on devnet", "on mainnet" or "in practice mode". */
-const onNet = (n: string) => (n === "sandbox" ? "in practice mode" : `on ${networkWord(n)}`);
+/** Where a payment happened, as a step card says it: "on devnet", "on mainnet" or "in demo mode". */
+const onNet = (n: string) => (n === "sandbox" ? "in demo mode" : `on ${networkWord(n)}`);
 
 function paidOutcome(d: Record<string, unknown>): StepOutcome {
   const outcome = String(d.outcome ?? "");
@@ -239,7 +239,7 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
       const callable = eps.filter((e) => e.callable).length;
       return {
         status: "done",
-        summary: `${data.endpoint_count ?? eps.length} endpoint${data.endpoint_count === 1 ? "" : "s"}, ${callable} of those shown callable on ${networkWord(data.network)}${data.network === "sandbox" ? " (practice mode can read them, not pay them)" : ""}`,
+        summary: `${data.endpoint_count ?? eps.length} endpoint${data.endpoint_count === 1 ? "" : "s"}, ${callable} of those shown callable on ${networkWord(data.network)}${data.network === "sandbox" ? " (demo mode can read them, not pay them)" : ""}`,
         detail: eps.length
           ? {
               endpoints: eps.slice(0, 12).map((e) => ({

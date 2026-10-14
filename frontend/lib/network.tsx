@@ -8,22 +8,22 @@ import type { RailStatus, WalletsView } from "./types";
 export type Cluster = "solana" | "solana-devnet";
 
 /**
- * Where the console works: a cluster, or practice mode (Algebra's sandbox:
+ * Where the console works: a cluster, or demo mode (Algebra's sandbox:
  * simulated providers and USDC, no chain, no wallet). A demo account is always
- * in practice mode, and the API enforces that; anyone else chooses.
+ * in demo mode, and the API enforces that; anyone else chooses.
  */
 export type Network = Cluster | "sandbox";
 
 /** The three places to work, in the order a new person meets them. */
 export const NETWORKS: { id: Network; label: string; hint: string }[] = [
-  { id: "sandbox", label: "Practice", hint: "Play money: no wallet needed and nothing real moves" },
-  { id: "solana-devnet", label: "Test", hint: "Free test USDC on Solana devnet, paid from your own wallet" },
-  { id: "solana", label: "Live", hint: "Real USDC on Solana mainnet" },
+  { id: "sandbox", label: "Demo", hint: "Simulated USDC: no wallet needed and nothing real moves" },
+  { id: "solana-devnet", label: "Devnet", hint: "Free test USDC on Solana's test network, paid from your own wallet" },
+  { id: "solana", label: "Mainnet", hint: "Real USDC on Solana mainnet" },
 ];
 
-const WORDS: Record<string, string> = { solana: "Mainnet", "solana-devnet": "Devnet", sandbox: "Practice" };
+const WORDS: Record<string, string> = { solana: "Mainnet", "solana-devnet": "Devnet", sandbox: "Demo" };
 
-/** What a sentence calls a network: "Mainnet", "Devnet" or "Practice". The switch itself uses NETWORKS' labels. */
+/** What a sentence calls a network: "Mainnet", "Devnet" or "Demo". The switch uses the same words (NETWORKS). */
 export function networkLabel(n: string | undefined): string {
   return (n && WORDS[n]) || (n ?? "");
 }
@@ -43,9 +43,9 @@ function stored(key: string): string | null {
 }
 
 /**
- * The saved choice, or practice mode when there is none (or storage is
+ * The saved choice, or demo mode when there is none (or storage is
  * blocked): the first place a new person works needs no wallet and no money.
- * Test and Live are picked on purpose.
+ * Devnet and Mainnet are picked on purpose.
  */
 export function readSavedNetwork(): Network {
   const saved = stored(KEY);
@@ -84,17 +84,17 @@ export function onNetworkChange(cb: (n: Network) => void): () => void {
 }
 
 type NetworkState = {
-  /** Where this console works and pays: practice mode ("sandbox") or a cluster. */
+  /** Where this console works and pays: demo mode ("sandbox") or a cluster. */
   network: Network;
-  /** A demo account: it works in practice mode only, and has no cluster to choose. */
+  /** A demo account: it works in demo mode only, and has no cluster to choose. */
   demo: boolean;
-  /** Practice mode, for a demo account or by choice: simulated providers and USDC, no wallet, no chain. */
+  /** Demo mode, for a demo account or by choice: simulated providers and USDC, no wallet, no chain. */
   practice: boolean;
   /** The real cluster last worked on. The wallet and vault panels use it even while practising. */
   cluster: Cluster;
   /** False until the saved choice has been read: nothing should act on the default before that. */
   ready: boolean;
-  /** Whether this server has practice mode at all. True until the server says otherwise. */
+  /** Whether this server has demo mode at all. True until the server says otherwise. */
   practiceAvailable: boolean;
   setNetwork: (n: Network) => void;
   /** Whether this server can pay on each cluster, from which wallet, with what balance. Null until read. */
@@ -124,7 +124,7 @@ const Ctx = createContext<NetworkState>({
 /**
  * Where the console works. On a cluster it filters the providers to the ones
  * payable there, and every call the console makes is restricted to it, so
- * nothing meant for devnet can be paid on mainnet. In practice mode nothing
+ * nothing meant for devnet can be paid on mainnet. In demo mode nothing
  * touches a wallet or a chain. Remembered per browser. A demo account has no
  * choice: it practises.
  */
@@ -184,7 +184,7 @@ export function NetworkProvider({ children, demo = false }: { children: React.Re
     saveNetwork(n);
   }, []);
 
-  // A server without practice mode can't offer it: fall back to the saved real cluster.
+  // A server without demo mode can't offer it: fall back to the saved real cluster.
   const choice: Network = !practiceAvailable && saved.choice === "sandbox" ? saved.cluster : saved.choice;
   const network: Network = demo ? "sandbox" : choice;
   return (

@@ -117,7 +117,7 @@ export function PassPanel({
 
       {sandbox ? (
         <>
-          <PanelHeading>Practice mode</PanelHeading>
+          <PanelHeading>Demo mode</PanelHeading>
           <p className="border-y border-border px-5 py-3 text-xs leading-relaxed text-muted">
             Simulated sellers and play USDC. No wallet is used and nothing is written to a chain.
           </p>

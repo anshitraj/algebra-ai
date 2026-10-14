@@ -38,7 +38,7 @@ export default function OverviewPage() {
 
   const active = passes?.filter((p) => p.active && p.currency === "USDC") ?? [];
   const waiting = intents?.filter((i) => i.state === "AWAITING_APPROVAL").length ?? 0;
-  // Still new: no pass of their own yet (the practice pass made for the first practice answer doesn't count).
+  // Still new: no pass of their own yet (the demo pass made for the first demo answer doesn't count).
   const fresh = passes !== null && passes.filter((p) => p.currency === "USDC" && p.environment !== "sandbox").length === 0;
 
   return (
@@ -183,8 +183,8 @@ function GettingStarted({ providers }: { providers?: number }) {
       icon: <IconStore size={16} />,
       title: "Ask your first question",
       body: providers
-        ? `Practice mode, with play money and no wallet: an answer and a signed receipt in seconds. Behind it, ${providers.toLocaleString("en-US")} paid APIs to choose from.`
-        : "Practice mode, with play money and no wallet: an answer and a signed receipt in seconds.",
+        ? `Demo mode, with play money and no wallet: an answer and a signed receipt in seconds. Behind it, ${providers.toLocaleString("en-US")} paid APIs to choose from.`
+        : "Demo mode, with play money and no wallet: an answer and a signed receipt in seconds.",
     },
     { href: "/console/passes", icon: <IconShield size={16} />, title: "Set a spending limit", body: "A Spend Pass: a USDC budget, the most one call may cost, and which sellers it may pay." },
     { href: "/console/connect", icon: <IconPlug size={16} />, title: "Connect your own agent", body: "Claude, Cursor or any tool that speaks MCP or REST pays through Algebra, inside your limit." },
@@ -206,7 +206,7 @@ function GettingStarted({ providers }: { providers?: number }) {
         ))}
       </ol>
       <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
-        <IconCheck size={12} className="text-primary" /> Practice mode needs no wallet and moves no money. To pay with free test money,{" "}
+        <IconCheck size={12} className="text-primary" /> Demo mode needs no wallet and moves no money. To pay with free test money,{" "}
         <Link href="/console/quickstart" className="font-medium text-primary hover:underline">
           go real in three steps
         </Link>
