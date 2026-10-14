@@ -39,15 +39,30 @@ export function SessionProvider({
   const [status, setStatus] = useState<SessionStatus>("loading");
 
   const refresh = useCallback(async () => {
-    try {
-      const { user } = await api.getSession();
-      setUserState(user);
-      setStatus(user ? "authenticated" : "unauthenticated");
-      return user;
-    } catch {
-      setUserState(null);
-      setStatus("unauthenticated");
-      return null;
+    // A failed check is not a signed-out visitor: a rate-limited minute (429), the API
+    // restarting or a dropped connection must not bounce a signed-in person to /login.
+    // Those are asked again a few times before giving up.
+    const retryAfterMs = [1500, 4000, 9000];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const { user } = await api.getSession();
+        setUserState(user);
+        setStatus(user ? "authenticated" : "unauthenticated");
+        return user;
+      } catch (err) {
+        const transient = !(err instanceof api.ApiError) || err.status === 0 || err.status === 429 || err.status >= 500;
+        if (!transient) {
+          setUserState(null);
+          setStatus("unauthenticated");
+          return null;
+        }
+        if (attempt >= retryAfterMs.length) {
+          // Still not answering: someone already signed in stays signed in here.
+          setStatus((cur) => (cur === "authenticated" ? cur : "unauthenticated"));
+          return null;
+        }
+        await new Promise((resolve) => setTimeout(resolve, retryAfterMs[attempt]));
+      }
     }
   }, []);
 

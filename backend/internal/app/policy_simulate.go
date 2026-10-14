@@ -480,6 +480,15 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 				continue
 			}
 		}
+		// The pass's rule on endpoints found only on the open web.
+		if code, approvable := ctrl.WebFound(c.Trust() == routing.TrustUnverified, false); code != "" {
+			if approvable {
+				hold(code, q)
+			} else {
+				deny(routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: routing.RejectPolicy, Detail: code})
+			}
+			continue
+		}
 		verdicts[c.ID] = cv
 		sim.Candidates = append(sim.Candidates, cv)
 		opts = append(opts, routing.Option{Candidate: c, Quote: q})

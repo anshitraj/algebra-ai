@@ -35,21 +35,40 @@ export function hasOwnRules(p: SpendPass): boolean {
     (!!c &&
       ((c.max_calls_per_minute > 0 && c.max_calls_per_minute !== DEFAULT_PER_MINUTE) ||
         (c.max_calls_per_provider_per_minute > 0 && c.max_calls_per_provider_per_minute !== DEFAULT_PER_PROVIDER) ||
-        c.new_providers === "approve"))
+        c.new_providers === "approve" ||
+        // "approve" is what a web find gets when nothing is set: only a change is the person's own rule.
+        (!!c.web_found_providers && c.web_found_providers !== "approve")))
   );
 }
 
 /**
  * The pass's rules against one payment of paidMinor (0 or undefined when
  * nothing was paid yet). askedPerson: a person approved this payment.
+ *
+ * basis says where p.remaining_minor_units stands: "before" the payment (the
+ * pass as read when the turn began; spentBefore is what earlier payments in
+ * that same turn already took), or "now" (the pass as read afterwards, which
+ * already counts this payment, as on an invoice: the payment must not be taken
+ * off a second time).
  */
-export function policyReport(p: SpendPass, paidMinor: number | undefined, askedPerson: boolean, pending = false): PolicyReport {
+export function policyReport(
+  p: SpendPass,
+  paidMinor: number | undefined,
+  askedPerson: boolean,
+  pending = false,
+  basis: "before" | "now" = "before",
+  spentBefore = 0,
+): PolicyReport {
   const paid = paidMinor ?? 0;
   const checks: PolicyCheck[] = [];
-  const left = Math.max(0, p.remaining_minor_units - paid);
+  const left = Math.max(0, p.remaining_minor_units - spentBefore - paid);
   checks.push({
     label: "Budget",
-    result: pending ? `${usdc(p.remaining_minor_units)} left of ${usdc(p.budget_minor_units)}; this call would use ${usdc(paid)}` : `${usdc(left)} left of ${usdc(p.budget_minor_units)}${paid > 0 ? " after this call" : ""}`,
+    result: pending
+      ? `${usdc(p.remaining_minor_units)} left of ${usdc(p.budget_minor_units)}; this call would use ${usdc(paid)}`
+      : basis === "now"
+        ? `${usdc(p.remaining_minor_units)} left of ${usdc(p.budget_minor_units)} now`
+        : `${usdc(left)} left of ${usdc(p.budget_minor_units)}${paid > 0 ? " after this call" : ""}`,
     state: "pass",
   });
   checks.push(

@@ -50,17 +50,27 @@ const PULL_WORDS: Record<string, string> = {
   REFUNDED: "Returned",
 };
 
+/** A person closed or declined a wallet's popup (each wallet words it differently: "User rejected the request", "Approval Denied"). */
+const CANCELLED = /reject|denied|declin|cancel|closed|dismiss/i;
+
 /** Why the account wallet didn't send a transaction. */
 function accountFailure(e: unknown) {
   const said = (e instanceof Error ? e.message : String(e ?? "")).trim();
-  if (/reject|denied|cancel|exited|closed/i.test(said)) return said.startsWith("You ") ? said : "You cancelled in Privy. Nothing was sent.";
+  if (CANCELLED.test(said) || /exited/i.test(said)) return said.startsWith("You ") ? said : "You cancelled in Privy. Nothing was sent.";
   return said || "Privy didn't send the transaction. Try again.";
+}
+
+/** Why a wallet didn't share its account: the connect popup, not a transaction. */
+function connectFailure(e: unknown, wallet: string) {
+  const said = (e instanceof Error ? e.message : String(e ?? "")).trim();
+  if (CANCELLED.test(said)) return `You cancelled the connection in ${wallet}. Nothing was sent.`;
+  return `${wallet} didn't connect${said ? ` (it said: ${said})` : ""}. Unlock ${wallet}, approve the connection, and try again.`;
 }
 
 /** Why a wallet didn't send a transaction Algebra had already checked on that network. */
 function walletFailure(e: unknown, wallet: string, network: string) {
   const said = (e instanceof Error ? e.message : String(e ?? "")).trim();
-  if (/reject|denied|cancel/i.test(said)) return `You cancelled the request in ${wallet}. Nothing was sent.`;
+  if (CANCELLED.test(said)) return `You cancelled the request in ${wallet}. Nothing was sent.`;
   const where = networkLabel(network);
   const hint = network === "solana-devnet" ? ` In Phantom: Settings, Developer Settings, Testnet Mode, Solana Devnet.` : "";
   return `${wallet} didn't send the transaction${said ? ` (it said: ${said})` : ""}. Algebra had checked that it succeeds on ${where} from this wallet, so the usual cause is the wallet being on another network: switch ${wallet} to ${where} and try again.${hint}`;
@@ -80,6 +90,10 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
   const [busy, setBusy] = useState("");
   const [amount, setAmount] = useState("1");
   const [wallets, setWallets] = useState<StandardWallet[]>([]);
+  // A revoked or expired pass can't spend, so its vault isn't looked up with the page: one
+  // request per such pass was most of what a long pass list cost. "Check vault" asks.
+  const [peek, setPeek] = useState(false);
+  const lookup = active || peek;
 
   const load = useCallback(async () => {
     try {
@@ -92,18 +106,19 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
   }, [passId]);
 
   useEffect(() => {
-    if (!account) return;
+    // Only a card that will show the vault controls needs the Privy app ID.
+    if (!account || !lookup) return;
     getAuthProviders()
       .then((p) => setPrivyAppId(p.privy && p.privy_app_id ? p.privy_app_id : ""))
       .catch(() => setPrivyAppId(""));
-  }, [account]);
+  }, [account, lookup]);
 
   useEffect(() => {
     onchainNetworks()
       .then((r) => setNets(r.networks))
       .catch(() => setNets([]));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reading the pass once on mount
-    void load();
+    if (lookup) void load();
     setWallets(solanaWallets());
     // A wallet that loads after the page announces itself.
     const onRegister = (e: Event) => {
@@ -113,7 +128,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
     };
     window.addEventListener("wallet-standard:register-wallet", onRegister);
     return () => window.removeEventListener("wallet-standard:register-wallet", onRegister);
-  }, [load]);
+  }, [load, lookup]);
 
   const net = nets?.find((n) => n.network === (view?.binding.network ?? network));
   // The account wallet signs unless the person picked a browser wallet (or there is no account wallet).
@@ -124,7 +139,12 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
     if (ws.length === 0) throw new Error("No Solana wallet found in this browser. Install Phantom, Solflare or Backpack, then reload.");
     // With several wallets, the one holding the owner's account; else the first.
     for (const w of ws) {
-      const acct = await connectWallet(w);
+      let acct: Awaited<ReturnType<typeof connectWallet>>;
+      try {
+        acct = await connectWallet(w);
+      } catch (e) {
+        throw new Error(connectFailure(e, w.name));
+      }
       if (!want || acct.address === want) return fn(w, acct.address, acct);
       if (ws.length === 1) throw new Error(`This pass belongs to wallet ${short(want)}; ${w.name} is on ${short(acct.address)}. Switch accounts in ${w.name}.`);
     }
@@ -208,7 +228,11 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
       } else {
         await withWallet(view.binding.owner_wallet, async (w, _addr, acct) => {
           const { transaction } = await ownerTransaction(passId, action, minor);
-          await signAndSend(w, acct, transaction, view.binding.network);
+          try {
+            await signAndSend(w, acct, transaction, view.binding.network);
+          } catch (e) {
+            throw new Error(walletFailure(e, w.name, view.binding.network));
+          }
         });
       }
       // Show the new state once the chain has it.
@@ -229,6 +253,14 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
     }
   }
 
+  // A pass that can't spend isn't looked up with the page: the person asks.
+  if (view === undefined && !lookup) {
+    return (
+      <button type="button" onClick={() => setPeek(true)} className="mt-3 text-xs font-medium text-muted underline decoration-border-strong underline-offset-4 hover:text-foreground">
+        Check on-chain vault
+      </button>
+    );
+  }
   if (view === undefined || nets === null) return null;
   if (view === null && (!active || nets.length === 0)) return null;
 

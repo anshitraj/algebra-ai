@@ -173,7 +173,9 @@ A model can invent a URL or be steered by the page it read, so it is trusted wit
 way that means anything: each find is asked, with a free unpaid request, what it charges. The probe carries the class's sample input or nothing, **never the
 agent's input**, so nobody the agent hasn't chosen learns what it wants. A find that answers with x402 terms Algebra can pay is marked `verified` with its price and
 network; the others are returned with the reason. Nothing is paid or chosen: the agent passes the ones it wants to `/execute` as `candidates`, where they are
-unverified web finds that the Spend Pass, the new-provider rule and the price guards decide on like any other. Needs `GEMINI_API_KEY`, a Spend Pass, and is
+unverified web finds. A pass's web-found rule (`controls.web_found_providers`) holds the first payment to one for the person's yes by default
+(`approve`; `allow` pays it like any provider, `deny` never does), until it has been executed here often enough to have a record; the new-provider
+rule and the price guards then decide on it like any other. Needs `GEMINI_API_KEY`, a Spend Pass, and is
 limited to ten searches an hour per agent.
 
 ## The Solana rails
@@ -197,8 +199,9 @@ voucher, and the rest is refunded in the same instruction. The coordinator commi
 
 **Both clusters at once.** `SOLANA_DEVNET_KEYPAIR_FILE` and `SOLANA_MAINNET_KEYPAIR_FILE` (each with an optional `_RPC_URL`) run a devnet rail
 (`x402-solana-devnet`) and a mainnet rail (`x402-solana`) side by side, one wallet each. A payment goes to the rail of its own cluster, so devnet terms are
-never paid from the mainnet wallet. `GET /api/v1/rails` (signed in) shows, per cluster, whether a wallet is configured, its address, its USDC balance and the
-per-payment ceiling; the console's network switch reads it. Single-cluster settings (`SOLANA_CLUSTER`, `SOLANA_RPC_URL`, `SOLANA_KEYPAIR_FILE`,
+never paid from the mainnet wallet. `GET /api/v1/rails` (signed in) shows, per cluster, whether a wallet is configured, whether it is funded and the
+per-payment ceiling; the console's network switch reads it. It names neither the wallet nor its balance (every account can read it); a receipt names the
+wallet that paid, and the operator reads the address from the server's log or `go run ./cmd/solana-wallet`. Single-cluster settings (`SOLANA_CLUSTER`, `SOLANA_RPC_URL`, `SOLANA_KEYPAIR_FILE`,
 `SOLANA_MAX_PAYMENT_USDC`) still work; a cluster configured twice stops startup.
 
 ### Swaps: buy a token with USDC (`backend/providers/jupiter`)

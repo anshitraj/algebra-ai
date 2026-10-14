@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/project-algebra/algebra/policy"
 )
@@ -41,6 +43,36 @@ const (
 // MaxLifetime bounds how long a pass may run: long-lived spending
 // permissions are how money leaks.
 const MaxLifetime = 366 * 24 * time.Hour
+
+// MaxAllowedProviders bounds a pass's provider allow-list.
+const MaxAllowedProviders = 100
+
+// maxBudgetMinorUnits bounds one pass's budget: 1,000,000 USDC (micro-units), or
+// 1 crore rupees (paise). A larger number is nearly always a unit mistake
+// (micro-USDC typed as USDC), and a pass is permission to spend it.
+func maxBudgetMinorUnits(currency string) int64 {
+	if currency == "INR" {
+		return 10_000_000 * 100
+	}
+	return 1_000_000 * 1_000_000
+}
+
+// validProviderID reports whether s can be a provider ID as policy and receipts
+// name one: "paysh:birdeye.data", "demo:alpha", "sandbox:beta".
+func validProviderID(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case i > 0 && (r == '.' || r == ':' || r == '-' || r == '_'):
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 // Reason codes a pass adds to a policy decision.
 const (
@@ -101,8 +133,15 @@ type Pass struct {
 // knownCategories is the category vocabulary guardrails use.
 func (p Pass) Normalize(now time.Time, knownCategories []string) (Pass, error) {
 	p.Label = strings.TrimSpace(p.Label)
-	if p.Label == "" || len(p.Label) > 80 {
+	if p.Label == "" || utf8.RuneCountInString(p.Label) > 80 {
 		return p, errors.New("give the pass a name of up to 80 characters, e.g. \"Claude — groceries\"")
+	}
+	// Control and format characters (direction overrides, zero-width marks) let a name
+	// read as something else wherever it is shown next to a payment.
+	for _, r := range p.Label {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return p, errors.New("the pass name can't contain control or direction-changing characters")
+		}
 	}
 	switch p.AgentKind {
 	case AgentClaude, AgentChatGPT, AgentCustom:
@@ -121,6 +160,13 @@ func (p Pass) Normalize(now time.Time, knownCategories []string) (Pass, error) {
 	}
 	if p.BudgetMinorUnits <= 0 {
 		return p, errors.New("the budget must be more than zero")
+	}
+	if max := maxBudgetMinorUnits(p.Currency); p.BudgetMinorUnits > max {
+		unit := int64(1_000_000)
+		if p.Currency == "INR" {
+			unit = 100
+		}
+		return p, fmt.Errorf("the budget can be at most %d %s: that looks like a unit mix-up", max/unit, p.Currency)
 	}
 	p.ProjectID, p.Environment = strings.TrimSpace(p.ProjectID), strings.TrimSpace(p.Environment)
 	switch p.Environment {
@@ -159,12 +205,27 @@ func (p Pass) Normalize(now time.Time, knownCategories []string) (Pass, error) {
 		cats = append(cats, c)
 	}
 	p.AllowedCategories = cats
+	// An allow-list that is empty means "any provider", so an entry is never dropped
+	// quietly: one that can't be an ID is an error, not a list that widened.
 	merchants := []string{}
 	for _, m := range p.AllowedMerchants {
 		m = strings.ToLower(strings.TrimSpace(m))
-		if m != "" && len(m) <= 64 && !slices.Contains(merchants, m) {
+		if m == "" {
+			continue
+		}
+		if !validProviderID(m) {
+			shown := m
+			if utf8.RuneCountInString(shown) > 40 {
+				shown = string([]rune(shown)[:40]) + "…"
+			}
+			return p, fmt.Errorf("%q isn't a provider ID (lowercase letters, digits, dots, colons, dashes and underscores, up to 64 characters)", shown)
+		}
+		if !slices.Contains(merchants, m) {
 			merchants = append(merchants, m)
 		}
+	}
+	if len(merchants) > MaxAllowedProviders {
+		return p, fmt.Errorf("a pass can list at most %d providers; leave the list empty to allow any", MaxAllowedProviders)
 	}
 	p.AllowedMerchants = merchants
 	var err error

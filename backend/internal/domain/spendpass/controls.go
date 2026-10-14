@@ -18,6 +18,27 @@ const (
 	// worked never verifies it).
 	ReasonUnverifiedNeedsApproval = "PASS_UNVERIFIED_PROVIDER_NEEDS_APPROVAL"
 	ReasonUnverifiedNotAllowed    = "PASS_UNVERIFIED_PROVIDER_BLOCKED"
+	// The web-found rule: an endpoint the agent found on the open web, which no
+	// catalog lists and nothing here has executed.
+	ReasonWebFoundNeedsApproval = "PASS_WEB_FOUND_NEEDS_APPROVAL"
+	ReasonWebFoundNotAllowed    = "PASS_WEB_FOUND_BLOCKED"
+)
+
+// WebFoundRule is how a pass treats an endpoint its agent found on the open
+// web and supplied itself. Nobody has reviewed it: an agent can't vouch for
+// its own provider, and a page it read may have been written to be found.
+type WebFoundRule string
+
+const (
+	// WebFoundApprove (the default): the first payment waits for the person.
+	// Once an endpoint has been executed here often enough to have a record
+	// it is no longer "found only on the web" and is paid like any other.
+	WebFoundApprove WebFoundRule = "approve"
+	// WebFoundAllow: a web find is paid like a listed provider.
+	WebFoundAllow WebFoundRule = "allow"
+	// WebFoundDeny: only providers in a catalog or configured by the operator
+	// are paid.
+	WebFoundDeny WebFoundRule = "deny"
 )
 
 // UnverifiedRule is how a pass treats a provider whose identity no person has
@@ -72,6 +93,8 @@ type Controls struct {
 	NewProviderCapMinor int64           `json:"new_provider_cap_minor_units"`
 	// UnverifiedProviders: see UnverifiedRule.
 	UnverifiedProviders UnverifiedRule `json:"unverified_providers"`
+	// WebFoundProviders: see WebFoundRule.
+	WebFoundProviders WebFoundRule `json:"web_found_providers"`
 }
 
 // Normalize fills in the defaults and refuses limits that make no sense.
@@ -97,6 +120,11 @@ func (c Controls) Normalize(currency string) (Controls, error) {
 	default:
 		return c, fmt.Errorf("unverified providers must be allow, approve or deny, not %q", c.UnverifiedProviders)
 	}
+	switch c.WebFoundProviders {
+	case WebFoundAllow, WebFoundApprove, WebFoundDeny:
+	default:
+		return c, fmt.Errorf("web-found providers must be allow, approve or deny, not %q", c.WebFoundProviders)
+	}
 	return c, nil
 }
 
@@ -120,7 +148,32 @@ func (c Controls) Effective() Controls {
 	if c.UnverifiedProviders == "" {
 		c.UnverifiedProviders = UnverifiedAllow
 	}
+	c.WebFoundProviders = WebFoundRule(strings.ToLower(strings.TrimSpace(string(c.WebFoundProviders))))
+	if c.WebFoundProviders == "" {
+		c.WebFoundProviders = WebFoundApprove
+	}
 	return c
+}
+
+// WebFound decides a call to an endpoint found only on the open web (never
+// executed here); foundOnWeb says it is one, approved that the person already
+// said yes to this outcome. It returns "" when the call may go ahead,
+// otherwise the reason and whether a person's approval would let it.
+func (c Controls) WebFound(foundOnWeb, approved bool) (reason string, approvable bool) {
+	c = c.Effective()
+	if !foundOnWeb {
+		return "", false
+	}
+	switch c.WebFoundProviders {
+	case WebFoundApprove:
+		if approved {
+			return "", false
+		}
+		return ReasonWebFoundNeedsApproval, true
+	case WebFoundDeny:
+		return ReasonWebFoundNotAllowed, false
+	}
+	return "", false
 }
 
 // Unverified decides a call to a provider whose identity is or isn't

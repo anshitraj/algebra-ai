@@ -94,7 +94,7 @@ node and a fake Jupiter (`backend/providers/jupiter/jupitertest`), so nothing le
 
 ## Accounts and sessions
 
-People sign in to the web app with Privy (an email code or a Solana wallet) or with email and password (argon2id) (`backend/internal/api/v1/auth.go`). A sign-in creates:
+People sign in to the web app with Privy (an email code or a Solana wallet, no password), or with email and password (argon2id) when no Privy app is configured (`backend/internal/api/v1/auth.go`). A sign-in creates:
 
 - an **HttpOnly, SameSite=Lax session cookie** (`algebra_session`, SHA-256-hashed at rest in `user_sessions`), and
 - a **per-session console agent**: the identity every agent-scoped endpoint acts as when called with the cookie. Its token is sealed (AES-256-GCM) on the session row; the web app's server-side loop fetches

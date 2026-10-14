@@ -4,7 +4,7 @@
 
 import type { ProviderCard, StepDetail, StepHint, StepStatus } from "./events";
 import type { ToolResult } from "./execute-tool";
-import { explorerTx, networkWord, solscanTx } from "../explorer";
+import { explorerTx, isOnChain, networkWord, solscanTx } from "../explorer";
 import { pickLabel } from "../strategy";
 import type { PolicyReport } from "../policy-check";
 
@@ -25,6 +25,16 @@ const REASONS: Record<string, string> = {
   PASS_CURRENCY_MISMATCH: "The pass isn't in USDC",
   PASS_EXPIRED: "The pass has expired",
   PASS_REVOKED: "The pass was revoked",
+  PASS_FROZEN: "The pass is frozen by the kill switch",
+  PASS_RATE_LIMITED: "The pass has made as many paid calls this minute as it may",
+  PASS_PROVIDER_RATE_LIMITED: "The pass has paid this provider as often as it may this minute",
+  PASS_NEW_PROVIDER_BLOCKED: "A provider this pass has never paid is blocked by its rules",
+  PASS_NEW_PROVIDER_NEEDS_APPROVAL: "A provider this pass has never paid needs your approval",
+  PASS_NEW_PROVIDER_OVER_CAP: "A provider this pass has never paid asks more than its cap",
+  PASS_UNVERIFIED_PROVIDER_BLOCKED: "The provider's identity isn't verified, and the pass pays verified providers only",
+  PASS_UNVERIFIED_PROVIDER_NEEDS_APPROVAL: "The provider's identity isn't verified, and the pass asks you first",
+  PASS_WEB_FOUND_NEEDS_APPROVAL: "Found on the open web, not in a catalog: the pass asks you first",
+  PASS_WEB_FOUND_BLOCKED: "Found on the open web, not in a catalog: the pass doesn't pay those",
   CATEGORY_BLOCKED: "Category is blocked",
   quote_over_budget: "The endpoint asked for more than the limit",
   provider_not_allowed: "Provider isn't on the pass's list",
@@ -260,7 +270,7 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
       return {
         status: "done",
         summary: [String(data.state ?? "").toLowerCase().replace(/_/g, " "), typeof data.committed === "string" ? `${data.committed} committed` : ""].filter(Boolean).join(" · "),
-        detail: tx ? { links: [{ title: "Transaction on Solana Explorer", url: explorerTx(tx, typeof data.network === "string" ? data.network : undefined) }] } : undefined,
+        detail: tx && isOnChain(data.network) ? { links: [{ title: "Transaction on Solana Explorer", url: explorerTx(tx, data.network as string) }] } : undefined,
       };
     }
     default:

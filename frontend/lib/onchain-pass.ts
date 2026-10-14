@@ -90,8 +90,51 @@ async function call<T>(path: string, method = "GET", body?: unknown): Promise<T>
   return data as T;
 }
 
-export const onchainNetworks = () => call<{ networks: OnchainNetwork[] }>("/api/v1/onchain/networks");
-export const getOnchainPass = (passId: string) => call<OnchainPassView>(`/api/v1/me/passes/${encodeURIComponent(passId)}/onchain`);
+// Several components ask about the same networks and the same pass within a moment (the
+// passes page makes one panel per pass; strict mode runs effects twice). The API limits
+// each session to 120 requests a minute, so these share one request each and run at
+// most three at a time: a page with many passes can't use the minute up on its own.
+const NETWORKS_TTL_MS = 60_000;
+let networksCache: { at: number; value: Promise<{ networks: OnchainNetwork[] }> } | null = null;
+
+export const onchainNetworks = () => {
+  const now = Date.now();
+  if (networksCache && now - networksCache.at < NETWORKS_TTL_MS) return networksCache.value;
+  const value = call<{ networks: OnchainNetwork[] }>("/api/v1/onchain/networks");
+  networksCache = { at: now, value };
+  // A failure isn't kept: the next caller asks again.
+  value.catch(() => {
+    if (networksCache?.value === value) networksCache = null;
+  });
+  return value;
+};
+
+const MAX_PASS_LOOKUPS = 3;
+let lookupsRunning = 0;
+const lookupsWaiting: (() => void)[] = [];
+const lookupsInFlight = new Map<string, Promise<OnchainPassView>>();
+
+async function inLookupSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (lookupsRunning >= MAX_PASS_LOOKUPS) await new Promise<void>((resolve) => lookupsWaiting.push(resolve));
+  lookupsRunning++;
+  try {
+    return await fn();
+  } finally {
+    lookupsRunning--;
+    lookupsWaiting.shift()?.();
+  }
+}
+
+/** A pass's vault. Callers that ask while one request is out share it; a later call asks again, so a read after a transaction is fresh. */
+export const getOnchainPass = (passId: string): Promise<OnchainPassView> => {
+  const pending = lookupsInFlight.get(passId);
+  if (pending) return pending;
+  const p = inLookupSlot(() => call<OnchainPassView>(`/api/v1/me/passes/${encodeURIComponent(passId)}/onchain`)).finally(() => {
+    lookupsInFlight.delete(passId);
+  });
+  lookupsInFlight.set(passId, p);
+  return p;
+};
 export const prepareOnchainPass = (passId: string, b: { network: string; owner: string; deposit_minor: number }) =>
   call<{ pass_address: string; transaction: string; network: string }>(`/api/v1/me/passes/${encodeURIComponent(passId)}/onchain/prepare`, "POST", b);
 export const linkOnchainPass = (passId: string, network: string, address: string) =>

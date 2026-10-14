@@ -727,6 +727,8 @@ func skippable(err error) (string, bool) {
 			return RejectNewProviderGate, true
 		case RejectUnverifiedProvider:
 			return RejectUnverifiedGate, true
+		case RejectWebFoundProvider:
+			return RejectWebFoundGate, true
 		case RejectProviderRateLimited:
 			return RejectProviderRateLimited, true
 		}
@@ -781,6 +783,7 @@ func (s *ExecutionService) Execute(ctx context.Context, req ExecuteRequest) (*Ex
 	}
 	rsv, err := s.econ.Reserve(ctx, req.AgentID, req.IntentID, ReserveRequest{
 		ProviderID: q.Provider, Rail: rail, QuoteMinor: q.Cost.Total(), Semantics: q.Semantics,
+		FoundOnWeb: req.Step.Trust == routing.TrustUnverified,
 	})
 	if err != nil {
 		return nil, err

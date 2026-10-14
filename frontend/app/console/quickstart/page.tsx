@@ -169,16 +169,33 @@ const { summary, response, receipt } = await res.json();`;
               ))}
             </div>
             <div className="mt-3"><Button variant="secondary" onClick={dryRun} disabled={!pass || busy !== null}>{busy === "sim" && <Spinner size={13} />} Dry run</Button></div>
-            {sim && (
+            {sim && (() => {
+              // Providers listed on another network aren't "refused": they were never in this run.
+              // The same provider listed twice (two catalogs) with the same reason is one line.
+              const all = sim.rejected ?? [];
+              const offNetwork = new Set(all.filter((r) => r.code === "network_not_allowed").map((r) => r.provider)).size;
+              const seen = new Set<string>();
+              const refused = all.filter((r) => {
+                if (r.code === "network_not_allowed") return false;
+                const k = `${r.provider}|${r.code}`;
+                if (seen.has(k)) return false;
+                seen.add(k);
+                return true;
+              });
+              return (
               <div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs">
                 <p className="text-foreground"><strong>{sim.verdict}</strong>{sim.would_pay ? ` · would pay ${sim.would_pay.provider} ${formatUSDC(sim.would_pay.price_minor)} (${sim.would_pay.price_source} price)` : ""}</p>
-                {(sim.rejected ?? []).length > 0 && (
+                {refused.length > 0 && (
                   <ul className="mt-2 space-y-1 text-muted">
-                    {sim.rejected!.map((r, i) => <li key={i}><span className="font-mono text-foreground">{r.provider}</span> refused: {r.code}{r.detail ? ` (${r.detail})` : ""}</li>)}
+                    {refused.map((r) => <li key={`${r.provider}|${r.code}`}><span className="font-mono text-foreground">{r.provider}</span> refused: {r.code}{r.detail ? ` (${r.detail})` : ""}</li>)}
                   </ul>
                 )}
+                {offNetwork > 0 && (
+                  <p className="mt-2 text-muted">{offNetwork} more provider{offNetwork === 1 ? " is" : "s are"} listed on other networks, so this run didn&apos;t consider {offNetwork === 1 ? "it" : "them"}.</p>
+                )}
               </div>
-            )}
+              );
+            })()}
           </Step>
 
           <Step n={5} done={!!out?.delivered} title="Run it" body={<>Algebra reserves the budget, pays the chosen provider in the sandbox, checks the answer and signs a receipt. Asking again with the same request returns the kept answer and pays nothing.</>}

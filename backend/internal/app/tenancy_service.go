@@ -154,11 +154,7 @@ func (s *TenancyService) Workspace(ctx context.Context, userID, displayName stri
 	if len(orgs) > 0 {
 		return s.withPlans(orgs), nil
 	}
-	name := strings.TrimSpace(displayName)
-	if name == "" {
-		name = "My"
-	}
-	if _, err := s.CreateOrganization(ctx, userID, trimTo(name+"'s workspace", 80)); err != nil {
+	if _, err := s.CreateOrganization(ctx, userID, workspaceName(displayName)); err != nil {
 		return nil, err
 	}
 	orgs, err = s.store.OrganizationsForUser(ctx, userID)
@@ -171,6 +167,21 @@ func (s *TenancyService) withPlans(orgs []OrgMembership) []OrgMembership {
 		orgs[i].withPlan(now)
 	}
 	return orgs
+}
+
+// workspaceName is a new account's first organization: "Ada's workspace",
+// "James' workspace" (a name already ending in s takes no second one), and
+// "My workspace" when the account has no name (a wallet sign-in).
+func workspaceName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	switch {
+	case name == "":
+		return "My workspace"
+	case strings.HasSuffix(strings.ToLower(name), "s"):
+		return trimTo(name+"' workspace", 80)
+	default:
+		return trimTo(name+"'s workspace", 80)
+	}
 }
 
 func trimTo(s string, n int) string {
