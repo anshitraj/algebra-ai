@@ -52,8 +52,12 @@ export function buildSystemPrompt({ network, pass, rail, mode }: PromptContext):
       );
     } else if (rail.error) {
       facts.push("The wallet is set but the Solana node can't be reached right now, so payments may fail.");
-    } else if (typeof rail.usdc_minor === "number") {
-      facts.push(`The paying wallet holds ${usdc(rail.usdc_minor)}${rail.max_payment_minor ? `; it pays at most ${usdc(rail.max_payment_minor)} per call` : ""}.`);
+    } else if (typeof rail.funded === "boolean") {
+      facts.push(
+        rail.funded
+          ? `The paying wallet is funded${rail.max_payment_minor ? `; it pays at most ${usdc(rail.max_payment_minor)} per call` : ""}.`
+          : "The paying wallet holds no USDC on this network right now.",
+      );
     }
   }
 

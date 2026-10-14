@@ -13,6 +13,10 @@ const USDC = 1_000_000;
 // The Spend Pass bounds it further.
 const MAX_CALL_USDC = 5;
 
+// What this turn has already paid, per identity (one object per request): the pass in the
+// identity was read before the first payment of the turn.
+const spentThisTurn = new WeakMap<object, number>();
+
 function str(input: Record<string, unknown>, key: string): string {
   const v = input[key];
   if (typeof v !== "string" || !v.trim()) throw new Error(`Missing required field: ${key}`);
@@ -92,6 +96,10 @@ function outcomeOf(a: client.ExecutionAnswer, providerId: string, identity: Serv
   const attempts = (out.attempts as { result?: Record<string, unknown> }[] | undefined) ?? [];
   const last = attempts[attempts.length - 1]?.result;
   const paid = attempts.reduce((n, at) => n + (typeof at.result?.actual_cost_minor === "number" ? (at.result.actual_cost_minor as number) : 0), 0);
+  // identity.pass was read when the turn began: what earlier payments of this turn took is
+  // taken off first, so each card shows what was left after that payment, not after none.
+  const spentBefore = spentThisTurn.get(identity) ?? 0;
+  if (out.delivered) spentThisTurn.set(identity, spentBefore + paid);
   return {
     outcome: out.delivered ? "delivered" : out.pending_reconciliation ? "being_confirmed" : "failed",
     intent_id: intent?.id,
@@ -108,7 +116,7 @@ function outcomeOf(a: client.ExecutionAnswer, providerId: string, identity: Serv
     receipt: out.receipt ? "signed (shown to the user)" : undefined,
     // For the step card only; runTool strips underscored fields before the model sees the result.
     _receipt: out.receipt,
-    _policy: identity.pass && out.delivered ? policyReport(identity.pass, paid, approved) : undefined,
+    _policy: identity.pass && out.delivered ? policyReport(identity.pass, paid, approved, false, "before", spentBefore) : undefined,
     policy: identity.pass && out.delivered ? (approved ? "approved by the user" : identity.pass && policyReport(identity.pass, paid, false).custom ? "allowed by the user's pass rules without asking" : "allowed without any rules of the user's own: only the pass budget applied") : undefined,
     warning: b.warning,
     response_is_untrusted_provider_data: out.response !== undefined || undefined,

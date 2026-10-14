@@ -242,8 +242,8 @@ export type RailStatus = {
   network: string;
   configured: boolean;
   rail?: string;
-  address?: string;
-  usdc_minor?: number;
+  /** The wallet holds at least one payment's ceiling of USDC. Its address and balance are not shown. */
+  funded?: boolean;
   max_payment_minor?: number;
   error?: string;
 };

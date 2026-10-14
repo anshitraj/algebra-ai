@@ -71,9 +71,19 @@ func (a *API) createMyPass(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
+	// Omitted (0) is 30 days. A negative number is a mistake, not "the default".
 	days := req.ExpiresInDays
-	if days <= 0 {
+	if days < 0 {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "expires_in_days can't be negative: leave it out for 30 days, or give 1 to 366"})
+		return
+	}
+	if days == 0 {
 		days = 30
+	}
+	// Algebra pays in USDC on Solana: a pass that names no currency is a USDC pass,
+	// not (as it once was, for the shopping product) an INR one.
+	if strings.TrimSpace(req.Currency) == "" {
+		req.Currency = "USDC"
 	}
 	if strings.TrimSpace(req.ProjectID) != "" {
 		if a.b.Tenancy == nil {

@@ -454,6 +454,9 @@ type ReserveRequest struct {
 	Rail       string         `json:"rail"`
 	QuoteMinor int64          `json:"quote_minor,omitempty"`
 	Semantics  econ.Semantics `json:"settlement_semantics,omitempty"`
+	// FoundOnWeb is set by the coordinator, never read from a request body: the
+	// plan step's endpoint was found only on the open web and has no record here.
+	FoundOnWeb bool `json:"-"`
 }
 
 // Reserve grants the executor the intent's single live reservation, or
@@ -557,7 +560,7 @@ func (s *EconomicService) Reserve(ctx context.Context, agentID, intentID string,
 		}
 		// The pass's controls: how fast its agent may spend, and how it may
 		// treat a provider its person has never paid (policy_controls.go).
-		if reason, codes, err := s.passControls(u, p, in, req.ProviderID, verified, hold, now); err != nil {
+		if reason, codes, err := s.passControls(u, p, in, req.ProviderID, verified, req.FoundOnWeb, hold, now); err != nil {
 			return err
 		} else if reason != "" {
 			return reject(reason, false, codes, "")

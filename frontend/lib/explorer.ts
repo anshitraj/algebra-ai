@@ -9,6 +9,14 @@ export function networkWord(n: unknown): string {
   return typeof n === "string" ? (NETWORK_WORDS[n] ?? n) : "";
 }
 
+/**
+ * Whether a network is a real Solana cluster, so a transaction id on it can be looked up.
+ * The sandbox's "transactions" (sbxtx_…) are simulated: no explorer has them.
+ */
+export function isOnChain(network: unknown): boolean {
+  return network === "solana" || network === "solana-devnet";
+}
+
 /** A transaction on Solana Explorer, on its own cluster. */
 export function explorerTx(signature: string, network: string | undefined): string {
   return `https://explorer.solana.com/tx/${encodeURIComponent(signature)}${network === "solana-devnet" ? "?cluster=devnet" : ""}`;

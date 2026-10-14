@@ -126,7 +126,8 @@ function IntentRow({ intent: i, open, onToggle }: { intent: EconIntent; open: bo
             {i.committed_minor > 0 ? formatUSDC(i.committed_minor) : `up to ${formatUSDC(i.budget_max_minor)}`}
           </span>
         </span>
-        <StatusBadge status={i.state} />
+        {/* An intent that needed a yes and is OPEN again has been approved: it is waiting to be run, not "open". */}
+        <StatusBadge status={i.state} label={i.state === "OPEN" && i.requires_approval ? "Approved, not run yet" : undefined} />
         <IconChevronDown size={18} className={`shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && <IntentDetail id={i.id} />}
