@@ -81,6 +81,12 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
   const { user } = useSession();
   // The account wallet: the one Privy made at sign-in. It signs by default.
   const account = useMemo(() => user?.wallets?.find((w) => w.chain === "solana" && w.kind === "embedded"), [user?.wallets]);
+  // The Solana wallet the person signed in with (Phantom, say). Privy holds no wallet for such an account, so
+  // the vault is made from this one: the wallet the account shows and funds is the wallet that signs.
+  const signedInWallet = useMemo(() => {
+    const mine = (user?.wallets ?? []).filter((w) => w.chain === "solana" && w.kind === "external");
+    return mine.length === 1 ? mine[0].address : undefined;
+  }, [user?.wallets]);
   const [privyAppId, setPrivyAppId] = useState("");
   const [accountSigner, setAccountSigner] = useState<AccountSigner | null>(null);
   const [useBrowserWallet, setUseBrowserWallet] = useState(false);
@@ -134,21 +140,35 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
   // The account wallet signs unless the person picked a browser wallet (or there is no account wallet).
   const signWithAccount = !!account && !useBrowserWallet;
 
-  async function withWallet<T>(want: string | undefined, fn: (w: StandardWallet, address: string, acct: Awaited<ReturnType<typeof connectWallet>>) => Promise<T>) {
+  async function withWallet<T>(
+    want: string | undefined,
+    fn: (w: StandardWallet, address: string, acct: Awaited<ReturnType<typeof connectWallet>>) => Promise<T>,
+    whose: "pass" | "account" = "pass",
+  ) {
     const ws = solanaWallets();
     if (ws.length === 0) throw new Error("No Solana wallet found in this browser. Install Phantom, Solflare or Backpack, then reload.");
-    // With several wallets, the one holding the owner's account; else the first.
+    // With several wallets, the one holding the wanted account; else the first.
     for (const w of ws) {
       let acct: Awaited<ReturnType<typeof connectWallet>>;
       try {
-        acct = await connectWallet(w);
+        acct = await connectWallet(w, want);
       } catch (e) {
         throw new Error(connectFailure(e, w.name));
       }
       if (!want || acct.address === want) return fn(w, acct.address, acct);
-      if (ws.length === 1) throw new Error(`This pass belongs to wallet ${short(want)}; ${w.name} is on ${short(acct.address)}. Switch accounts in ${w.name}.`);
+      if (ws.length === 1) {
+        throw new Error(
+          whose === "account"
+            ? `You signed in with ${short(want)}, but ${w.name} is on ${short(acct.address)}. Switch to that account in ${w.name} and try again.`
+            : `This pass belongs to wallet ${short(want)}; ${w.name} is on ${short(acct.address)}. Switch accounts in ${w.name}.`,
+        );
+      }
     }
-    throw new Error(`None of your wallets is on ${short(want ?? "")}, the wallet that owns this pass.`);
+    throw new Error(
+      whose === "account"
+        ? `None of your wallets is on ${short(want ?? "")}, the wallet you signed in with.`
+        : `None of your wallets is on ${short(want ?? "")}, the wallet that owns this pass.`,
+    );
   }
 
   async function create() {
@@ -183,15 +203,19 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
         }
         await link(prep.pass_address);
       } else {
-        await withWallet(undefined, async (w, owner, acct) => {
-          const prep = await prepareOnchainPass(passId, { network: net.network, owner, deposit_minor: deposit });
-          try {
-            await signAndSend(w, acct, prep.transaction, net.network);
-          } catch (e) {
-            throw new Error(walletFailure(e, w.name, net.network));
-          }
-          await link(prep.pass_address);
-        });
+        await withWallet(
+          signedInWallet,
+          async (w, owner, acct) => {
+            const prep = await prepareOnchainPass(passId, { network: net.network, owner, deposit_minor: deposit });
+            try {
+              await signAndSend(w, acct, prep.transaction, net.network);
+            } catch (e) {
+              throw new Error(walletFailure(e, w.name, net.network));
+            }
+            await link(prep.pass_address);
+          },
+          "account",
+        );
       }
       refreshWallets(true);
       await load();
@@ -294,8 +318,16 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
 
       {net && net.signer_ready === false && (
         <p className="mt-2 rounded-md bg-danger-tint px-3 py-2 text-xs leading-snug text-danger" role="status">
-          Algebra&apos;s {networkLabel(net.network)} payer is out of SOL for network fees, so a vault can&apos;t fund payments right now. It is topped up from the faucet
-          automatically; try again in a little while.
+          Algebra&apos;s {networkLabel(net.network)} payer has no SOL for network fees yet, so a vault can&apos;t fund payments until it is topped up. Test SOL is
+          free: send some to <span className="font-mono">{short(net.agent)}</span> (
+          <button type="button" className="font-medium underline" onClick={() => void navigator.clipboard?.writeText(net.agent)}>
+            copy the address
+          </button>
+          ) from{" "}
+          <a className="font-medium underline" href="https://faucet.solana.com" target="_blank" rel="noopener noreferrer">
+            faucet.solana.com
+          </a>
+          .
         </p>
       )}
 
@@ -306,6 +338,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
             within these limits, checked on chain. Even Algebra can&apos;t take more, and you can freeze it from your wallet.
           </p>
           {net ? (
+            <>
             <div className="mt-3 flex flex-wrap items-end gap-2">
               <label className="block">
                 <span className="text-xs text-muted">Fund it with (USDC, {networkLabel(net.network)})</span>
@@ -315,9 +348,16 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
               </label>
               <Button onClick={create} disabled={createDisabled}>
                 {busy === "create" || (signWithAccount && !accountSigner) ? <Spinner size={13} /> : <IconWallet size={14} />}{" "}
-                {signWithAccount ? "Create with my account wallet" : "Create with my browser wallet"}
+                {signWithAccount ? "Create with my account wallet" : signedInWallet ? `Create with my wallet ${short(signedInWallet)}` : "Create with my browser wallet"}
               </Button>
             </div>
+            {busy === "create" && !signWithAccount && (
+              <p className="mt-2 text-xs leading-snug text-muted" role="status">
+                Waiting for {wallets[0]?.name ?? "your wallet"}. If it shows a password box, unlock it; then approve the connection and the transaction. Nothing moves until
+                you approve.
+              </p>
+            )}
+            </>
           ) : (
             <p className="mt-2 text-xs text-muted">Switch the console to {nets.map((n) => networkLabel(n.network)).join(" or ")} to put this pass on chain.</p>
           )}
@@ -370,8 +410,14 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
             </p>
             {!account && (
               <p className="mt-1.5 text-xs leading-relaxed text-muted">
-                Signed by the Solana wallet in this browser (Phantom, Solflare or Backpack), which must be set to {networkLabel(net.network)} and hold the USDC
-                and a little SOL there.
+                {signedInWallet ? (
+                  <>
+                    Signed by your wallet <span className="font-mono text-foreground">{short(signedInWallet)}</span>, the one you signed in with.{" "}
+                  </>
+                ) : (
+                  "Signed by the Solana wallet in this browser (Phantom, Solflare or Backpack). "
+                )}
+                It must be unlocked, set to {networkLabel(net.network)} and hold the USDC and a little SOL there.
               </p>
             )}
             </>

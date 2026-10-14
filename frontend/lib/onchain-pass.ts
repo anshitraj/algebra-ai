@@ -182,11 +182,28 @@ export function solanaWallets(): StandardWallet[] {
   return found.filter((w) => SIGN_AND_SEND in w.features && w.chains.some((c) => c.startsWith("solana:")));
 }
 
-/** Asks a wallet for its account (a popup the first time). */
-export async function connectWallet(w: StandardWallet): Promise<WalletAccount> {
-  const connect = w.features["standard:connect"] as ConnectFeature | undefined;
-  const accounts = connect ? (await connect.connect()).accounts : w.accounts;
-  const account = accounts.find((a) => a.chains.some((c) => c.startsWith("solana:"))) ?? accounts[0];
+/**
+ * A wallet's account. One the wallet already shares with this site (the accounts
+ * it lists, or a silent connect, which a wallet that trusts the site and is
+ * unlocked answers at once) is used without a popup; only a wallet that has not
+ * been connected here asks the person. `want` picks the account when the wallet
+ * shares several.
+ */
+export async function connectWallet(w: StandardWallet, want?: string): Promise<WalletAccount> {
+  const onSolana = (a: WalletAccount) => a.chains.some((c) => c.startsWith("solana:"));
+  const pick = (list: readonly WalletAccount[]) => (want ? list.find((a) => a.address === want && onSolana(a)) : undefined) ?? list.find(onSolana) ?? list[0];
+  let account = pick(w.accounts);
+  if (!account || (want && account.address !== want)) {
+    const connect = w.features["standard:connect"] as ConnectFeature | undefined;
+    if (connect) {
+      const silent = await connect.connect({ silent: true }).then(
+        (r) => r.accounts,
+        () => [] as readonly WalletAccount[],
+      );
+      account = pick(silent);
+      if (!account || (want && account.address !== want)) account = pick((await connect.connect()).accounts) ?? account;
+    }
+  }
   if (!account) throw new Error(`${w.name} didn't share an account.`);
   return account;
 }
