@@ -64,31 +64,31 @@ type Server struct {
 	// update_commerce_preferences — see internal/domain/commerceprofile.
 	CommerceProfiles *app.CommerceProfileService
 
-	// SpendPasses backs algebra.spend_pass: an agent reading its own limits.
+	// SpendPasses backs algebra_spend_pass: an agent reading its own limits.
 	SpendPasses *app.SpendPassService
 
 	// Tenancy resolves Algebra API keys to their project's Spend Pass. Nil
 	// leaves only Spend Pass tokens, as in tests.
 	Tenancy *app.TenancyService
 
-	// Economic and Execution back algebra.execute and
-	// algebra.status: the agent says what it wants and Algebra
+	// Economic and Execution back algebra_execute and
+	// algebra_status: the agent says what it wants and Algebra
 	// pays for it and does it. Candidates resolves the providers an agent
 	// names (configured ones and the catalogs). Directory backs
-	// algebra.discover and is nil when the catalog is off. The
+	// algebra_discover and is nil when the catalog is off. The
 	// rest are nil when execution isn't enabled.
 	Economic   *app.EconomicService
 	Execution  *app.ExecutionService
 	Candidates app.CandidateResolver
 	Directory  *catalog.Multi
 
-	// Classes and Health back algebra.classes: the kinds of work Algebra routes
+	// Classes and Health back algebra_classes: the kinds of work Algebra routes
 	// across every catalog, and how each provider of one has been behaving.
 	// Classes is nil when the catalogs are off; Health may be nil.
 	Classes *catalog.ClassIndex
 	Health  *app.HealthService
 
-	// IntentReceipts checks a receipt's signature for algebra.receipt; nil
+	// IntentReceipts checks a receipt's signature for algebra_receipt; nil
 	// leaves the receipt unverified by the tool (it can still be verified
 	// by anyone against the published keys).
 	IntentReceipts *app.IntentReceiptService
@@ -97,6 +97,7 @@ type Server struct {
 	// algebra.discover_providers and algebra.execution_status and the
 	// original shopping product's commerce.*, payments.*, profiles.* and
 	// policy.* tools. Off by default: an agent sees the execution tools only.
+	// These keep their dots, which some clients refuse (see earlierNames).
 	LegacyTools bool
 
 	// Limiter is optional (mandate §35/§49) — nil means no MCP-level rate
@@ -150,14 +151,15 @@ func stripInternal(q *quote.CheckoutQuote) quote.CheckoutQuote {
 }
 
 // NewMCPServer builds the go-sdk server and registers the tools against srv:
-// the execution tools always (algebra.discover, quote, simulate, execute,
-// status, receipt, spend_pass, classes, discover_web), the legacy ones only
-// with LegacyTools. Callers run it with server.Run(ctx, &gomcp.StdioTransport{}) for
+// the execution tools always (algebra_discover, algebra_quote,
+// algebra_simulate, algebra_execute, algebra_status, algebra_receipt,
+// algebra_spend_pass, algebra_classes, algebra_discover_web), the legacy ones
+// only with LegacyTools. Callers run it with server.Run(ctx, &gomcp.StdioTransport{}) for
 // local/dev, or gomcp.NewStreamableHTTPHandler for a production HTTP
 // deployment (see cmd/mcp).
 func NewMCPServer(srv *Server) *gomcp.Server {
 	s := gomcp.NewServer(&gomcp.Implementation{Name: "project-algebra", Version: "0.1.0"}, nil)
-	s.AddReceivingMiddleware(bearerMiddleware, srv.rateLimitMiddleware)
+	s.AddReceivingMiddleware(earlierNameMiddleware, bearerMiddleware, srv.rateLimitMiddleware)
 	srv.registerSpendPassTools(s)
 	srv.registerEconomicTools(s)
 	srv.registerDiscoveryTools(s)

@@ -27,7 +27,7 @@ func TestWebDiscoveryOverHTTP_WithoutAGeminiKeyItSaysSo(t *testing.T) {
 	}
 
 	cs := mcpSession(t, base, token)
-	if _, text, isErr := callTool(t, cs, "algebra.discover_web", map[string]any{"query": "x"}); !isErr || !strings.Contains(text, "GEMINI_API_KEY") {
+	if _, text, isErr := callTool(t, cs, "algebra_discover_web", map[string]any{"query": "x"}); !isErr || !strings.Contains(text, "GEMINI_API_KEY") {
 		t.Errorf("the MCP tool says the same: %v %q", isErr, text)
 	}
 }
@@ -69,7 +69,7 @@ func TestWebDiscoveryOverHTTP_FindsProbesAndTheCandidateCanBePaid(t *testing.T) 
 
 	// And over MCP, the same search.
 	cs := mcpSession(t, base, token)
-	m, text, isErr := callTool(t, cs, "algebra.discover_web", map[string]any{"capability": "solana.token-risk"})
+	m, text, isErr := callTool(t, cs, "algebra_discover_web", map[string]any{"capability": "solana.token-risk"})
 	if isErr || m["endpoints_are_unverified_web_finds"] != true || m["untrusted_text"] == nil {
 		t.Fatalf("mcp discover_web: %v %s", m, text)
 	}

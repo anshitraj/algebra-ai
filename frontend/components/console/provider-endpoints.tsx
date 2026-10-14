@@ -297,7 +297,7 @@ function UseIt({
   -H "Authorization: Bearer $ALGEBRA_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '${JSON.stringify(body)}'`;
-  const mcp = `algebra.execute({
+  const mcp = `algebra_execute({
   capability: "${e.capability}",
   providers: ["${provider.id}"],
   input: ${JSON.stringify(input)

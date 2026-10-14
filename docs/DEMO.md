@@ -203,8 +203,8 @@ curl -s -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' lo
 curl -s -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' localhost:8085/api/v1/execute -d '{"capability":"token.price","input":{"mint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"},"budget_max_minor":50000,"window":"demo-1","constraints":{"allowed_networks":["solana-devnet"]}}'
 ```
 
-The same tools are on the MCP server at `/mcp`: `algebra.classes`,
-`algebra.simulate`, `algebra.execute`.
+The same tools are on the MCP server at `/mcp`: `algebra_classes`,
+`algebra_simulate`, `algebra_execute`.
 
 ## Without a chain: the sandbox providers
 

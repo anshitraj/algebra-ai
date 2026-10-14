@@ -8,8 +8,8 @@ import (
 	"github.com/project-algebra/algebra/internal/mcpserver"
 )
 
-// mcpHandler serves the MCP tools (algebra.execute, algebra.simulate,
-// algebra.classes and the rest) over streamable HTTP at /mcp, from this
+// mcpHandler serves the MCP tools (algebra_execute, algebra_simulate,
+// algebra_classes and the rest) over streamable HTTP at /mcp, from this
 // process. An agent connects with its Spend Pass token as
 // "Authorization: Bearer <token>", so the token never passes through the model.
 //
