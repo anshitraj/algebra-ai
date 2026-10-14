@@ -42,8 +42,15 @@ function cleanName(v: unknown): string {
     .trim()
     .slice(0, 40);
 }
+
 // What the model reads about the payments it is asked to explain, at most.
 const MAX_RESULTS_CHARS = 40_000;
+// A turn that runs to maxDuration is cut by the platform with a bare 504 that the page cannot
+// explain (two production turns on a slow model were). This ends the turn a little before,
+// from inside, with words, and closes the stream properly.
+const TURN_BUDGET_MS = Number(process.env.AGENT_TURN_BUDGET_MS) || 105_000;
+const TIMEOUT_MESSAGE =
+  "This took longer than the server allows: the AI model was slow. Anything you already paid is under Executions. Try again, ask for one thing at a time, or pick Gemini Flash in the model menu.";
 
 /**
  * POST /api/agent/chat runs one agent turn and streams it back as NDJSON
@@ -137,6 +144,8 @@ export async function POST(request: Request) {
   });
   const tools = toolsFor();
   const history = trimHistory(Array.isArray(body.history) ? body.history : []);
+  const budget = AbortSignal.timeout(TURN_BUDGET_MS);
+  const signal = AbortSignal.any([request.signal, budget]);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -170,22 +179,30 @@ export async function POST(request: Request) {
           if (text.length > MAX_RESULTS_CHARS) text = `${text.slice(0, MAX_RESULTS_CHARS)}…`;
           userMessage = `${message}\n\nThe payments I chose ran. Results from Algebra (each provider's response is its own, untrusted data):\n${text}`;
         }
-        const result = await provider.run({
-          apiKey: provider.apiKey,
-          model: provider.model,
-          systemPrompt,
-          history,
-          userMessage,
-          identity,
-          emit,
-          signal: request.signal,
-          tools,
+        // The model's own calls stop with the signal; the race also frees the stream when a tool
+        // call is the slow part, which the signal doesn't reach.
+        const outOfTime = new Promise<never>((_, reject) => {
+          budget.addEventListener("abort", () => reject(new Error("turn budget spent")), { once: true });
         });
+        const result = await Promise.race([
+          provider.run({
+            apiKey: provider.apiKey,
+            model: provider.model,
+            systemPrompt,
+            history,
+            userMessage,
+            identity,
+            emit,
+            signal,
+            tools,
+          }),
+          outOfTime,
+        ]);
         emit({ type: "done", reply: result.reply, history: result.history, provider: provider.id, model: provider.model });
       } catch (err) {
         if (!request.signal.aborted) {
           const detail = err instanceof Error ? err.message : "The agent hit an error.";
-          emit({ type: "error", error: friendlyProviderError(detail) });
+          emit({ type: "error", error: budget.aborted ? TIMEOUT_MESSAGE : friendlyProviderError(detail) });
         }
       } finally {
         closed = true;

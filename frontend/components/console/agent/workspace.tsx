@@ -61,7 +61,7 @@ const SUGGESTIONS: Record<string, string[]> = {
     "What's the weather in Lisbon and the SOL price? Under 0.01 USDC each",
     "Is the token EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v risky? Pay at most 0.01 USDC",
     "Search the web for Solana payment channels, under 0.01 USDC",
-    "Make a test call on devnet and show me its receipt",
+    "What does SOL cost right now? Pay at most 0.01 USDC",
   ],
   // Demo mode: the sandbox serves token prices and token risk, from providers that misbehave like real ones.
   // Each of these works as written, so one tap is a complete first answer.
@@ -143,6 +143,19 @@ function passFits(p: SpendPass, network: string, demo: boolean) {
 
 function uid() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Math.random());
+}
+
+/**
+ * What to say when the chat endpoint answered with no message of its own: the
+ * platform's own page, a timeout in front of the agent. "Couldn't start" was
+ * the whole of it before, and wrong for a request that ran for two minutes.
+ */
+function whyItDidNotStart(status: number) {
+  if (status === 504 || status === 408 || status === 524) {
+    return "The server stopped waiting for the agent: it took more than two minutes, which is the AI model being slow. Send it again, ask for one thing at a time, or pick Gemini Flash in the model menu.";
+  }
+  if (status >= 500) return `The agent couldn't start: the server answered ${status}. Try again in a moment.`;
+  return "The agent couldn't start.";
 }
 
 export function AgentWorkspace() {
@@ -389,7 +402,7 @@ export function AgentWorkspace() {
         });
         if (!res.ok || !res.body) {
           const body = await res.json().catch(() => null);
-          throw new Error(body?.error ?? "The agent couldn't start.");
+          throw new Error(body?.error ?? whyItDidNotStart(res.status));
         }
         const reader = res.body.getReader();
         const decoder = new TextDecoder();

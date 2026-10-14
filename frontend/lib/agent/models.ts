@@ -6,6 +6,7 @@
 import * as anthropicProvider from "./providers/anthropic";
 import * as openaiProvider from "./providers/openai";
 import * as geminiProvider from "./providers/gemini";
+import { autoModel } from "./auto-model";
 import type { ProviderTurnInput, ProviderTurnResult } from "./providers/types";
 
 export type AgentProviderId = "anthropic" | "openai" | "gemini";
@@ -99,6 +100,7 @@ export function resolveProvider(provider: string | undefined, model: string | un
   const id = (provider && available.includes(provider as AgentProviderId) ? provider : available[0]) as AgentProviderId | undefined;
   if (!id) return null;
   const models = modelsFor(id);
-  const chosen = models.find((m) => m.id === model) ?? models[0];
+  // A model the person picked, else "Auto": a quick one (see autoModel), not whichever is listed first.
+  const chosen = models.find((m) => m.id === model) ?? autoModel(id, models) ?? models[0];
   return { id, model: chosen.id, apiKey: process.env[PROVIDERS[id].envKey] as string, run: PROVIDERS[id].run };
 }
