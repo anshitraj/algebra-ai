@@ -392,9 +392,14 @@ export type FaucetStatus = {
   address?: string;
   /** The person's wallet a drop would go to. */
   wallet?: string;
+  /** What the account was given, once it has had its one airdrop (an account gets one, ever). */
+  received?: FaucetReceipt;
 };
 
 export type FaucetDrop = { address: string; sol_lamports: number; usdc_minor: number; signature: string };
+
+/** The airdrop an account had: where it went, what it was, and the transaction (empty while it is being sent). */
+export type FaucetReceipt = { address: string; sol_lamports: number; usdc_minor: number; signature?: string; at: string };
 
 export type WalletsView = {
   network: "solana" | "solana-devnet";

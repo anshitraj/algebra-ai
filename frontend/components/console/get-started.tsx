@@ -1,36 +1,31 @@
 "use client";
 
-// The first screen of Quickstart. Practice comes first (play money, no wallet:
+// The first screen of Quickstart. Demo comes first (play money, no wallet:
 // a real answer in seconds), then three steps from there to a paid call on
 // Solana's test network, with no address to copy anywhere: 1) test SOL and USDC
-// are dropped on the person's own wallet, 2) a starter pass and its vault, 3)
-// ask the agent. Each step shows where the person is: what is done is ticked,
-// what is next has its one button.
+// are dropped on the person's own wallet (one airdrop per account), 2) a starter
+// pass and its vault, 3) ask the agent. Each step shows where the person is: what
+// is done is ticked, what is next has its one button.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
-import { solscanTx } from "@/lib/explorer";
 import { formatUSDC } from "@/lib/money";
 import { useNetwork } from "@/lib/network";
-import { notifyTx } from "@/lib/notifications";
 import { getOnchainPass } from "@/lib/onchain-pass";
 import { useSession } from "@/lib/session";
-import type { FaucetDrop, FaucetStatus, SpendPass, WalletBalance } from "@/lib/types";
+import { solText, useAirdrop } from "@/lib/use-airdrop";
+import type { SpendPass } from "@/lib/types";
 import { Copy } from "@/components/console/snippet";
+import { AirdropAction } from "@/components/console/airdrop-action";
 import { Button, ErrorNote, Panel } from "@/components/console/ui";
 import { IconCheck, Spinner } from "@/components/icons";
 
 const short = (a: string) => (a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a);
-const solText = (lamports: number) => (lamports / 1e9).toLocaleString("en-US", { maximumFractionDigits: 3 });
-
-// What a person needs to put USDC in a vault: a little SOL for fees and rent, and USDC to lock.
-const ENOUGH_SOL = 20_000_000; // 0.02 SOL
-const ENOUGH_USDC = 1_000_000; // 1 USDC
 
 const TRY = "What's the weather in Lisbon and the SOL price? Under 0.01 USDC each";
-// Practice serves token prices and token risk, so its example asks for one.
+// Demo mode serves token prices and token risk, so its example asks for one.
 const TRY_PRACTICE = "What does SOL cost right now? Use the best provider";
 
 export function GetStarted() {
@@ -38,20 +33,13 @@ export function GetStarted() {
   const router = useRouter();
   const { setNetwork } = useNetwork();
   const demo = user?.mode === "demo";
-  const [faucet, setFaucet] = useState<FaucetStatus | null | undefined>(undefined);
-  const [wallets, setWallets] = useState<WalletBalance[] | null>(null);
+  const airdrop = useAirdrop(!demo);
+  const { address, held, funded } = airdrop;
   const [passes, setPasses] = useState<SpendPass[] | null>(null);
   const [vault, setVault] = useState<boolean | undefined>(undefined);
-  const [busy, setBusy] = useState<"drop" | "pass" | null>(null);
+  const [busy, setBusy] = useState<"pass" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState<FaucetDrop | null>(null);
 
-  const loadWallets = useCallback((force = false) => {
-    api
-      .myWallets("solana-devnet", force)
-      .then((v) => setWallets(v.wallets))
-      .catch(() => {});
-  }, []);
   const loadPasses = useCallback(() => {
     api
       .listPasses()
@@ -61,13 +49,8 @@ export function GetStarted() {
 
   useEffect(() => {
     if (demo || !user) return;
-    api
-      .getFaucet()
-      .then(setFaucet)
-      .catch(() => setFaucet(null));
-    loadWallets();
     loadPasses();
-  }, [demo, user, loadWallets, loadPasses]);
+  }, [demo, user, loadPasses]);
 
   // The pass that goes on chain: not the demo pass, which spends play money and has no vault to make.
   const pass = passes?.find((p) => p.active && p.currency === "USDC" && p.environment !== "sandbox") ?? null;
@@ -77,32 +60,6 @@ export function GetStarted() {
       .then((v) => setVault(v.exists))
       .catch(() => setVault(false));
   }, [pass]);
-
-  const address = faucet?.wallet ?? wallets?.[0]?.address ?? user?.wallets?.find((w) => w.chain === "solana")?.address;
-  const held = wallets?.find((w) => w.address === address) ?? null;
-  const funded = !!held?.ok && held.sol_lamports >= ENOUGH_SOL && held.usdc_minor >= ENOUGH_USDC;
-
-  async function drop() {
-    setBusy("drop");
-    setError(null);
-    try {
-      const r = await api.requestFaucet(address);
-      setSent(r.drop);
-      notifyTx({
-        kind: "faucet",
-        title: "Test money received",
-        detail: [r.drop.sol_lamports ? `${solText(r.drop.sol_lamports)} SOL` : "", r.drop.usdc_minor ? formatUSDC(r.drop.usdc_minor) : ""].filter(Boolean).join(" and ") + " sent to your wallet",
-        signature: r.drop.signature,
-        network: "solana-devnet",
-      });
-      // The chain needs a moment before the wallet shows it.
-      window.setTimeout(() => loadWallets(true), 2500);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "The faucet didn't answer. Try again in a minute.");
-    } finally {
-      setBusy(null);
-    }
-  }
 
   async function makePass() {
     setBusy("pass");
@@ -164,7 +121,7 @@ export function GetStarted() {
 
       <h3 className="pt-4 text-sm font-semibold text-foreground">Then go real, with free test money</h3>
 
-      <Card n={1} done={funded} title="Get free test money" body="Test SOL for fees and test USDC to spend, sent straight to your wallet. Once a day.">
+      <Card n={1} done={funded} title="Get your airdrop of test money" body="Test SOL for fees and test USDC to spend, sent straight to your wallet. One airdrop per account.">
         {address ? (
           <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             <span className="text-muted">Your wallet</span>
@@ -183,39 +140,7 @@ export function GetStarted() {
           <p className="mt-3 text-sm text-muted">Your account has no wallet yet. Sign out and sign in with your email, or with an external wallet, to get one.</p>
         )}
 
-        {faucet?.enabled ? (
-          <div className="mt-3">
-            <Button onClick={drop} disabled={busy !== null || !address || funded}>
-              {busy === "drop" && <Spinner size={13} />}{" "}
-              {funded ? "You have enough" : `Get ${solText(faucet.sol_lamports ?? 0)} SOL + ${formatUSDC(faucet.usdc_minor ?? 0)}`}
-            </Button>
-            {busy === "drop" && <p className="mt-2 text-xs text-muted">Sending on devnet: a few seconds.</p>}
-            {sent && (
-              <p className="mt-2 text-sm text-foreground">
-                Sent{sent.sol_lamports ? ` ${solText(sent.sol_lamports)} SOL` : ""}
-                {sent.sol_lamports && sent.usdc_minor ? " and" : ""}
-                {sent.usdc_minor ? ` ${formatUSDC(sent.usdc_minor)}` : ""}.{" "}
-                <a href={solscanTx(sent.signature, "solana-devnet")} target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline">
-                  See it on Solscan
-                </a>
-              </p>
-            )}
-          </div>
-        ) : faucet === undefined ? (
-          <div className="mt-3 h-10 w-48 animate-pulse rounded-md bg-border/60" />
-        ) : (
-          <p className="mt-3 text-sm leading-relaxed text-muted">
-            This server has no faucet of its own. Send your address devnet SOL at{" "}
-            <a className="font-medium text-primary hover:underline" href="https://faucet.solana.com" target="_blank" rel="noopener noreferrer">
-              faucet.solana.com
-            </a>{" "}
-            and devnet USDC at{" "}
-            <a className="font-medium text-primary hover:underline" href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer">
-              faucet.circle.com
-            </a>
-            .
-          </p>
-        )}
+        <AirdropAction airdrop={airdrop} />
       </Card>
 
       <Card

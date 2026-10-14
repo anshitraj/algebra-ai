@@ -11,6 +11,7 @@ import { mcpSetup } from "@/lib/mcp-clients";
 import { formatUSDC } from "@/lib/money";
 import { Button, ErrorNote, Skeleton } from "./ui";
 import { Copy, Snippet } from "./snippet";
+import { DevnetAirdropCard } from "./airdrop-action";
 import {
   IconArrowLeft,
   IconArrowRight,
@@ -980,20 +981,22 @@ export function QuickstartFlow({ demo = false }: { demo?: boolean }) {
                           {demo ? "Create your workspace" : "Connect an agent"}
                           <IconArrowRight size={15} />
                         </Link>
-                        <Link
-                          href={demo ? "/signup" : "/console/projects"}
-                          className={styles.secondaryLink}
-                        >
-                          {demo
-                            ? "Continue with real sandbox calls"
-                            : "Next: set up devnet payments"}
-                          <IconArrowRight size={14} />
-                        </Link>
-                        <p className={styles.note}>
-                          {demo
-                            ? "Your account starts with the same guided sandbox setup."
-                            : "Create a devnet pass and key in Projects, then fund the pass in Spend passes to try an on-chain payment."}
-                        </p>
+                        {demo ? (
+                          <>
+                            <Link
+                              href="/signup"
+                              className={styles.secondaryLink}
+                            >
+                              Continue with real sandbox calls
+                              <IconArrowRight size={14} />
+                            </Link>
+                            <p className={styles.note}>
+                              Your account starts with the same guided sandbox setup.
+                            </p>
+                          </>
+                        ) : (
+                          <DevnetAirdropCard />
+                        )}
                       </div>
                     ) : (
                       <>

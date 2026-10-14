@@ -17,6 +17,8 @@ import dynamic from "next/dynamic";
 import { IconCheck, IconExternal, IconRefresh, IconWallet } from "@/components/icons";
 import { getAuthProviders } from "@/lib/api-client";
 import type { AccountSigner } from "./account-wallet-signer";
+import { useAirdrop } from "@/lib/use-airdrop";
+import { AirdropAction } from "./airdrop-action";
 import { ConvertSol } from "./convert-sol";
 
 // Privy's SDK loads only when the person starts a conversion.
@@ -74,6 +76,9 @@ export function WalletMenu({ compact = false }: { compact?: boolean }) {
     const list = [...(user?.wallets ?? [])].filter((w) => w.chain === "solana");
     return list.sort((a, b) => Number(b.kind === "embedded") - Number(a.kind === "embedded"));
   }, [user?.wallets]);
+
+  // The airdrop, asked about only while the menu is open on devnet. It goes to the wallet shown here.
+  const airdrop = useAirdrop(open && network === "solana-devnet" && !demo && mine.length > 0, mine[Math.min(picked, Math.max(mine.length - 1, 0))]?.address);
 
   useEffect(() => {
     if (!open) return;
@@ -222,7 +227,8 @@ export function WalletMenu({ compact = false }: { compact?: boolean }) {
             </button>
           </div>
 
-          {wallet.kind === "embedded" || network !== "solana" ? (
+          {/* Devnet has the airdrop below (and the public faucets): nothing trades its USDC, so there is no swap to offer. */}
+          {network !== "solana" ? null : wallet.kind === "embedded" ? (
             <ConvertSol
               address={wallet.address}
               network={network}
@@ -256,18 +262,22 @@ export function WalletMenu({ compact = false }: { compact?: boolean }) {
           </p>
 
           {onDevnet ? (
-            <div className="mt-2 space-y-1 text-[0.6875rem] leading-relaxed text-muted">
-              <p>
-                Devnet only: these are test tokens. Open a faucet, choose <strong className="font-medium text-foreground">Solana Devnet</strong> and paste the address.
-              </p>
-              <p className="flex flex-wrap gap-x-4 gap-y-1">
-                <a className="inline-flex items-center gap-1 text-primary underline" href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer">
-                  Devnet USDC <IconExternal size={10} />
-                </a>
-                <a className="inline-flex items-center gap-1 text-primary underline" href="https://faucet.solana.com" target="_blank" rel="noopener noreferrer">
-                  Devnet SOL <IconExternal size={10} />
-                </a>
-              </p>
+            <div className="mt-3 space-y-2 border-t border-border pt-3">
+              <p className="text-[0.6875rem] font-medium text-foreground">Devnet: free test money</p>
+              <AirdropAction airdrop={airdrop} compact />
+              <div className="space-y-1 text-[0.6875rem] leading-relaxed text-muted">
+                <p>
+                  Devnet only: these are test tokens. For more, open a public faucet, choose <strong className="font-medium text-foreground">Solana Devnet</strong> and paste the address.
+                </p>
+                <p className="flex flex-wrap gap-x-4 gap-y-1">
+                  <a className="inline-flex items-center gap-1 text-primary underline" href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer">
+                    Devnet USDC <IconExternal size={10} />
+                  </a>
+                  <a className="inline-flex items-center gap-1 text-primary underline" href="https://faucet.solana.com" target="_blank" rel="noopener noreferrer">
+                    Devnet SOL <IconExternal size={10} />
+                  </a>
+                </p>
+              </div>
             </div>
           ) : (
             <p className="mt-2 text-[0.6875rem] leading-relaxed text-muted">
