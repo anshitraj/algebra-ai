@@ -625,7 +625,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	return &Bundle{
 		Mainnet:        mainnet,
 		WalletBalances: app.NewWalletBalanceService(accountSvc, walletRPCs),
-		DevnetFaucet:   buildDevnetFaucet(ctx, cfg, accountSvc, limiter),
+		DevnetFaucet:   buildDevnetFaucet(ctx, cfg, accountSvc, limiter, postgres.NewFaucetRepo(db)),
 		DB:             db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
 		Users: userSvc, Intents: intentSvc, Discovery: discoverySvc, Quotes: quoteSvc,
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
@@ -829,7 +829,7 @@ func (s catalogSource) ForCapability(ctx context.Context, capability string) ([]
 // buildDevnetFaucet makes the in-app devnet faucet, or nil when none is
 // configured or its wallet can't be used. A faucet that can't start never
 // stops the server: it is a convenience, and says why in the log.
-func buildDevnetFaucet(ctx context.Context, cfg *config.Config, accounts app.FaucetWallets, limiter app.RateLimiter) *app.DevnetFaucet {
+func buildDevnetFaucet(ctx context.Context, cfg *config.Config, accounts app.FaucetWallets, limiter app.RateLimiter, ledger app.FaucetLedger) *app.DevnetFaucet {
 	fc := cfg.DevnetFaucet
 	secret := strings.TrimSpace(fc.Keypair)
 	if secret == "" && fc.KeypairFile != "" {
@@ -873,8 +873,8 @@ func buildDevnetFaucet(ctx context.Context, cfg *config.Config, accounts app.Fau
 	if err != nil {
 		return nil
 	}
-	f := app.NewDevnetFaucet(key, mintKey, rpc, accounts, limiter, app.DevnetFaucetConfig{SOLLamports: fc.SOLLamports, USDCMinor: fc.USDCMinor, PerDay: fc.PerDay})
-	log.Printf("wiring: devnet faucet on: wallet %s gives %.3f SOL and %.2f USDC a drop, up to %d drops a day", key.PublicKey(), float64(fc.SOLLamports)/1e9, float64(fc.USDCMinor)/1e6, fc.PerDay)
+	f := app.NewDevnetFaucet(key, mintKey, rpc, accounts, limiter, ledger, app.DevnetFaucetConfig{SOLLamports: fc.SOLLamports, USDCMinor: fc.USDCMinor, PerDay: fc.PerDay})
+	log.Printf("wiring: devnet faucet on: wallet %s gives %.3f SOL and %.2f USDC once to each account, up to %d drops a day", key.PublicKey(), float64(fc.SOLLamports)/1e9, float64(fc.USDCMinor)/1e6, fc.PerDay)
 	return f
 }
 

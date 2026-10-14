@@ -17,8 +17,9 @@ import (
 // funds, so nobody has to copy an address to a public faucet and back. It is
 // for devnet only (the wiring refuses any other cluster), sends only to a
 // wallet already on the person's account (so it is not a way to send tokens
-// to a typed-in address), only tops up what is missing, and is limited per
-// account, wallet and address, and for everyone, per day.
+// to a typed-in address), only tops up what is missing, gives each account one
+// airdrop in its lifetime (and each wallet one: the FaucetLedger remembers), and
+// is limited per network address and for everyone, per day.
 
 // FaucetRPC is the node the faucet reads and sends through.
 type FaucetRPC interface {
@@ -52,6 +53,45 @@ var (
 	// ErrFaucetUnavailable: its limits couldn't be checked, so it sends nothing.
 	ErrFaucetUnavailable = errors.New("the devnet faucet can't check its limits right now; try again in a minute")
 )
+
+// FaucetReceipt is what an account was given, once it has had its airdrop.
+type FaucetReceipt struct {
+	Address     string `json:"address"`
+	SOLLamports uint64 `json:"sol_lamports"`
+	USDCMinor   uint64 `json:"usdc_minor"`
+	// Signature is empty while the transfer is being sent.
+	Signature string    `json:"signature,omitempty"`
+	At        time.Time `json:"at"`
+}
+
+// FaucetLedger remembers who has had their one airdrop.
+type FaucetLedger interface {
+	// Received is what the account was given, or nil when it has had nothing.
+	Received(ctx context.Context, userID string) (*FaucetReceipt, error)
+	// Claim reserves the account's one airdrop for a wallet, before anything is
+	// sent. It answers *FaucetUsedError when the account has had one, or when
+	// the wallet has (on any account).
+	Claim(ctx context.Context, userID, address string, at time.Time) error
+	// Record completes a claim with what was sent.
+	Record(ctx context.Context, userID string, d FaucetDrop, at time.Time) error
+	// Release gives a claim back, so an airdrop that never arrived doesn't use up the one.
+	Release(ctx context.Context, userID string) error
+}
+
+// FaucetUsedError: the account has had its one airdrop, or the wallet has had
+// its one on another account. Scope is "account" or "wallet"; Received is what
+// was given, when it is known.
+type FaucetUsedError struct {
+	Scope    string
+	Received *FaucetReceipt
+}
+
+func (e *FaucetUsedError) Error() string {
+	if e.Scope == "wallet" {
+		return "this wallet already got a devnet airdrop, on another account: it is one per account"
+	}
+	return "you already got your devnet airdrop: it is one per account"
+}
 
 // FaucetNotNeeded: the wallet already holds enough of both.
 type FaucetNotNeeded struct{ SOLLamports, USDCMinor uint64 }
@@ -113,17 +153,28 @@ type DevnetFaucet struct {
 	rpc     FaucetRPC
 	wallets FaucetWallets
 	limiter RateLimiter
+	ledger  FaucetLedger
 	cfg     DevnetFaucetConfig
 
 	mu sync.Mutex // one drop at a time: they all spend the faucet's own balance
 }
 
 // NewDevnetFaucet builds the faucet. limiter may be nil (no Redis: development).
-func NewDevnetFaucet(key *solana.Keypair, mint solana.PublicKey, rpc FaucetRPC, wallets FaucetWallets, limiter RateLimiter, cfg DevnetFaucetConfig) *DevnetFaucet {
+// ledger may be nil too: then an account may have a drop a day instead of one in its lifetime.
+func NewDevnetFaucet(key *solana.Keypair, mint solana.PublicKey, rpc FaucetRPC, wallets FaucetWallets, limiter RateLimiter, ledger FaucetLedger, cfg DevnetFaucetConfig) *DevnetFaucet {
 	if cfg.PerDay <= 0 {
 		cfg.PerDay = 200
 	}
-	return &DevnetFaucet{key: key, mint: mint, rpc: rpc, wallets: wallets, limiter: limiter, cfg: cfg}
+	return &DevnetFaucet{key: key, mint: mint, rpc: rpc, wallets: wallets, limiter: limiter, ledger: ledger, cfg: cfg}
+}
+
+// Received is what the account has been given, or nil when nothing (or when
+// there is no ledger to say).
+func (f *DevnetFaucet) Received(ctx context.Context, userID string) (*FaucetReceipt, error) {
+	if f == nil || f.ledger == nil {
+		return nil, nil
+	}
+	return f.ledger.Received(ctx, userID)
 }
 
 // Status describes the faucet; Enabled is false on a nil receiver.
@@ -135,7 +186,8 @@ func (f *DevnetFaucet) Status() FaucetStatus {
 }
 
 // Drop tops up one of the person's own wallets: SOL if it holds less than half
-// a drop's worth, USDC likewise. ip is the caller's address, for its limit.
+// a drop's worth, USDC likewise. An account gets one drop in its lifetime, and a
+// wallet one. ip is the caller's address, for its limit.
 func (f *DevnetFaucet) Drop(ctx context.Context, userID, address, ip string) (*FaucetDrop, error) {
 	if f == nil {
 		return nil, ErrFaucetOff
@@ -160,6 +212,18 @@ func (f *DevnetFaucet) Drop(ctx context.Context, userID, address, ip string) (*F
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	// One airdrop per account, ever. Said before anything else, so a person who had theirs
+	// is told that, not that their wallet holds enough.
+	if f.ledger != nil {
+		got, err := f.ledger.Received(ctx, userID)
+		if err != nil {
+			return nil, ErrFaucetUnavailable
+		}
+		if got != nil {
+			return nil, &FaucetUsedError{Scope: "account", Received: got}
+		}
+	}
 
 	// What the wallet holds, and so what it lacks.
 	sol, err := f.rpc.GetBalance(ctx, to, solana.Confirmed)
@@ -218,7 +282,33 @@ func (f *DevnetFaucet) Drop(ctx context.Context, userID, address, ip string) (*F
 		return nil, ErrFaucetEmpty
 	}
 
+	// The one airdrop is claimed before anything is sent, so two clicks, two tabs or two
+	// servers can't both send. It is given back if nothing was sent.
+	claimed := false
+	if f.ledger != nil {
+		if err := f.ledger.Claim(ctx, userID, to.String(), time.Now()); err != nil {
+			var used *FaucetUsedError
+			if errors.As(err, &used) {
+				return nil, err
+			}
+			return nil, ErrFaucetUnavailable
+		}
+		claimed = true
+	}
+	release := func() {
+		if !claimed {
+			return
+		}
+		// Not the request's own context: a person who closed the tab still gets the claim back.
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := f.ledger.Release(rctx, userID); err != nil {
+			slog.Error("devnet faucet: couldn't give a claim back", "user", userID, "err", err)
+		}
+	}
+
 	if err := f.takeQuota(ctx, userID, to.String(), ip); err != nil {
+		release()
 		return nil, err
 	}
 
@@ -237,51 +327,65 @@ func (f *DevnetFaucet) Drop(ctx context.Context, userID, address, ip string) (*F
 	}
 	bh, err := f.rpc.GetLatestBlockhash(ctx, solana.Confirmed)
 	if err != nil {
+		release()
 		return nil, fmt.Errorf("the node didn't answer: %w", err)
 	}
 	msg, err := solana.CompileV0(me, ixs, bh.Blockhash)
 	if err != nil {
+		release()
 		return nil, err
 	}
 	tx := solana.NewTransaction(msg)
 	if err := tx.PartialSign(f.key); err != nil {
+		release()
 		return nil, err
 	}
 	sig, err := f.rpc.SendTransaction(ctx, tx.Base64(), solana.SendOptions{})
 	if err != nil {
+		release()
 		return nil, fmt.Errorf("the node refused the transfer: %w", err)
 	}
+	drop.Signature = sig
+	// Sent: the claim now says what went out, whatever the confirmation says next.
+	if f.ledger != nil {
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		if err := f.ledger.Record(rctx, userID, *drop, time.Now()); err != nil {
+			slog.Error("devnet faucet: sent a drop but couldn't record it", "user", userID, "signature", sig, "err", err)
+		}
+		cancel()
+	}
 	if _, err := f.rpc.ConfirmSignature(ctx, sig, solana.Confirmed, 0); err != nil {
+		// A transfer that landed and failed sent nothing: the person keeps their one airdrop.
+		// One not seen in time may still land, so that claim stays.
+		if errors.Is(err, solana.ErrTransactionFailed) {
+			release()
+			return nil, fmt.Errorf("the transfer failed on the network: %w", err)
+		}
 		return nil, fmt.Errorf("the transfer wasn't confirmed (it may still land: check your wallet): %w", err)
 	}
-	drop.Signature = sig
 	slog.Info("devnet faucet drop", "to", to.String(), "sol_lamports", drop.SOLLamports, "usdc_minor", drop.USDCMinor)
 	return drop, nil
 }
 
-// takeQuota uses up one drop of the account's, the wallet's, the address's and
-// everyone's day. It stops at the first that is spent.
+// takeQuota uses up one drop of the address's and everyone's day (and, with no ledger
+// to give each account one airdrop in its lifetime, the account's and the wallet's day).
+// It stops at the first that is spent.
 func (f *DevnetFaucet) takeQuota(ctx context.Context, userID, address, ip string) error {
 	if f.limiter == nil {
 		return nil
 	}
-	checks := []struct {
+	type check struct {
 		scope, key string
 		limit      int
-	}{
-		{"account", "faucet:user:" + userID, 1},
-		{"wallet", "faucet:wallet:" + address, 1},
+	}
+	var checks []check
+	if f.ledger == nil {
+		checks = append(checks, check{"account", "faucet:user:" + userID, 1}, check{"wallet", "faucet:wallet:" + address, 1})
 	}
 	if ip != "" {
-		checks = append(checks, struct {
-			scope, key string
-			limit      int
-		}{"address", "faucet:ip:" + ip, 5})
+		checks = append(checks, check{"address", "faucet:ip:" + ip, 5})
 	}
-	checks = append(checks, struct {
-		scope, key string
-		limit      int
-	}{"everyone", "faucet:day", f.cfg.PerDay})
+	checks = append(checks, check{"everyone", "faucet:day", f.cfg.PerDay})
 	for _, c := range checks {
 		ok, retry, err := f.limiter.Allow(ctx, c.key, c.limit, faucetDay)
 		if err != nil {

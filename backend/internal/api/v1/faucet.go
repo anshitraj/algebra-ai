@@ -11,8 +11,9 @@ import (
 )
 
 // faucetStatus: GET /api/v1/me/faucet. Whether this server has a devnet
-// faucet, what one drop is, and the wallet of the person's own that a drop
-// would go to (the one they signed in with, else the one Privy made).
+// faucet, what one drop is, the wallet of the person's own that a drop
+// would go to (the one they signed in with, else the one Privy made), and
+// what they were given if they have had their one airdrop.
 func (a *API) faucetStatus(w http.ResponseWriter, r *http.Request) {
 	sess, ok := a.requireSession(w, r)
 	if !ok {
@@ -22,16 +23,22 @@ func (a *API) faucetStatus(w http.ResponseWriter, r *http.Request) {
 		app.FaucetStatus
 		// Wallet is where a drop would go.
 		Wallet string `json:"wallet,omitempty"`
+		// Received is the account's one airdrop, once it has had it.
+		Received *app.FaucetReceipt `json:"received,omitempty"`
 	}{FaucetStatus: a.b.DevnetFaucet.Status()}
 	if wallet, err := a.faucetWallet(r, sess.UserID); err == nil {
 		out.Wallet = wallet
+	}
+	if got, err := a.b.DevnetFaucet.Received(r.Context(), sess.UserID); err == nil {
+		out.Received = got
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 // faucetDrop: POST /api/v1/me/faucet {"address": "..."}. Tops up one of the
 // person's own wallets with devnet SOL and USDC (address omitted: the default
-// wallet). Only what the wallet lacks is sent, at most once a day.
+// wallet). Only what the wallet lacks is sent, and an account gets one airdrop
+// in its lifetime (a wallet, one too).
 func (a *API) faucetDrop(w http.ResponseWriter, r *http.Request) {
 	sess, ok := a.requireSession(w, r)
 	if !ok {
@@ -68,7 +75,12 @@ func (a *API) faucetDrop(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var limit *app.FaucetLimitError
 		var enough *app.FaucetNotNeeded
+		var used *app.FaucetUsedError
 		switch {
+		case errors.As(err, &used):
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": used.Error(), "already_received": true, "scope": used.Scope, "received": used.Received,
+			})
 		case errors.As(err, &limit):
 			secs := int64(limit.RetryAfter.Seconds())
 			if secs < 1 {
