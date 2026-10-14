@@ -116,6 +116,11 @@ type Config struct {
 	Solana      SolanaConfig
 	SolanaRails []SolanaConfig
 
+	// DevnetFaucet is the in-app devnet faucet: devnet SOL and USDC for a
+	// signed-in person's own wallet, from a wallet the operator funds. Off
+	// unless a keypair is set.
+	DevnetFaucet DevnetFaucetConfig
+
 	// PaySh is the Pay.sh catalog of paid APIs (providers/paysh), which
 	// agents can browse and name as providers.
 	PaySh PayShConfig
@@ -194,6 +199,25 @@ type SolanaConfig struct {
 	// MaxPaymentMinor is the most one payment may be, in micro-USDC: a hard
 	// ceiling in the rail itself, whatever any policy says.
 	MaxPaymentMinor int64
+}
+
+// DevnetFaucetConfig configures the devnet faucet (DEVNET_FAUCET_*).
+type DevnetFaucetConfig struct {
+	// Keypair is the funded devnet wallet's secret as text (a JSON array or
+	// base58), or KeypairFile a path to the same. Use a wallet that holds
+	// devnet tokens only, never one that has held real money. Both empty:
+	// the faucet is off.
+	Keypair     string
+	KeypairFile string
+	// RPCURL is the devnet node it sends through (DEVNET_FAUCET_RPC_URL);
+	// empty uses the devnet rail's, or the public endpoint.
+	RPCURL string
+	// SOLLamports and USDCMinor are what one drop sends (DEVNET_FAUCET_SOL,
+	// DEVNET_FAUCET_USDC): 0.2 SOL and 2 USDC by default.
+	SOLLamports uint64
+	USDCMinor   uint64
+	// PerDay is the most drops in a day, for everyone (DEVNET_FAUCET_PER_DAY).
+	PerDay int
 }
 
 // OnchainPassConfig configures on-chain Spend Passes. They are on wherever a
@@ -466,6 +490,9 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	cfg.SolanaRails = rails
+	if err := loadDevnetFaucet(&cfg.DevnetFaucet); err != nil {
+		return nil, err
+	}
 	if err := loadPaySh(&cfg.PaySh); err != nil {
 		return nil, err
 	}
@@ -771,6 +798,42 @@ func checkKMSKeyVersion(name, v string) error {
 	if !strings.HasPrefix(v, "projects/") || !strings.Contains(v, "/cryptoKeyVersions/") {
 		return fmt.Errorf("config: %s must be one exact Cloud KMS key version (projects/…/locations/…/keyRings/…/cryptoKeys/…/cryptoKeyVersions/N)", name)
 	}
+	return nil
+}
+
+// loadDevnetFaucet reads DEVNET_FAUCET_*: the funded devnet wallet, and what
+// one drop is. Off (no keypair) is the default.
+func loadDevnetFaucet(c *DevnetFaucetConfig) error {
+	c.Keypair = strings.TrimSpace(os.Getenv("DEVNET_FAUCET_KEYPAIR"))
+	c.KeypairFile = strings.TrimSpace(os.Getenv("DEVNET_FAUCET_KEYPAIR_FILE"))
+	c.RPCURL = strings.TrimSpace(os.Getenv("DEVNET_FAUCET_RPC_URL"))
+	if c.Keypair != "" && c.KeypairFile != "" {
+		return errors.New("config: choose DEVNET_FAUCET_KEYPAIR or DEVNET_FAUCET_KEYPAIR_FILE, not both")
+	}
+	c.SOLLamports = 200_000_000 // 0.2 SOL
+	if v := strings.TrimSpace(os.Getenv("DEVNET_FAUCET_SOL")); v != "" {
+		n, err := chain.ParseUnits(v, 9)
+		if err != nil || n <= 0 || n > 5_000_000_000 {
+			return errors.New("config: DEVNET_FAUCET_SOL must be an amount of SOL above 0 and at most 5, like 0.2")
+		}
+		c.SOLLamports = uint64(n)
+	}
+	c.USDCMinor = 2_000_000 // 2 USDC
+	if v := strings.TrimSpace(os.Getenv("DEVNET_FAUCET_USDC")); v != "" {
+		n, err := chain.ParseUnits(v, chain.USDCDecimals)
+		if err != nil || n <= 0 || n > 100_000_000 {
+			return errors.New("config: DEVNET_FAUCET_USDC must be an amount of USDC above 0 and at most 100, like 2")
+		}
+		c.USDCMinor = uint64(n)
+	}
+	perDay, err := getInt64("DEVNET_FAUCET_PER_DAY", 200)
+	if err != nil {
+		return err
+	}
+	if perDay < 1 || perDay > 100_000 {
+		return errors.New("config: DEVNET_FAUCET_PER_DAY must be between 1 and 100000")
+	}
+	c.PerDay = int(perDay)
 	return nil
 }
 

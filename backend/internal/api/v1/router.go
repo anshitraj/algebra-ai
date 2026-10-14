@@ -238,6 +238,8 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/rails", api.listRails)
 	mux.HandleFunc("GET /api/v1/mainnet/readiness", api.mainnetReadiness)
 	mux.HandleFunc("GET /api/v1/me/wallets", api.myWallets)
+	mux.HandleFunc("GET /api/v1/me/faucet", api.faucetStatus)
+	mux.HandleFunc("POST /api/v1/me/faucet", api.faucetDrop)
 	mux.HandleFunc("GET /api/v1/intel/status", api.intelStatus)
 	mux.HandleFunc("GET /api/v1/intel/endpoints", api.listIntelEndpoints)
 	mux.HandleFunc("GET /api/v1/intel/endpoints/{id}", api.getIntelEndpoint)

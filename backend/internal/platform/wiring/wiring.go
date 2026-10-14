@@ -153,6 +153,9 @@ type Bundle struct {
 	Mainnet app.MainnetFacts
 	// WalletBalances reads what the signed-in person's own wallets hold.
 	WalletBalances *app.WalletBalanceService
+	// DevnetFaucet gives a signed-in person devnet SOL and USDC; nil when no
+	// funded faucet wallet is configured.
+	DevnetFaucet *app.DevnetFaucet
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
 	// MCPLegacyTools: see config.Config.MCPLegacyTools.
@@ -622,6 +625,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	return &Bundle{
 		Mainnet:        mainnet,
 		WalletBalances: app.NewWalletBalanceService(accountSvc, walletRPCs),
+		DevnetFaucet:   buildDevnetFaucet(ctx, cfg, accountSvc, limiter),
 		DB:             db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
 		Users: userSvc, Intents: intentSvc, Discovery: discoverySvc, Quotes: quoteSvc,
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
@@ -820,6 +824,58 @@ func (s catalogSource) ForCapability(ctx context.Context, capability string) ([]
 		return nil, nil
 	}
 	return cands, err
+}
+
+// buildDevnetFaucet makes the in-app devnet faucet, or nil when none is
+// configured or its wallet can't be used. A faucet that can't start never
+// stops the server: it is a convenience, and says why in the log.
+func buildDevnetFaucet(ctx context.Context, cfg *config.Config, accounts app.FaucetWallets, limiter app.RateLimiter) *app.DevnetFaucet {
+	fc := cfg.DevnetFaucet
+	secret := strings.TrimSpace(fc.Keypair)
+	if secret == "" && fc.KeypairFile != "" {
+		b, err := os.ReadFile(fc.KeypairFile)
+		if err != nil {
+			log.Printf("wiring: devnet faucet is off: can't read DEVNET_FAUCET_KEYPAIR_FILE: %v", err)
+			return nil
+		}
+		secret = string(b)
+	}
+	if secret == "" {
+		return nil
+	}
+	key, err := solana.ParseKeypair(secret)
+	if err != nil {
+		log.Printf("wiring: devnet faucet is off: the keypair can't be used: %v", err)
+		return nil
+	}
+	url := fc.RPCURL
+	if url == "" {
+		url = defaultSolanaRPC["devnet"]
+		for _, sc := range cfg.SolanaRails {
+			if strings.EqualFold(sc.Cluster, "devnet") && sc.RPCURL != "" {
+				url = sc.RPCURL
+			}
+		}
+	}
+	rpc := solana.NewRPC(url, nil)
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	// Never anything but devnet: tokens that move real money are not given away.
+	if g, err := rpc.GetGenesisHash(cctx); err != nil || g != solana.DevnetGenesisHash {
+		log.Printf("wiring: devnet faucet is off: its node isn't devnet or can't be reached (%v)", err)
+		return nil
+	}
+	mint, ok := chain.AssetAddress(chain.SolanaDevnet, "USDC")
+	if !ok {
+		return nil
+	}
+	mintKey, err := solana.ParsePublicKey(mint)
+	if err != nil {
+		return nil
+	}
+	f := app.NewDevnetFaucet(key, mintKey, rpc, accounts, limiter, app.DevnetFaucetConfig{SOLLamports: fc.SOLLamports, USDCMinor: fc.USDCMinor, PerDay: fc.PerDay})
+	log.Printf("wiring: devnet faucet on: wallet %s gives %.3f SOL and %.2f USDC a drop, up to %d drops a day", key.PublicKey(), float64(fc.SOLLamports)/1e9, float64(fc.USDCMinor)/1e6, fc.PerDay)
+	return f
 }
 
 // defaultSolanaRPC are the public endpoints, rate-limited and fine for trying

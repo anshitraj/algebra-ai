@@ -20,6 +20,8 @@ import type {
   SessionInfo,
   SpendPass,
   User,
+  FaucetDrop,
+  FaucetStatus,
   WalletsView,
 } from "./types";
 import type {
@@ -241,6 +243,16 @@ export function listProviders(params: { q?: string; category?: string; source?: 
 /** id is a provider ID ("paysh:birdeye.data", "circle:birdeye") or a catalog's own name for it. */
 export function getProvider(id: string) {
   return apiFetch<ProviderDetail>(`/api/v1/providers/${id.split("/").map(encodeURIComponent).join("/")}`);
+}
+
+/** Whether this server has a devnet faucet, what a drop is, and the wallet it would go to. */
+export function getFaucet() {
+  return apiFetch<FaucetStatus>("/api/v1/me/faucet");
+}
+
+/** Tops up one of the person's own wallets (default: the one a drop would go to) with devnet SOL and USDC. */
+export function requestFaucet(address?: string) {
+  return apiFetch<{ drop: FaucetDrop }>("/api/v1/me/faucet", { method: "POST", body: address ? { address } : {} });
 }
 
 /** The signed-in person's own wallets and what each holds on a cluster. force skips the server's few-second cache. */

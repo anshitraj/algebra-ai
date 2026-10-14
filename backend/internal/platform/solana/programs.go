@@ -80,6 +80,39 @@ func TransferChecked(tokenProgram, source, mint, destination, authority PublicKe
 	}
 }
 
+// SystemTransfer moves lamports from one account to another; from signs.
+func SystemTransfer(from, to PublicKey, lamports uint64) Instruction {
+	data := make([]byte, 12)
+	binary.LittleEndian.PutUint32(data[0:4], 2) // SystemInstruction::Transfer
+	binary.LittleEndian.PutUint64(data[4:], lamports)
+	return Instruction{
+		ProgramID: SystemProgram,
+		Accounts: []AccountMeta{
+			{Pubkey: from, IsSigner: true, IsWritable: true},
+			{Pubkey: to, IsWritable: true},
+		},
+		Data: data,
+	}
+}
+
+// CreateAssociatedTokenAccountIdempotent makes owner's token account for mint
+// at ata (its associated address), paid for by funder, and does nothing if it
+// is already there.
+func CreateAssociatedTokenAccountIdempotent(funder, ata, owner, mint, tokenProgram PublicKey) Instruction {
+	return Instruction{
+		ProgramID: AssociatedTokenProgram,
+		Accounts: []AccountMeta{
+			{Pubkey: funder, IsSigner: true, IsWritable: true},
+			{Pubkey: ata, IsWritable: true},
+			{Pubkey: owner},
+			{Pubkey: mint},
+			{Pubkey: SystemProgram},
+			{Pubkey: tokenProgram},
+		},
+		Data: []byte{1}, // CreateIdempotent
+	}
+}
+
 // Memo attaches UTF-8 text to a transaction.
 func Memo(text string) (Instruction, error) {
 	if len(text) == 0 || len(text) > 566 {

@@ -40,6 +40,8 @@ ECONOMIC_SANDBOX=on
 
    `ALGEBRA_MASTER_KEY`: make a new one, never your laptop's, and keep a copy; losing it makes stored data unreadable. `SOLANA_DEVNET_KEYPAIR` is a secret: paste it only into Railway's variable editor, never into GitHub or chat. `RESEND_API_KEY` must be set for production mode to start; without a verified sending domain, email sign-up and reset can't send, but Privy sign-in works.
    If the API can't connect to Postgres, append `?sslmode=require` to `DATABASE_URL`.
+
+   **Devnet faucet (optional).** Quickstart can drop 0.2 SOL and 2 USDC on a signed-in person's own wallet, so nobody copies an address to a public faucet. Make a devnet-only wallet (`go run ./cmd/solana-wallet -new -out faucet.json`), fund it (SOL at faucet.solana.com, USDC at faucet.circle.com) and set `DEVNET_FAUCET_KEYPAIR` to its key in Railway's variable editor, never in GitHub or chat. One drop per account and wallet a day, `DEVNET_FAUCET_PER_DAY` (200) for everyone; `DEVNET_FAUCET_SOL` and `DEVNET_FAUCET_USDC` set the amounts. The server turns it off on any cluster that isn't devnet. Unset: Quickstart points to the public faucets instead.
 6. Service, Settings, Networking: **Generate Domain**. Copy the `https://....up.railway.app` address.
 7. Wait for the deploy. Open `https://<that address>/readyz`: it should answer ok. Logs show the migrations running and the demo providers starting; if the demo providers can't fund themselves from the devnet faucet, send their wallet a little devnet SOL and USDC (the address is in the logs).
 
