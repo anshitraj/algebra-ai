@@ -141,6 +141,12 @@ export const IconInbox = (p: IconProps) => (
     <path d="M3.5 13.5h4.5l1.5 2.5h5l1.5-2.5h4.5" />
   </Svg>
 );
+export const IconBell = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6.5 17V11a5.5 5.5 0 0111 0v6l1.5 1.5H5z" />
+    <path d="M10 20.8a2.2 2.2 0 004 0" />
+  </Svg>
+);
 export const IconWallet = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 7.5A2.5 2.5 0 016.5 5h11A1.5 1.5 0 0119 6.5V8" />

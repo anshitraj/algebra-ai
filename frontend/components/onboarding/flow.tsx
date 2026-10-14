@@ -7,6 +7,7 @@ import * as api from "@/lib/api-client";
 import { firstName, useSession } from "@/lib/session";
 import type { OnboardingAnswers } from "@/lib/types";
 import { categoryLabel } from "@/lib/paysh";
+import { saveNetwork } from "@/lib/network";
 import { Logo } from "@/components/logo";
 import {
   IconArrowLeft,
@@ -29,6 +30,8 @@ const USES = [
 ];
 const STEPS = ["Welcome", "Your agents", "How it works"];
 const EASE = [0.16, 1, 0.3, 1] as const;
+// The first question, asked in practice mode (play money, no wallet): it works as written.
+const FIRST_QUESTION = "What does SOL cost right now? Use the best provider";
 
 export function OnboardingFlow() {
   const reduce = useReducedMotion();
@@ -42,7 +45,7 @@ export function OnboardingFlow() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const [destination, setDestination] = useState("/console/quickstart");
+  const [destination, setDestination] = useState(`/console/agent?prompt=${encodeURIComponent(FIRST_QUESTION)}`);
   const needsName = !user?.name;
 
   function go(next: number) {
@@ -77,7 +80,9 @@ export function OnboardingFlow() {
     };
     try {
       setUser(await api.completeOnboarding(answers));
-      setDestination(skipped ? "/console" : "/console/quickstart");
+      // A new person's first place is practice mode: an answer in seconds, with no wallet and no funds.
+      saveNetwork("sandbox");
+      setDestination(skipped ? "/console" : `/console/agent?prompt=${encodeURIComponent(FIRST_QUESTION)}`);
       setDone(true);
       window.scrollTo({ top: 0, behavior: "instant" });
     } catch (err) {
@@ -194,8 +199,8 @@ export function OnboardingFlow() {
                     </h1>
                     <p className={styles.description}>
                       {firstName(user) ? `${firstName(user)}, your` : "Your"}{" "}
-                      workspace is ready. Let’s give your first agent a little
-                      spending power.
+                      account is ready. Let’s ask your first question in
+                      practice mode: play money, no wallet needed.
                     </p>
                   </div>
                   <div className={styles.readyCard}>
@@ -218,7 +223,7 @@ export function OnboardingFlow() {
                   <Link className={styles.primary} href={destination}>
                     {destination === "/console"
                       ? "Open my workspace"
-                      : "Let’s make the first call"}
+                      : "Ask my first question"}
                     <IconArrowRight size={18} />
                   </Link>
                   {destination !== "/console" && (
@@ -227,7 +232,7 @@ export function OnboardingFlow() {
                     </Link>
                   )}
                   <p className={styles.footnote}>
-                    Your first call runs in the sandbox with simulated USDC.
+                    Practice mode uses play money: nothing real moves.
                   </p>
                 </>
               ) : (
@@ -404,17 +409,17 @@ export function OnboardingFlow() {
                         <WalkthroughCard
                           index={1}
                           title="Connect your agent"
-                          description="Give your agent an API key over MCP or REST. Every call stays inside your Spend Pass."
+                          description="Give your agent a key, and it pays for data through Algebra. Every call stays inside your limit."
                         />
                         <WalkthroughCard
                           index={2}
                           title="Watch it work"
-                          description="Follow each call, payment, and signed receipt. Start safely with simulated USDC in the sandbox."
+                          description="Follow each call, payment, and signed receipt. Start safely with play money in practice mode."
                         />
                       </ol>
                       <div className={styles.sandboxNote}>
-                        <span aria-hidden="true">✦</span> Your first call is a
-                        sandbox run. No wallet or real funds needed.
+                        <span aria-hidden="true">✦</span> Your first question runs
+                        in practice mode. No wallet or real funds needed.
                       </div>
                     </>
                   )}
@@ -456,7 +461,7 @@ export function OnboardingFlow() {
                     <p className={styles.footnote}>
                       {step === 1
                         ? "Your preferences don’t restrict what your agents can use."
-                        : "You’ll configure your Spend Pass in the quickstart."}
+                        : "You’ll set your own spending limit when you go real."}
                     </p>
                   )}
                 </form>

@@ -163,8 +163,10 @@ function CatalogNetwork() {
 }
 
 export default function ProvidersPage() {
-  const { network, demo } = useNetwork();
-  const cluster = demo ? undefined : network;
+  // Practice mode (a demo account's only mode) reads every catalog: no cluster to filter by.
+  const { network, practice } = useNetwork();
+  const demo = practice;
+  const cluster = practice ? undefined : network;
   const reducedMotion = useReducedMotion();
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
@@ -389,7 +391,7 @@ export default function ProvidersPage() {
       {demo && (
         <p className={styles.demoNote}>
           <IconShield size={14} />
-          Demo mode: explore every catalog. Payments stay in the sandbox.
+          Practice mode: explore every catalog. Payments here use play money, so only the practice sellers can be paid.
         </p>
       )}
 

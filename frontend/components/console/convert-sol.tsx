@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AccountSigner } from "./account-wallet-signer";
 import { solscanTx } from "@/lib/explorer";
+import { notifyTx } from "@/lib/notifications";
 import { IconExternal, IconRefresh, Spinner } from "@/components/icons";
 
 const SOL_MINT = "So11111111111111111111111111111111111111112";
@@ -115,6 +116,13 @@ export function ConvertSol({
       const body = (await r.json()) as { swapTransaction?: string; error?: string };
       if (!r.ok || !body.swapTransaction) throw new Error(body.error ?? `Jupiter couldn't build the swap (${r.status})`);
       const sig = await signer.signAndSend(body.swapTransaction, "solana");
+      notifyTx({
+        kind: "swap",
+        title: "SOL converted to USDC",
+        detail: `${(Number(quote.inAmount) / 1e9).toLocaleString("en-US", { maximumFractionDigits: 4 })} SOL for about ${usdc(quote.outAmount)} USDC`,
+        signature: sig,
+        network: "solana",
+      });
       setTx(sig);
       setState("done");
       setAmount("");

@@ -38,7 +38,7 @@ const REASONS: Record<string, string> = {
   CATEGORY_BLOCKED: "Category is blocked",
   quote_over_budget: "The endpoint asked for more than the limit",
   provider_not_allowed: "Provider isn't on the pass's list",
-  DEMO_SANDBOX_ONLY: "A demo account pays in the sandbox only",
+  DEMO_SANDBOX_ONLY: "A demo account works in practice mode only",
   NETWORK_NOT_ALLOWED: "The call isn't allowed on that network",
   authority_denied: "The Spend Pass doesn't allow it",
   already_committed: "Already paid for once; a repeat is blocked",
@@ -120,13 +120,16 @@ export function friendlyFailure(message: string): string {
   return message.replace(/^payment authority refused: /, "");
 }
 
+/** Where a payment happened, as a step card says it: "on devnet", "on mainnet" or "in practice mode". */
+const onNet = (n: string) => (n === "sandbox" ? "in practice mode" : `on ${networkWord(n)}`);
+
 function paidOutcome(d: Record<string, unknown>): StepOutcome {
   const outcome = String(d.outcome ?? "");
   const network = typeof d.network === "string" ? d.network : undefined;
   const tx = typeof d.transaction === "string" && d.transaction ? d.transaction : undefined;
   const pullTx = typeof d._pull_transaction === "string" && d._pull_transaction ? d._pull_transaction : undefined;
   const rows: { label: string; value: string }[] = [];
-  if (typeof d.paid === "string" && (d.paid_minor as number) > 0) rows.push({ label: "Paid", value: `${d.paid}${network ? ` on ${networkWord(network)}` : ""}` });
+  if (typeof d.paid === "string" && (d.paid_minor as number) > 0) rows.push({ label: "Paid", value: `${d.paid}${network ? ` ${onNet(network)}` : ""}` });
   if (pullTx) rows.push({ label: "Spend Pass pull", value: `${pullTx.slice(0, 8)}…${pullTx.slice(-8)}` });
   if (tx) rows.push({ label: "Transaction", value: `${tx.slice(0, 8)}…${tx.slice(-8)}` });
   const routing = d.routing as { mode?: string; ranked?: { rank: number; provider: string; price?: string }[] } | undefined;
@@ -175,7 +178,7 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
         status: "done",
         summary: d.replayed
           ? `Already paid: the kept answer, nothing paid again${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid} the first time` : ""}`
-          : `Delivered${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid}` : " · nothing to pay"}${network ? ` on ${networkWord(network)}` : ""}${d.test_money ? " (test money)" : ""}`,
+          : `Delivered${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid}` : " · nothing to pay"}${network ? ` ${onNet(network)}` : ""}${d.test_money ? (network === "sandbox" ? " (play money)" : " (test money)") : ""}`,
         detail: { rows, links, response: pretty(d.response), note: "The response is the provider's own data, shown as received.", policy: d._policy as PolicyReport | undefined },
       };
     case "being_confirmed":
@@ -236,7 +239,7 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
       const callable = eps.filter((e) => e.callable).length;
       return {
         status: "done",
-        summary: `${data.endpoint_count ?? eps.length} endpoint${data.endpoint_count === 1 ? "" : "s"}, ${callable} of those shown callable on ${networkWord(data.network)}${data.network === "sandbox" ? " (a demo account can read them, not pay them)" : ""}`,
+        summary: `${data.endpoint_count ?? eps.length} endpoint${data.endpoint_count === 1 ? "" : "s"}, ${callable} of those shown callable on ${networkWord(data.network)}${data.network === "sandbox" ? " (practice mode can read them, not pay them)" : ""}`,
         detail: eps.length
           ? {
               endpoints: eps.slice(0, 12).map((e) => ({

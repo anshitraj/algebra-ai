@@ -15,7 +15,8 @@ import { getOnchainPass } from "@/lib/onchain-pass";
 import type { Simulation } from "@/lib/routing-types";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { approvalRule } from "@/lib/pass-rules";
-import { IconArrowUp, IconLock, IconRefresh, IconShield, IconStop, IconUnlock } from "@/components/icons";
+import { ensurePracticePass } from "@/lib/practice";
+import { IconArrowUp, IconLock, IconRefresh, IconShield, IconStop, IconUnlock, Spinner } from "@/components/icons";
 import { useConsoleData } from "../console-data";
 import { ApprovalCard, type ApprovalOutcome } from "./approval-card";
 import { ModelPicker, type ModelChoice, type ProviderEntry } from "./model-picker";
@@ -62,10 +63,11 @@ const SUGGESTIONS: Record<string, string[]> = {
     "Search the web for Solana payment channels, under 0.01 USDC",
     "Make a test call on devnet and show me its receipt",
   ],
-  // A demo account: the sandbox serves token prices and token risk, from providers that misbehave like real ones.
+  // Practice mode: the sandbox serves token prices and token risk, from providers that misbehave like real ones.
+  // Each of these works as written, so one tap is a complete first answer.
   sandbox: [
     "What does SOL cost right now? Use the best provider",
-    "Check whether a Solana token looks risky before I buy it",
+    "Is the token EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v risky? Pay at most 0.05 USDC",
     "Which provider would you pick for a token price, and why?",
     "Would a 0.50 USDC call pass my Spend Pass?",
   ],
@@ -128,12 +130,15 @@ function saveChat(key: string, chat: SavedChat) {
 
 /**
  * Whether a pass can pay on the chat's network: a project's pass pays only in
- * its own environment (the server refuses anything else), a personal pass anywhere.
+ * its own environment (the server refuses anything else), a personal pass
+ * anywhere on a chain. In practice mode a signed-in person uses only a practice
+ * pass, so play money never comes out of a budget meant for test or real money;
+ * a demo account's one pass is a personal one made for the sandbox.
  */
-function passFits(p: SpendPass, network: string) {
+function passFits(p: SpendPass, network: string, demo: boolean) {
+  if (network === "sandbox") return p.environment === "sandbox" || (demo && !p.environment);
   if (!p.environment) return true;
-  const env = network === "sandbox" ? "sandbox" : network === "solana-devnet" ? "devnet" : "mainnet";
-  return p.environment === env;
+  return p.environment === (network === "solana-devnet" ? "devnet" : "mainnet");
 }
 
 function uid() {
@@ -143,7 +148,7 @@ function uid() {
 export function AgentWorkspace() {
   const { user } = useSession();
   const { refresh: refreshConsole } = useConsoleData();
-  const { network, rails, refreshRails } = useNetwork();
+  const { network, demo, practice, ready, rails, refreshRails } = useNetwork();
   const params = useSearchParams();
 
   const [providers, setProviders] = useState<ProviderEntry[] | null>(null);
@@ -162,6 +167,8 @@ export function AgentWorkspace() {
   const [vaults, setVaults] = useState<Record<string, number>>({});
   const [passId, setPassId] = useState("");
   const [autoPay, setAutoPay] = useState(false);
+  // Practising needs a practice pass: made once, the first time a signed-in person practises.
+  const [practiceSetup, setPracticeSetup] = useState<"idle" | "working" | "done" | "failed">("idle");
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
@@ -232,6 +239,21 @@ export function AgentWorkspace() {
   useEffect(() => {
     if (callsKey > 0) refreshRails();
   }, [callsKey, refreshRails]);
+
+  // Practice mode needs a pass of its own: simulated USDC, kept apart from a pass that pays test or real
+  // money. A signed-in account gets one the first time it practises (a demo account was given its pass at
+  // sign-up). One attempt per visit: a failure says so, rather than asking the server in a loop.
+  const needsPracticePass = ready && practice && !demo && passes !== null && !passes.some((p) => passFits(p, network, demo));
+  useEffect(() => {
+    if (!needsPracticePass || practiceSetup !== "idle") return;
+    setPracticeSetup("working");
+    ensurePracticePass()
+      .then((p) => {
+        setPracticeSetup(p ? "done" : "failed");
+        if (p) setCallsKey((k) => k + 1);
+      })
+      .catch(() => setPracticeSetup("failed"));
+  }, [needsPracticePass, practiceSetup]);
 
   // Each person's chat is kept apart: the slot is named for the signed-in account.
   const userId = user?.id ?? "";
@@ -357,8 +379,10 @@ export function AgentWorkspace() {
             model: choice?.model,
             message: text,
             history,
-            spend_pass_id: (passId && passes?.some((p) => p.id === passId && passFits(p, network)) ? passId : "") || undefined,
+            spend_pass_id: (passId && passes?.some((p) => p.id === passId && passFits(p, network, demo)) ? passId : "") || undefined,
             network,
+            // For the greeting only: the server cleans it and puts it nowhere but the reply to an off-topic message.
+            name: firstName(user) || undefined,
             choices,
           }),
           signal: ctrl.signal,
@@ -404,7 +428,7 @@ export function AgentWorkspace() {
         inputRef.current?.focus();
       }
     },
-    [running, choice, history, passId, passes, network, updateTurn, refreshConsole]
+    [running, choice, history, passId, passes, network, demo, user, updateTurn, refreshConsole]
   );
 
   function newChat() {
@@ -505,9 +529,23 @@ export function AgentWorkspace() {
 
   const title = turns[0]?.user ?? "New chat";
   // Only the passes that can pay on this network are offered.
-  const fitting = passes === null ? null : passes.filter((p) => passFits(p, network));
+  const fitting = passes === null ? null : passes.filter((p) => passFits(p, network, demo));
   const pass = fitting === null ? undefined : (fitting.find((p) => p.id === passId) ?? null);
   const rail = rails?.find((r) => r.network === network);
+  const firstFitting = fitting?.[0]?.id ?? "";
+
+  // A pass picked on another network can't pay here (a test pass while practising, say): the first one that
+  // can takes its place, unless the person chose to go without a pass.
+  useEffect(() => {
+    if (!firstFitting || (passId && pass)) return;
+    let none = false;
+    try {
+      none = window.localStorage.getItem(PASS_KEY) === "none";
+    } catch {
+      // storage blocked: pick one
+    }
+    if (!none) setPassId(firstFitting);
+  }, [firstFitting, passId, pass]);
 
   return (
     <div className="agent-workspace grid h-full lg:grid-cols-[minmax(0,1fr)_304px]">
@@ -548,9 +586,17 @@ export function AgentWorkspace() {
                 name={firstName(user)}
                 pass={pass}
                 network={network}
+                demo={demo}
+                practiceFailed={practiceSetup === "failed"}
                 anyProvider={anyProvider}
                 loadingProviders={providers === null}
                 onPick={(s) => {
+                  // Practice moves no money, so one tap is the whole question. Where a payment could follow,
+                  // the text is put in the box to read (and change) first.
+                  if (practice && pass) {
+                    void send(s);
+                    return;
+                  }
                   setInput(s);
                   inputRef.current?.focus();
                 }}
@@ -571,6 +617,7 @@ export function AgentWorkspace() {
                     autoPay={autoPay}
                   />
                 ))}
+                {practice && !running && turns[turns.length - 1]?.receipts?.some((r) => r.network === "sandbox" || r.test) && <GoRealNote demo={demo} />}
               </div>
             )}
           </div>
@@ -603,7 +650,7 @@ export function AgentWorkspace() {
               disabled={!anyProvider && providers !== null}
               placeholder={
                 anyProvider || providers === null
-                  ? "Describe a task and a maximum spend…"
+                  ? "Ask for data your agent would pay for, like “SOL price, under 0.01 USDC”"
                   : "Connect an AI model to start"
               }
               className={composerStyles.input}
@@ -611,7 +658,19 @@ export function AgentWorkspace() {
             <div className={composerStyles.toolbar}>
               <div className={composerStyles.controls}>
                 <ModelPicker providers={providers} value={choice} onChange={pickModel} lockedProvider={lockedProvider} />
-                <PassPicker passes={fitting} vaults={vaults} value={pass ? passId : ""} onChange={pickPass} disabled={running} sandbox={network === "sandbox"} />
+                {practice && !demo && fitting !== null && fitting.length === 0 ? (
+                  <span className="inline-flex min-h-11 items-center gap-1.5 px-2.5 text-xs text-muted">
+                    {practiceSetup === "failed" ? (
+                      "Couldn't set up practice. Reload to try again."
+                    ) : (
+                      <>
+                        <Spinner size={12} /> Setting up practice…
+                      </>
+                    )}
+                  </span>
+                ) : (
+                  <PassPicker passes={fitting} vaults={vaults} value={pass ? passId : ""} onChange={pickPass} disabled={running} sandbox={network === "sandbox"} />
+                )}
                 {pass && <AskBeforePayingToggle asks={!autoPay} onChange={(asks) => changeAutoPay(!asks)} />}
               </div>
               <span className={composerStyles.hint}>
@@ -639,7 +698,7 @@ export function AgentWorkspace() {
             </div>
           </form>
           <p className={composerStyles.note}>
-            {network === "sandbox" ? "Simulated USDC in the sandbox" : `USDC on Solana ${networkLabel(network).toLowerCase()}`} · You choose and approve every payment · Spend Pass checked on every request
+            {network === "sandbox" ? "Practice mode: play USDC, nothing real moves" : `USDC on Solana ${networkLabel(network).toLowerCase()}`} · You choose every payment · Your spending limit is checked on every request
           </p>
         </div>
       </section>
@@ -834,6 +893,8 @@ function EmptyState({
   name,
   pass,
   network,
+  demo,
+  practiceFailed,
   anyProvider,
   loadingProviders,
   onPick,
@@ -841,12 +902,16 @@ function EmptyState({
   name: string;
   pass: SpendPass | null | undefined;
   network: string;
+  demo: boolean;
+  /** Practice mode's pass couldn't be made. */
+  practiceFailed: boolean;
   anyProvider: boolean;
   loadingProviders: boolean;
   onPick: (s: string) => void;
 }) {
   const suggestions = SUGGESTIONS[network] ?? SUGGESTIONS.solana;
   const where = networkLabel(network).toLowerCase();
+  const practice = network === "sandbox";
   return (
     <div className="agent-welcome pt-6 sm:pt-14">
       <div className="agent-welcome-mark"><Logo size={32} /></div>
@@ -857,7 +922,7 @@ function EmptyState({
         transition={{ duration: 0.5, ease: EASE }}
         className="font-display text-[1.9rem] leading-[1.12] font-semibold tracking-tight text-balance text-foreground sm:text-[2.3rem]"
       >
-        {name ? `What should I get done, ${name}?` : "What should I get done?"}
+        {name ? `What do you want to look up, ${name}?` : "What do you want to look up?"}
       </motion.h2>
       <motion.p
         initial={{ opacity: 0, y: 8 }}
@@ -867,17 +932,23 @@ function EmptyState({
       >
         <IconShield size={16} className="mt-1 shrink-0 text-primary" />
         <span>
-          {pass === undefined
-            ? "Every paid call runs through your Spend Pass first."
-            : pass === null
-              ? "No Spend Pass picked: I can find APIs and read their prices, and I'll pay once you pick a pass below."
-              : `I pay from “${pass.label}” ${network === "sandbox" ? "in the sandbox, with simulated USDC" : `on Solana ${where}`}: ${formatUSDC(pass.remaining_minor_units)} left${
-                  approvalRule(pass).kind === "always"
-                    ? ", and I'll ask you before every call"
-                    : approvalRule(pass).kind === "above"
-                      ? `, and I'll ask you from ${formatUSDC(pass.approve_above_minor_units as number)} a call`
-                      : ""
-                }.`}
+          {practice
+            ? pass
+              ? `Practice mode: I pay from “${pass.label}” with play USDC, ${formatUSDC(pass.remaining_minor_units)} left. Nothing real moves, and no wallet is needed.`
+              : practiceFailed
+                ? "Practice mode: I couldn't set up your practice pass. Reload the page to try again."
+                : "Practice mode: play money, no wallet needed, nothing real moves. Setting up your practice pass…"
+            : pass === undefined
+              ? "Every paid call is checked against your Spend Pass first."
+              : pass === null
+                ? "No Spend Pass picked: I can find APIs and read their prices, and I'll pay once you pick a pass below."
+                : `I pay from “${pass.label}” on Solana ${where}: ${formatUSDC(pass.remaining_minor_units)} left${
+                    approvalRule(pass).kind === "always"
+                      ? ", and I'll ask you before every call"
+                      : approvalRule(pass).kind === "above"
+                        ? `, and I'll ask you from ${formatUSDC(pass.approve_above_minor_units as number)} a call`
+                        : ""
+                  }.`}
         </span>
       </motion.p>
 
@@ -908,6 +979,46 @@ function EmptyState({
           ))}
         </div>
       )}
+
+      {practice && !loadingProviders && anyProvider && (
+        <p className="mt-6 text-sm leading-relaxed text-muted">
+          Practice has sample sellers for token prices, token risk, weather, web search, news and AI answers. For the whole catalog of paid APIs, with free test money,{" "}
+          <Link href={demo ? "/signup" : "/console/quickstart"} className="font-medium text-primary hover:underline">
+            {demo ? "create your account" : "go real in three steps"}
+          </Link>
+          .
+        </p>
+      )}
     </div>
+  );
+}
+
+/**
+ * Under a practice answer: that was play money, and here is the way to the real
+ * thing. Practice is where a new person starts; this is the step after it.
+ */
+function GoRealNote({ demo }: { demo: boolean }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: EASE }}
+      className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-2xl border border-border-strong bg-primary-tint/40 px-5 py-4"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-foreground">That was practice.</p>
+        <p className="mt-0.5 text-sm leading-relaxed text-muted">
+          {demo
+            ? "The money and the sellers were simulated. Create an account to pay real sellers with free test money."
+            : "The money and the seller were simulated. To pay a real seller, get free test money and make a spending limit: about two minutes."}
+        </p>
+      </div>
+      <Link
+        href={demo ? "/signup" : "/console/quickstart"}
+        className="console-button inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-tint transition-opacity hover:opacity-90"
+      >
+        {demo ? "Create your account" : "Go real"}
+      </Link>
+    </motion.div>
   );
 }

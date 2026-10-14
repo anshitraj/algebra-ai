@@ -127,7 +127,7 @@ const { summary, response, receipt } = await res.json();`;
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Quickstart"
-        description="From an empty account to a paid API call with a signed receipt, on devnet, in three steps. No address to copy anywhere."
+        description="Try a question in practice mode first, then go real in three steps with free test money. A signed receipt at the end, and no address to copy anywhere."
       />
 
       <GetStarted />

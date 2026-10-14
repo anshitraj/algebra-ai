@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
 import { EmailNotifications } from "@/components/console/email-notifications";
-import { useSession } from "@/lib/session";
+import { realEmail, useSession } from "@/lib/session";
 import type { SessionInfo } from "@/lib/types";
 import { GitHubMark, GoogleMark, IconCheck, IconExternal, IconMail, IconWallet, Spinner } from "@/components/icons";
 import { Avatar } from "@/components/console/shell";
@@ -106,7 +106,7 @@ export default function SettingsPage() {
           <div className="min-w-0">
             <p className="truncate text-[0.95rem] font-medium text-foreground">{user.name || "No name yet"}</p>
             <p className="flex items-center gap-1.5 truncate text-sm text-muted">
-              {user.email || "Signed in with a wallet"}
+              {realEmail(user) || "Signed in with a wallet"}
               {user.email_verified && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-primary-tint px-2 py-0.5 text-[0.7rem] font-medium text-primary">
                   <IconCheck size={10} strokeWidth={3} /> Verified

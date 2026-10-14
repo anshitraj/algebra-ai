@@ -38,7 +38,8 @@ export default function OverviewPage() {
 
   const active = passes?.filter((p) => p.active && p.currency === "USDC") ?? [];
   const waiting = intents?.filter((i) => i.state === "AWAITING_APPROVAL").length ?? 0;
-  const fresh = passes !== null && passes.filter((p) => p.currency === "USDC").length === 0;
+  // Still new: no pass of their own yet (the practice pass made for the first practice answer doesn't count).
+  const fresh = passes !== null && passes.filter((p) => p.currency === "USDC" && p.environment !== "sandbox").length === 0;
 
   return (
     <div className="console-overview mx-auto">
@@ -177,14 +178,16 @@ function Stat({ label, value }: { label: string; value: string | null }) {
 
 function GettingStarted({ providers }: { providers?: number }) {
   const steps = [
-    { href: "/console/passes", icon: <IconShield size={16} />, title: "Issue a Spend Pass", body: "A USDC budget, the most one call may cost, and which providers it may pay." },
-    { href: "/console/connect", icon: <IconPlug size={16} />, title: "Connect your agent", body: "Claude, Cursor, the OpenAI Agents SDK or any HTTP client, over MCP or REST." },
     {
-      href: "/console/providers",
+      href: `/console/agent?prompt=${encodeURIComponent("What does SOL cost right now? Use the best provider")}`,
       icon: <IconStore size={16} />,
-      title: "Pick what it can call",
-      body: providers ? `${providers} paid APIs from Pay.sh, Circle's Agent Marketplace, PayAI and Coinbase's Bazaar.` : "Paid APIs from Pay.sh, Circle's Agent Marketplace, PayAI and Coinbase's Bazaar.",
+      title: "Ask your first question",
+      body: providers
+        ? `Practice mode, with play money and no wallet: an answer and a signed receipt in seconds. Behind it, ${providers.toLocaleString("en-US")} paid APIs to choose from.`
+        : "Practice mode, with play money and no wallet: an answer and a signed receipt in seconds.",
     },
+    { href: "/console/passes", icon: <IconShield size={16} />, title: "Set a spending limit", body: "A Spend Pass: a USDC budget, the most one call may cost, and which sellers it may pay." },
+    { href: "/console/connect", icon: <IconPlug size={16} />, title: "Connect your own agent", body: "Claude, Cursor or any tool that speaks MCP or REST pays through Algebra, inside your limit." },
   ];
   return (
     <section aria-label="Getting started" className="mt-6 rounded-2xl border border-border bg-surface p-5">
@@ -203,7 +206,11 @@ function GettingStarted({ providers }: { providers?: number }) {
         ))}
       </ol>
       <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
-        <IconCheck size={12} className="text-primary" /> The sandbox pays with simulated USDC and needs no wallet. Devnet and mainnet calls are paid from this server&apos;s Solana wallet, when one is configured and funded.
+        <IconCheck size={12} className="text-primary" /> Practice mode needs no wallet and moves no money. To pay with free test money,{" "}
+        <Link href="/console/quickstart" className="font-medium text-primary hover:underline">
+          go real in three steps
+        </Link>
+        .
       </p>
     </section>
   );
