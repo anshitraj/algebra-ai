@@ -18,13 +18,30 @@ type ChatRequestBody = {
   history?: unknown[];
   /** The Spend Pass this chat pays under; one of the signed-in person's active USDC passes. */
   spend_pass_id?: string;
-  /** "solana" (mainnet) or "solana-devnet". A demo account is always put in the sandbox, whatever this says. */
+  /** "solana" (mainnet), "solana-devnet" or "sandbox" (practice mode). A demo account is always put in the sandbox, whatever this says. */
   network?: string;
+  /** The person's first name, for the greeting only (see cleanName). */
+  name?: string;
   /** Cards the person clicked to pay: each is paid (with their approval) before the agent answers. */
   choices?: unknown[];
 };
 
 const MAX_MESSAGE_CHARS = 4000;
+
+/**
+ * The first name the agent greets someone by: letters, marks, spaces, dots,
+ * apostrophes and hyphens, 40 characters at most. It comes from the browser, so
+ * it is cut down to something that can only be read as a name.
+ */
+function cleanName(v: unknown): string {
+  if (typeof v !== "string") return "";
+  return v
+    .normalize("NFC")
+    .replace(/[^\p{L}\p{M}\s.'’-]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 40);
+}
 // What the model reads about the payments it is asked to explain, at most.
 const MAX_RESULTS_CHARS = 40_000;
 
@@ -81,8 +98,11 @@ export async function POST(request: Request) {
   }
 
   // A demo account pays in the sandbox whatever the browser asks for: the API
-  // refuses it anything else, and this keeps the chat from trying.
-  const network: ChatNetwork = token.mode === "demo" ? "sandbox" : body.network === "solana-devnet" ? "solana-devnet" : "solana";
+  // refuses it anything else, and this keeps the chat from trying. Anyone else
+  // may practise there (a pass of the sandbox environment, simulated USDC) or
+  // pay on a cluster; with nothing recognised, it is mainnet, as it always was.
+  const network: ChatNetwork =
+    token.mode === "demo" || body.network === "sandbox" ? "sandbox" : body.network === "solana-devnet" ? "solana-devnet" : "solana";
 
   // Rebuilt every turn: a pass revoked or spent down in another tab takes
   // effect on the very next message. The API checks the pass again on every
@@ -113,6 +133,7 @@ export async function POST(request: Request) {
     rail: rails.find((r) => r.network === network),
     vault: vaults.find((n) => n.network === network),
     mode: token.mode,
+    name: cleanName(body.name),
   });
   const tools = toolsFor();
   const history = trimHistory(Array.isArray(body.history) ? body.history : []);

@@ -53,6 +53,9 @@ export default function AccountWalletSigner({ appId, ...rest }: Props) {
       appId={appId}
       config={{
         appearance: { walletChainType: "solana-only", landingHeader: "Confirm it's you", accentColor: "#4f46e5" },
+        // Only the email code: the account wallet is Privy's, so a browser wallet (Phantom,
+        // Solflare) offered here could never sign for it and only confused people.
+        loginMethods: ["email"],
         // The wallet already exists; never make another one here.
         embeddedWallets: { ethereum: { createOnLogin: "off" }, solana: { createOnLogin: "off" } },
         solana: { rpcs },
@@ -100,7 +103,7 @@ function Bridge({ email, address, onSigner }: Omit<Props, "appId">) {
       if (!(await waitFor(() => state.current.ready, 15_000))) throw new Error("Privy didn't load. Check your connection and try again.");
       if (!state.current.authenticated) {
         const done = new Promise<void>((resolve, reject) => (login.current = { resolve, reject }));
-        state.current.openLogin({ prefill: email ? { type: "email", value: email } : undefined, disableSignup: true });
+        state.current.openLogin({ loginMethods: ["email"], prefill: email ? { type: "email", value: email } : undefined, disableSignup: true });
         try {
           await done;
         } finally {

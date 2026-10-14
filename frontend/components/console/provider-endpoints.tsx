@@ -19,7 +19,8 @@ import { IconExternal, Spinner } from "@/components/icons";
 import { safeExternalUrl } from "@/lib/provider-presentation";
 import styles from "@/app/console/providers/providers.module.css";
 export function ProviderEndpoints({ provider }: { provider: ProviderSummary }) {
-  const { network, demo } = useNetwork();
+  // Practice mode (and a demo account, which only practises) reads these and can't pay them.
+  const { network, practice: demo } = useNetwork();
   const [detail, setDetail] = useState<ProviderDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
@@ -88,7 +89,7 @@ export function ProviderEndpoints({ provider }: { provider: ProviderSummary }) {
               {detail.endpoints.length} API
               {detail.endpoints.length === 1 ? "" : "s"} ·{" "}
               {demo
-                ? "Browse only in demo mode"
+                ? "Browse only in practice mode"
                 : `${detail.endpoints.filter((e) => e.callable && payableHere(e)).length} callable on ${networkLabel(network)}`}
             </p>
             <div className="flex items-center gap-3">
@@ -191,7 +192,7 @@ function EndpointRow({
   selected: boolean;
   onPick: () => void;
 }) {
-  const { demo } = useNetwork();
+  const { practice: demo } = useNetwork();
   const prices = e.payments?.length
     ? e.payments
     : [{ network: "solana", price_minor: e.price_minor }];
@@ -227,7 +228,7 @@ function EndpointRow({
         {e.callable && !here && (
           <p className="mt-0.5 text-xs text-muted">
             {demo
-              ? "A demo account can't pay this: it pays in the sandbox."
+              ? "Practice mode can't pay this one: it uses play money. Switch to Test at the top to pay it."
               : "Not payable on this network: switch at the top."}
           </p>
         )}

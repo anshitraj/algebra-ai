@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Logo } from "@/components/logo";
-import { initials, useSession } from "@/lib/session";
+import { displayName, initials, realEmail, useSession } from "@/lib/session";
 import type { User } from "@/lib/types";
 import {
   IconChat,
@@ -30,7 +30,9 @@ import {
 } from "@/components/icons";
 import { ConsoleDataProvider, useConsoleData } from "./console-data";
 import { NetworkProvider } from "@/lib/network";
+import { NotificationsProvider } from "@/lib/notifications";
 import { NetworkSwitch } from "./network-switch";
+import { NotificationBell } from "./notification-bell";
 import { WalletMenu } from "./wallet-menu";
 
 type NavItem = { href: string; label: string; icon: React.ReactNode; badge?: "approvals" };
@@ -74,7 +76,9 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   return (
     <NetworkProvider demo={user.mode === "demo"}>
       <ConsoleDataProvider>
-        <ShellFrame user={user}>{children}</ShellFrame>
+        <NotificationsProvider userId={user.id}>
+          <ShellFrame user={user}>{children}</ShellFrame>
+        </NotificationsProvider>
       </ConsoleDataProvider>
     </NetworkProvider>
   );
@@ -149,12 +153,13 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
           <div className="ml-auto flex min-w-0 items-center gap-1.5">
             <MobileApprovalsPill />
             <NetworkSwitch compact />
+            <NotificationBell />
             <WalletMenu compact />
           </div>
         </header>
         <div className="console-toolbar hidden shrink-0 items-center gap-3 border-b border-border md:flex print:hidden">
           <div className="console-breadcrumb"><span>Workspace</span><span>/</span><strong>{[...PRIMARY, ...CONTROLS, ...DEVELOPERS].find((item) => isActive(pathname, item.href))?.label ?? "Settings"}</strong></div>
-          <div className="console-toolbar-actions"><Link href="/console/connect" className="console-status">Connect an agent <IconArrowRight size={13} /></Link><NetworkSwitch /><WalletMenu /></div>
+          <div className="console-toolbar-actions"><Link href="/console/connect" className="console-status">Connect an agent <IconArrowRight size={13} /></Link><NetworkSwitch /><NotificationBell /><WalletMenu /></div>
         </div>
         <main className={`min-h-0 flex-1 ${fullBleed ? "overflow-hidden" : "overflow-y-auto"} print:overflow-visible`}>
           {fullBleed ? children : <div className="px-5 py-8 md:px-10 md:py-10">{children}</div>}
@@ -313,8 +318,8 @@ function UserMenu({ user }: { user: User }) {
       >
         <Avatar user={user} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-foreground">{user.name || user.email.split("@")[0] || shortWallet(user)}</span>
-          <span className="block truncate text-xs text-muted">{user.mode === "demo" ? "Demo account" : user.email || "Signed in with a wallet"}</span>
+          <span className="block truncate text-sm font-medium text-foreground">{displayName(user)}</span>
+          <span className="block truncate text-xs text-muted">{user.mode === "demo" ? "Trying Algebra without an account" : realEmail(user) || "Signed in with a wallet"}</span>
         </span>
         <IconChevronDown size={16} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
@@ -368,25 +373,19 @@ function EmailBanner({ userId }: { userId: string }) {
   );
 }
 
-// Every screen of a demo account says so: it pays in the sandbox, where the
+// Every screen of a demo account says so: it works in practice mode, where the
 // providers and the money are simulated. The API enforces it; this says so.
 function DemoBanner() {
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-border bg-accent-tint px-4 py-2 text-center text-xs text-accent print:hidden">
       <span>
-        <strong className="font-semibold">Demo mode</strong> · simulated providers and USDC in Algebra&apos;s sandbox. No money moves.
+        <strong className="font-semibold">Practice mode</strong> · play money and simulated providers. Nothing real moves, and this practice account ends after 3 days.
       </span>
       <Link href="/signup" className="font-semibold underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
-        Create a real account
+        Create your account
       </Link>
     </div>
   );
 }
 
 export { Avatar };
-
-/** A wallet-only account's address, shortened, where an email would go. */
-function shortWallet(user: User): string {
-  const a = user.wallets?.[0]?.address;
-  return a ? `${a.slice(0, 4)}…${a.slice(-4)}` : "Wallet account";
-}

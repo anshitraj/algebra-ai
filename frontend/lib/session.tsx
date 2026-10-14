@@ -120,17 +120,45 @@ export function useSession() {
   return ctx;
 }
 
-/** First name for greetings; falls back to the email's local part. */
+/**
+ * The address a person can be reached at, or "". A wallet-only or demo account
+ * has a placeholder one (under .invalid): it exists so the account has an
+ * email, and is never something to show or to greet anyone by.
+ */
+export function realEmail(user: User | null): string {
+  const e = user?.email?.trim() ?? "";
+  return e && !/\.invalid$/i.test(e) ? e : "";
+}
+
+/**
+ * First name for greetings, or "" when the person gave none. Only a plain word
+ * before the @ (ada@…) reads as a name; "ada.l92", a number or a wallet's
+ * placeholder does not.
+ */
 export function firstName(user: User | null): string {
-  if (!user) return "";
+  if (!user || user.mode === "demo") return "";
   const n = user.name?.trim();
   if (n) return n.split(/\s+/)[0];
-  return user.email.split("@")[0];
+  const local = realEmail(user).split("@")[0];
+  return /^[A-Za-z][A-Za-z'’-]{1,19}$/.test(local) ? local[0].toUpperCase() + local.slice(1) : "";
+}
+
+/** What the account menu calls the person: their name, the start of their email, a wallet's short address, or "Guest" in a demo. */
+export function displayName(user: User | null): string {
+  if (!user) return "";
+  if (user.mode === "demo") return "Guest";
+  const n = user.name?.trim();
+  if (n) return n;
+  const local = realEmail(user).split("@")[0];
+  if (local) return local;
+  const a = user.wallets?.find((w) => w.chain === "solana")?.address ?? user.wallets?.[0]?.address;
+  return a ? `${a.slice(0, 4)}…${a.slice(-4)}` : "Your account";
 }
 
 export function initials(user: User | null): string {
   if (!user) return "";
-  const source = user.name?.trim() || user.email;
+  if (user.mode === "demo") return "G";
+  const source = user.name?.trim() || realEmail(user);
   const parts = source.split(/[\s@._-]+/).filter(Boolean);
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "A";
 }

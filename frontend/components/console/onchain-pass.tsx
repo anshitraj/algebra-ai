@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { explorerAddress, explorerTx } from "@/lib/explorer";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
+import { notifyTx, type TxKind } from "@/lib/notifications";
 import { useSession } from "@/lib/session";
 import { getAuthProviders } from "@/lib/api-client";
 import type { AccountSigner } from "./account-wallet-signer";
@@ -76,8 +77,19 @@ function walletFailure(e: unknown, wallet: string, network: string) {
   return `${wallet} didn't send the transaction${said ? ` (it said: ${said})` : ""}. Algebra had checked that it succeeds on ${where} from this wallet, so the usual cause is the wallet being on another network: switch ${wallet} to ${where} and try again.${hint}`;
 }
 
-export function OnchainPassPanel({ passId, active }: { passId: string; active: boolean }) {
-  const { network, wallets: balances, refreshWallets } = useNetwork();
+/** What the bell says when an owner action lands on chain. */
+const DONE: Record<OwnerAction, { kind: TxKind; title: string }> = {
+  freeze: { kind: "freeze", title: "Pass frozen on Solana" },
+  unfreeze: { kind: "unfreeze", title: "Pass unfrozen" },
+  deposit: { kind: "deposit", title: "USDC added to the vault" },
+  withdraw: { kind: "withdraw", title: "USDC taken out of the vault" },
+  revoke: { kind: "revoke", title: "Pass revoked on Solana" },
+  close: { kind: "close", title: "Vault closed" },
+};
+
+export function OnchainPassPanel({ passId, label, active }: { passId: string; /** The pass's name, for the notification a transaction leaves. */ label?: string; active: boolean }) {
+  // The real cluster the person last chose: a vault lives on a chain even while the console is in practice mode.
+  const { cluster: network, wallets: balances, refreshWallets } = useNetwork();
   const { user } = useSession();
   // The account wallet: the one Privy made at sign-in. It signs by default.
   const account = useMemo(() => user?.wallets?.find((w) => w.chain === "solana" && w.kind === "embedded"), [user?.wallets]);
@@ -194,10 +206,11 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
       throw new Error("The transaction hasn't landed yet. Reload in a minute; the pass will link then.");
     };
     try {
+      let signature = "";
       if (signWithAccount) {
         const prep = await prepareOnchainPass(passId, { network: net.network, owner: accountSigner!.address, deposit_minor: deposit });
         try {
-          await accountSigner!.signAndSend(prep.transaction, net.network);
+          signature = await accountSigner!.signAndSend(prep.transaction, net.network);
         } catch (e) {
           throw new Error(accountFailure(e));
         }
@@ -208,7 +221,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
           async (w, owner, acct) => {
             const prep = await prepareOnchainPass(passId, { network: net.network, owner, deposit_minor: deposit });
             try {
-              await signAndSend(w, acct, prep.transaction, net.network);
+              signature = await signAndSend(w, acct, prep.transaction, net.network);
             } catch (e) {
               throw new Error(walletFailure(e, w.name, net.network));
             }
@@ -217,6 +230,14 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
           "account",
         );
       }
+      // The pass is on chain now: the bell keeps the transaction, with its link.
+      notifyTx({
+        kind: "vault",
+        title: "Vault created",
+        detail: `${label ? `“${label}”: ` : ""}${deposit > 0 ? `${usdc(deposit)} put in` : "no USDC in it yet"}`,
+        signature,
+        network: net.network,
+      });
       refreshWallets(true);
       await load();
     } catch (e) {
@@ -241,11 +262,12 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
     setBusy(action);
     setError("");
     try {
+      let signature = "";
       if (account && view.binding.owner_wallet === account.address) {
         if (!accountSigner) throw new Error("Your account wallet is still loading. Try again in a moment.");
         const { transaction } = await ownerTransaction(passId, action, minor);
         try {
-          await accountSigner.signAndSend(transaction, view.binding.network);
+          signature = await accountSigner.signAndSend(transaction, view.binding.network);
         } catch (e) {
           throw new Error(accountFailure(e));
         }
@@ -253,12 +275,21 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
         await withWallet(view.binding.owner_wallet, async (w, _addr, acct) => {
           const { transaction } = await ownerTransaction(passId, action, minor);
           try {
-            await signAndSend(w, acct, transaction, view.binding.network);
+            signature = await signAndSend(w, acct, transaction, view.binding.network);
           } catch (e) {
             throw new Error(walletFailure(e, w.name, view.binding.network));
           }
         });
       }
+      // The transaction was sent: the bell keeps it, with its link, whether or not the chain has caught up yet.
+      const done = DONE[action];
+      notifyTx({
+        kind: done.kind,
+        title: done.title,
+        detail: `${label ? `“${label}”` : "Your pass"}${minor > 0 ? `: ${usdc(minor)}` : action === "close" ? ": everything in it went back to your wallet" : ""}`,
+        signature,
+        network: view.binding.network === "solana" ? "solana" : "solana-devnet",
+      });
       // Show the new state once the chain has it.
       const before = JSON.stringify([view.state, view.vault_minor, view.exists]);
       for (let i = 0; i < 15; i++) {
@@ -297,7 +328,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <IconShield size={16} />
-          <h4 className="text-sm font-semibold text-foreground">Enforced on Solana</h4>
+          <h4 className="text-sm font-semibold text-foreground">Vault on Solana</h4>
           {view?.exists && view.state && (
             <span
               className={`rounded-full px-2 py-0.5 text-[0.7rem] font-medium ${
@@ -334,8 +365,8 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
       {view === null ? (
         <>
           <p className="mt-2 text-sm text-muted">
-            Put this pass&apos;s limits in a Solana program, funded from your own wallet. Algebra can then only pull what one payment needs,
-            within these limits, checked on chain. Even Algebra can&apos;t take more, and you can freeze it from your wallet.
+            Put this pass in a vault on Solana, funded from your own wallet. Algebra can then take only what one payment needs, within these
+            limits, and Solana itself checks it. Even Algebra can&apos;t take more, and you can freeze it from your wallet any time.
           </p>
           {net ? (
             <>
@@ -348,7 +379,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
               </label>
               <Button onClick={create} disabled={createDisabled}>
                 {busy === "create" || (signWithAccount && !accountSigner) ? <Spinner size={13} /> : <IconWallet size={14} />}{" "}
-                {signWithAccount ? "Create with my account wallet" : signedInWallet ? `Create with my wallet ${short(signedInWallet)}` : "Create with my browser wallet"}
+                {signWithAccount ? "Create the vault" : signedInWallet ? `Create the vault with ${short(signedInWallet)}` : "Create the vault with my external wallet"}
               </Button>
             </div>
             {busy === "create" && !signWithAccount && (
@@ -366,7 +397,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
               {signWithAccount ? (
                 <>
                   <p>
-                    Paid from your account wallet <span className="font-mono text-foreground">{short(account.address)}</span>
+                    Paid from your Algebra wallet <span className="font-mono text-foreground">{short(account.address)}</span>
                     {held?.ok ? (
                       <>
                         {" "}
@@ -375,14 +406,14 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
                         on {networkLabel(net.network)}
                       </>
                     ) : null}
-                    . Privy asks you to confirm it&apos;s you (your email code), then shows you the transaction to approve.
+                    . You confirm it&apos;s you with an email code, then approve the transaction.
                   </p>
                   <p className="mt-1">
                     It needs the USDC you put in and a little SOL for fees. To fund it, hover your wallet at the top right for its address and QR code.
                   </p>
                   {wallets.length > 0 && (
                     <button type="button" className="mt-1 text-primary underline" onClick={() => setUseBrowserWallet(true)}>
-                      Use a browser wallet ({wallets.map((w) => w.name).join(", ")}) instead
+                      Use an external wallet ({wallets.map((w) => w.name).join(", ")}) instead
                     </button>
                   )}
                 </>
@@ -390,7 +421,7 @@ export function OnchainPassPanel({ passId, active }: { passId: string; active: b
                 <>
                   <p>Signed by the Solana wallet in this browser, which must be set to {networkLabel(net.network)} and hold the USDC and a little SOL there.</p>
                   <button type="button" className="mt-1 text-primary underline" onClick={() => setUseBrowserWallet(false)}>
-                    Use my account wallet {short(account.address)} instead
+                    Use my Algebra wallet {short(account.address)} instead
                   </button>
                 </>
               )}

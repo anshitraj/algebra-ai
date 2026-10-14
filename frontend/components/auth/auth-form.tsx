@@ -126,7 +126,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
     >
       <h1 className="font-display text-[1.75rem] leading-tight font-semibold tracking-tight text-foreground">
-        {isSignup ? "Create your account" : showDemo ? "Try Algebra with simulated USDC" : "Welcome back"}
+        {isSignup ? "Create your account" : showDemo ? "Try Algebra with play money" : "Welcome back"}
       </h1>
       <p className="mt-2 text-sm text-muted">
         {isSignup ? "Already have an account? " : "New to Algebra? "}
@@ -143,7 +143,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
               href="/login?mode=demo"
               className="font-medium text-primary underline decoration-primary/30 underline-offset-4 hover:decoration-primary"
             >
-              Try the demo
+              Try it first
             </Link>
           </>
         )}
@@ -272,8 +272,8 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
 function EntryChooser({ entry, onChange }: { entry: Entry; onChange: (e: Entry) => void }) {
   const options: { value: Entry; label: string; hint: string }[] = [
-    { value: "demo", label: "Demo", hint: "No signup · simulated USDC" },
-    { value: "production", label: "Production", hint: "Your real account" },
+    { value: "demo", label: "Try it first", hint: "No sign-up · play money" },
+    { value: "production", label: "Sign in", hint: "Your own account" },
   ];
   return (
     <div role="tablist" aria-label="How do you want to continue?" className="mt-7 grid grid-cols-2 gap-1 rounded-2xl bg-primary-tint/50 p-1">
@@ -301,9 +301,9 @@ function EntryChooser({ entry, onChange }: { entry: Entry; onChange: (e: Entry) 
 
 function DemoPanel({ busy, error, onStart }: { busy: boolean; error: string | null; onStart: () => void }) {
   const points = [
-    { icon: <IconStore size={16} />, text: "Browse 1,600+ paid APIs from Pay.sh, Circle's Agent Marketplace, PayAI and Coinbase's Bazaar, read live." },
-    { icon: <IconShield size={16} />, text: "Issue a Spend Pass and let an agent pay the sandbox provider: limits, approvals and the coordinator run for real, the USDC is simulated." },
-    { icon: <IconReceipt size={16} />, text: "Every payment ends in a signed receipt you can verify against Algebra's published keys." },
+    { icon: <IconStore size={16} />, text: "Browse 1,600+ paid APIs from the biggest catalogs, with live prices." },
+    { icon: <IconShield size={16} />, text: "Set a spending limit and let an agent pay for data. The limits and approvals work for real; the money is play money." },
+    { icon: <IconReceipt size={16} />, text: "Every payment comes with a signed receipt you can check yourself." },
   ];
   return (
     <div className="mt-6">
@@ -327,10 +327,10 @@ function DemoPanel({ busy, error, onStart }: { busy: boolean; error: string | nu
         className="mt-7 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-[0.95rem] font-medium text-primary-tint shadow-[0_6px_16px_-8px_color-mix(in_srgb,var(--color-primary)_80%,transparent)] transition-[transform,opacity] hover:opacity-95 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
       >
         {busy && <Spinner size={16} />}
-        {busy ? "Setting up your demo…" : "Start the demo"}
+        {busy ? "Setting things up…" : "Try it now"}
       </button>
       <p className="mt-3 text-center text-xs text-muted">
-        A fresh demo account just for you. No email, no password; it ends after 3 days. By starting it you agree to the{" "}
+        A fresh practice account just for you. No email, no password; it ends after 3 days. By starting it you agree to the{" "}
         <Link href="/terms" className="underline hover:text-foreground">
           Terms
         </Link>

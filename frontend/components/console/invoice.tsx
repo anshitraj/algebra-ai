@@ -14,7 +14,7 @@ import type { EconIntent, ReceiptVerification, SpendPass } from "@/lib/types";
 import { formatMoney } from "@/lib/money";
 import { explorerTx, networkWord, solscanTx } from "@/lib/explorer";
 import { policyReport } from "@/lib/policy-check";
-import { useSession } from "@/lib/session";
+import { realEmail, useSession } from "@/lib/session";
 import { Logo } from "@/components/logo";
 import { IconArrowLeft, IconCheck, IconExternal, IconReceipt, IconShield, IconX, Spinner } from "@/components/icons";
 import { ErrorNote } from "./ui";
@@ -160,7 +160,7 @@ export function Invoice({ intentId }: { intentId: string }) {
         {/* Parties */}
         <section className="grid gap-6 border-b border-border px-6 py-6 sm:grid-cols-3 sm:px-9">
           <Party title="From" lines={["Algebra", c?.iss ?? "", "Signs every committed payment"]} />
-          <Party title="Billed to" lines={[user?.name || user?.email || "You", user?.name ? user.email : "", pass ? `Spend Pass: ${pass.label}` : ""]} />
+          <Party title="Billed to" lines={[user?.name || realEmail(user) || "You", user?.name ? realEmail(user) : "", pass ? `Spend Pass: ${pass.label}` : ""]} />
           <Party title="Paid to" lines={[c?.provider.id ?? "", s?.pay_to ? `Wallet ${mid(s.pay_to, 5)}` : "", c?.reservation.executor.name ? `Agent: ${c.reservation.executor.name}` : ""]} />
         </section>
 

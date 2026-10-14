@@ -1,16 +1,20 @@
 "use client";
 
-// The first screen of Quickstart: three steps from an empty account to a paid
-// call on devnet, with no address to copy anywhere. 1) devnet SOL and USDC are
-// dropped on the person's own wallet, 2) a starter pass and its vault, 3) ask
-// the agent. Each step shows where the person is: what is done is ticked, what
-// is next has its one button.
+// The first screen of Quickstart. Practice comes first (play money, no wallet:
+// a real answer in seconds), then three steps from there to a paid call on
+// Solana's test network, with no address to copy anywhere: 1) test SOL and USDC
+// are dropped on the person's own wallet, 2) a starter pass and its vault, 3)
+// ask the agent. Each step shows where the person is: what is done is ticked,
+// what is next has its one button.
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
 import { solscanTx } from "@/lib/explorer";
 import { formatUSDC } from "@/lib/money";
+import { useNetwork } from "@/lib/network";
+import { notifyTx } from "@/lib/notifications";
 import { getOnchainPass } from "@/lib/onchain-pass";
 import { useSession } from "@/lib/session";
 import type { FaucetDrop, FaucetStatus, SpendPass, WalletBalance } from "@/lib/types";
@@ -26,9 +30,13 @@ const ENOUGH_SOL = 20_000_000; // 0.02 SOL
 const ENOUGH_USDC = 1_000_000; // 1 USDC
 
 const TRY = "What's the weather in Lisbon and the SOL price? Under 0.01 USDC each";
+// Practice serves token prices and token risk, so its example asks for one.
+const TRY_PRACTICE = "What does SOL cost right now? Use the best provider";
 
 export function GetStarted() {
   const { user } = useSession();
+  const router = useRouter();
+  const { setNetwork } = useNetwork();
   const demo = user?.mode === "demo";
   const [faucet, setFaucet] = useState<FaucetStatus | null | undefined>(undefined);
   const [wallets, setWallets] = useState<WalletBalance[] | null>(null);
@@ -61,7 +69,8 @@ export function GetStarted() {
     loadPasses();
   }, [demo, user, loadWallets, loadPasses]);
 
-  const pass = passes?.find((p) => p.active && p.currency === "USDC") ?? null;
+  // The pass that goes on chain: not the practice pass, which spends play money and has no vault to make.
+  const pass = passes?.find((p) => p.active && p.currency === "USDC" && p.environment !== "sandbox") ?? null;
   useEffect(() => {
     if (!pass) return;
     getOnchainPass(pass.id)
@@ -79,6 +88,13 @@ export function GetStarted() {
     try {
       const r = await api.requestFaucet(address);
       setSent(r.drop);
+      notifyTx({
+        kind: "faucet",
+        title: "Test money received",
+        detail: [r.drop.sol_lamports ? `${solText(r.drop.sol_lamports)} SOL` : "", r.drop.usdc_minor ? formatUSDC(r.drop.usdc_minor) : ""].filter(Boolean).join(" and ") + " sent to your wallet",
+        signature: r.drop.signature,
+        network: "solana-devnet",
+      });
       // The chain needs a moment before the wallet shows it.
       window.setTimeout(() => loadWallets(true), 2500);
     } catch (e) {
@@ -114,11 +130,11 @@ export function GetStarted() {
   if (demo) {
     return (
       <Panel className="mt-8">
-        <h2 className="text-sm font-semibold text-foreground">You are in the demo</h2>
+        <h2 className="text-sm font-semibold text-foreground">You are in practice mode</h2>
         <p className="mt-1 text-sm leading-relaxed text-muted">
-          The demo pays with simulated USDC in the sandbox: nothing to fund. To pay on devnet with a wallet, sign in with an email or a Solana wallet.{" "}
-          <Link href="/login?mode=production" className="font-medium text-primary hover:underline">
-            Sign in
+          The demo uses play money, so there is nothing to fund. To pay real sellers with test money from your own wallet, make an account with your email or an external wallet.{" "}
+          <Link href="/signup" className="font-medium text-primary hover:underline">
+            Create your account
           </Link>
         </p>
       </Panel>
@@ -129,7 +145,26 @@ export function GetStarted() {
     <div className="mt-8 space-y-4">
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      <Card n={1} done={funded} title="Get test funds" body="Free devnet SOL for fees and USDC to spend, sent straight to your wallet. Once a day.">
+      <Panel className="py-5">
+        <h2 className="text-base font-semibold text-foreground">Try it first, in practice mode</h2>
+        <p className="mt-1 text-sm leading-relaxed text-muted">
+          Ask for a token price or a risk check and pay with play money. No wallet and no funds needed: you get a real answer with a signed receipt in seconds.
+        </p>
+        <div className="mt-3">
+          <Button
+            onClick={() => {
+              setNetwork("sandbox");
+              router.push(`/console/agent?prompt=${encodeURIComponent(TRY_PRACTICE)}`);
+            }}
+          >
+            Open practice chat
+          </Button>
+        </div>
+      </Panel>
+
+      <h2 className="pt-4 text-sm font-semibold text-foreground">Then go real, with free test money</h2>
+
+      <Card n={1} done={funded} title="Get free test money" body="Test SOL for fees and test USDC to spend, sent straight to your wallet. Once a day.">
         {address ? (
           <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             <span className="text-muted">Your wallet</span>
@@ -145,7 +180,7 @@ export function GetStarted() {
             ) : null}
           </p>
         ) : (
-          <p className="mt-3 text-sm text-muted">Your account has no Solana wallet yet. Sign out and sign in with an email or a wallet to get one.</p>
+          <p className="mt-3 text-sm text-muted">Your account has no wallet yet. Sign out and sign in with your email, or with an external wallet, to get one.</p>
         )}
 
         {faucet?.enabled ? (
@@ -186,8 +221,8 @@ export function GetStarted() {
       <Card
         n={2}
         done={vault === true}
-        title="Make a pass and put USDC in its vault"
-        body="A pass is the limit your agent pays within; its vault holds the USDC it can spend. Nothing leaves your wallet without your signature."
+        title="Make a spending limit and put test USDC in it"
+        body="A pass is the limit your agent pays within; its vault holds the USDC it can spend. Nothing leaves your wallet without your approval."
       >
         {passes === null ? (
           <div className="mt-3 h-10 w-48 animate-pulse rounded-md bg-border/60" />
@@ -214,16 +249,17 @@ export function GetStarted() {
               Create the vault for “{pass.label}”
             </Link>
             <p className="mt-2 text-xs text-muted">
-              Your wallet asks you to approve it once. Phantom: unlock it and set it to Devnet first (Settings, Developer Settings, Testnet Mode).
+              You approve it once. If you use Phantom, unlock it and turn on Testnet Mode first (Settings, Developer Settings).
             </p>
           </div>
         )}
       </Card>
 
-      <Card n={3} title="Ask the agent" body="Ask for work, not a provider. It compares the providers, you pick one or let it pay within your pass, and you get a signed receipt with a Solscan link.">
+      <Card n={3} title="Ask again, for real" body="Same kind of question, now paid from your vault on Solana's test network. It compares the sellers, you pick one, and you get a signed receipt with a Solscan link.">
         <div className="mt-3">
           <Link
             href={`/console/agent?prompt=${encodeURIComponent(TRY)}`}
+            onClick={() => setNetwork("solana-devnet")}
             className="console-button inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-tint transition-opacity hover:opacity-90"
           >
             Open the chat with an example

@@ -255,9 +255,13 @@ export function CompareStrategies({
       .listPasses()
       .then((r) => {
         if (!live) return;
-        const usable = (r.passes ?? []).filter(
-          (p) => p.active && p.currency === "USDC",
-        );
+        // A pass of this network's environment first: a practice pass can't be asked about a chain, nor a test one about practice.
+        const env =
+          network === "sandbox" ? "sandbox" : network === "solana-devnet" ? "devnet" : "mainnet";
+        const fits = (p: SpendPass) => !p.environment || p.environment === env;
+        const usable = (r.passes ?? [])
+          .filter((p) => p.active && p.currency === "USDC")
+          .sort((a, b) => Number(fits(b)) - Number(fits(a)));
         setPasses(usable);
         setPassId(usable[0]?.id || "");
       })
@@ -272,7 +276,7 @@ export function CompareStrategies({
     return () => {
       live = false;
     };
-  }, []);
+  }, [network]);
 
   async function run() {
     setBusy(true);

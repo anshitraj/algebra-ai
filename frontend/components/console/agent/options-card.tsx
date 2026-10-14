@@ -236,7 +236,7 @@ function GroupView({
         <h3 className="text-sm font-semibold text-foreground">{g.title}</h3>
         <span className="text-xs text-muted">
           {g.compared.length} compared · up to {g.maxPriceUsdc} USDC · {networkLabel(g.network)}
-          {testMoney ? " · test money" : ""}
+          {testMoney ? (g.network === "sandbox" ? " · play money" : " · test money") : ""}
         </span>
         {paid && <span className="ml-auto rounded-full bg-primary-tint px-2 py-0.5 text-[0.6875rem] font-medium text-foreground">Sent to pay</span>}
       </header>

@@ -117,9 +117,9 @@ export function PassPanel({
 
       {sandbox ? (
         <>
-          <PanelHeading>Sandbox</PanelHeading>
+          <PanelHeading>Practice mode</PanelHeading>
           <p className="border-y border-border px-5 py-3 text-xs leading-relaxed text-muted">
-            Simulated providers and USDC. No wallet is used and nothing is written to a chain.
+            Simulated sellers and play USDC. No wallet is used and nothing is written to a chain.
           </p>
         </>
       ) : (
@@ -223,7 +223,7 @@ function YourWallet() {
         <IconWallet size={16} />
       </span>
       {!mine ? (
-        <p className="text-xs leading-relaxed text-muted">No Solana wallet on your account yet. Sign in with Privy to get one.</p>
+        <p className="text-xs leading-relaxed text-muted">No wallet on your account yet. Sign out and sign in again with your email, or with an external wallet, to get one.</p>
       ) : (
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-3">

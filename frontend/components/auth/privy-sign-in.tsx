@@ -474,13 +474,13 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
         className="flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-border-strong bg-surface text-[0.95rem] font-medium text-foreground transition-[background-color,transform] hover:bg-primary-tint/50 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
       >
         {busy === "wallet" || busy === "finishing" ? <Spinner size={16} /> : <IconWallet size={18} />}
-        {busy === "wallet" && busyWallet ? `Waiting for ${busyWallet}…` : busy === "finishing" ? "Signing you in…" : "Continue with a Solana wallet"}
+        {busy === "wallet" && busyWallet ? `Waiting for ${busyWallet}…` : busy === "finishing" ? "Signing you in…" : "Continue with external wallet"}
       </button>
 
       {walletsOpen && wallets.length !== 1 && busy === null && (
         <div className="mt-2.5">
           {wallets.length > 1 ? (
-            <ul className="grid gap-2" aria-label="Solana wallets in this browser">
+            <ul className="grid gap-2" aria-label="Wallets in this browser">
               {wallets.map((w) => (
                 <li key={w.name}>
                   <button
@@ -498,7 +498,7 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
             </ul>
           ) : (
             <div className="rounded-xl bg-primary-tint/50 px-3.5 py-3 text-sm leading-relaxed text-foreground">
-              <p className="font-medium">No Solana wallet found in this browser.</p>
+              <p className="font-medium">No wallet found in this browser.</p>
               <p className="mt-1 text-muted">
                 Install{" "}
                 <a href="https://phantom.app/download" target="_blank" rel="noreferrer" className="font-medium text-primary underline decoration-primary/30 underline-offset-4 hover:decoration-primary">
@@ -508,7 +508,7 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
                 <a href="https://solflare.com/download" target="_blank" rel="noreferrer" className="font-medium text-primary underline decoration-primary/30 underline-offset-4 hover:decoration-primary">
                   Solflare
                 </a>
-                , then reload this page. Or use email above: Algebra makes you a wallet.
+                , then reload this page. Or use your email above: Algebra sets up a wallet for you.
                 {onPhone && (
                   <>
                     {" "}
