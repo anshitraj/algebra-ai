@@ -187,6 +187,25 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
     return () => clearTimeout(t);
   }, [cooldown]);
 
+  // A sign-in that never answers (a request that hangs, a Privy callback that never fires) must end in a
+  // message, not in a form that looks alive.
+  const logoutRef = useRef(logout);
+  useEffect(() => {
+    logoutRef.current = logout;
+  }, [logout]);
+  useEffect(() => {
+    if (busy !== "code" && busy !== "finishing") return;
+    const t = setTimeout(() => {
+      started.current = false;
+      void logoutRef.current().catch(() => {});
+      setError("Sign-in is taking too long. Check your connection, then send a new code and try again.");
+      setStep("email");
+      setCode("");
+      setBusy(null);
+    }, 45_000);
+    return () => clearTimeout(t);
+  }, [busy]);
+
   /** Whatever got Privy signed in, trade it for Algebra's session. */
   const finish = useCallback(
     async (privyUser: PrivyUser) => {
@@ -354,12 +373,21 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (code.length === 6) void submitCode(code);
+          if (code.length === 6) {
+            void submitCode(code);
+            return;
+          }
+          // Nothing to send yet: say so, rather than a button that does nothing.
+          setError(
+            code.length === 0
+              ? "Enter the six-digit code from the email."
+              : `The code has six digits and you've entered ${code.length}. Check the email for the latest code.`,
+          );
         }}
         className="space-y-4"
       >
         <p className="text-sm leading-relaxed text-foreground">
-          We sent a 6-digit code to <span className="font-medium break-all">{email.trim()}</span>. It can take a minute to arrive.
+          We sent a 6-digit code to <span className="font-medium break-all">{email.trim()}</span>. It can take a minute to arrive; check spam too.
         </p>
         <div>
           <label htmlFor="sign-in-code" className="text-sm font-medium text-foreground">
@@ -386,6 +414,9 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
             placeholder="000000"
             className="mt-1.5 h-12 w-full rounded-xl border border-border-strong bg-surface px-3.5 text-center font-mono text-xl tracking-[0.5em] text-foreground transition-[border-color,box-shadow] placeholder:text-muted/50 focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_18%,transparent)] focus-visible:outline-none disabled:opacity-70"
           />
+          <p className="mt-1.5 text-xs text-muted" aria-live="polite">
+            {code.length} of 6 digits{code.length === 6 ? "" : ": the sixth one signs you in"}
+          </p>
         </div>
         {error && <FormError>{error}</FormError>}
         <SubmitButton busy={working}>{busy === "finishing" ? "Signing you in…" : "Sign in"}</SubmitButton>

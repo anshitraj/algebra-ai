@@ -11,6 +11,7 @@ import { formatUSDC } from "@/lib/money";
 import { Button, ErrorNote, PageHeader, Panel, Skeleton } from "@/components/console/ui";
 import { Copy, Snippet } from "@/components/console/snippet";
 import { EnvBadge } from "@/components/console/environment";
+import { GetStarted } from "@/components/console/get-started";
 import { IconCheck, Spinner } from "@/components/icons";
 
 // Demo A: signup → project → sandbox pass (the policy) → API key → a dry run
@@ -126,13 +127,22 @@ const { summary, response, receipt } = await res.json();`;
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Quickstart"
-        description="From an empty account to a paid API call with a signed receipt, in the sandbox: simulated providers and simulated USDC, no wallet and no money. Devnet comes after."
+        description="From an empty account to a paid API call with a signed receipt, on devnet, in three steps. No address to copy anywhere."
       />
+
+      <GetStarted />
+
+      <details className="mt-10 rounded-lg border border-border bg-surface open:pb-5">
+        <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-foreground">For developers: a sandbox API key, a dry run and the code</summary>
+        <div className="px-5">
+      <p className="text-sm leading-relaxed text-muted">
+        The same flow in the sandbox, with simulated providers and simulated USDC: no wallet and no money. For your own server, with an API key.
+      </p>
       {error && <div className="mt-6"><ErrorNote>{error}</ErrorNote></div>}
-      {pass === undefined && !error && <Skeleton className="mt-8 h-40" />}
+      {pass === undefined && !error && <Skeleton className="mt-6 h-40" />}
 
       {pass !== undefined && project && (
-        <ol className="mt-8 space-y-4">
+        <ol className="mt-6 space-y-4">
           <Step n={1} done title="Your project" body={<>Every account starts with a workspace and a project: <strong className="text-foreground">{project.name}</strong>. <Link href="/console/projects" className="text-primary hover:underline">Manage projects</Link></>} />
 
           <Step n={2} done={!!pass} title="A sandbox Spend Pass: the policy" body={
@@ -236,6 +246,8 @@ const { summary, response, receipt } = await res.json();`;
           <Step n={7} title="Then: real devnet payments" body={<>Make a devnet key and pass on <Link href="/console/projects" className="text-primary hover:underline">Projects</Link>, put the pass on Solana from your wallet on <Link href="/console/passes" className="text-primary hover:underline">Spend passes</Link>, fund it with devnet USDC, and the same call pays on chain with an explorer link.</>} />
         </ol>
       )}
+        </div>
+      </details>
     </div>
   );
 }

@@ -381,6 +381,21 @@ export type WalletBalance = {
   ok: boolean;
 };
 
+/** The devnet faucet (GET /api/v1/me/faucet): devnet SOL and USDC dropped on the person's own wallet. */
+export type FaucetStatus = {
+  enabled: boolean;
+  network: string;
+  /** What one drop sends. */
+  sol_lamports?: number;
+  usdc_minor?: number;
+  /** The faucet wallet (public), so the operator can see where to refill it. */
+  address?: string;
+  /** The person's wallet a drop would go to. */
+  wallet?: string;
+};
+
+export type FaucetDrop = { address: string; sol_lamports: number; usdc_minor: number; signature: string };
+
 export type WalletsView = {
   network: "solana" | "solana-devnet";
   usdc_mint: string;
