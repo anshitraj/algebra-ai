@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -132,12 +134,50 @@ func clientMeta(r *http.Request) account.ClientMeta {
 // web app: 1 for one that appends the client address.
 var trustedProxyHops = 1
 
-// clientIP is the caller's address. RemoteAddr is our own proxy, so the
-// answer is in X-Forwarded-For — but only its last trustedProxyHops entries
-// were written by infrastructure we run. Anything left of them came from the
-// client and can be forged, so it is never used: taking the first entry
-// would let anyone dodge per-IP limits by sending a fake header.
+// The headers the web app's proxy uses to tell the API who the visitor is.
+// The web host's own proxy and the API host's proxy both rewrite
+// X-Forwarded-For, so behind the web app the API would otherwise see one
+// address for every visitor and give the whole site one per-IP budget: ten
+// sign-ins a minute and five demo accounts a day.
+const (
+	edgeSecretHeader   = "X-Algebra-Edge-Secret"
+	edgeClientIPHeader = "X-Algebra-Client-IP"
+)
+
+// edgeSecret is EDGE_SHARED_SECRET (set by NewRouter). Empty: the edge
+// headers are never read.
+var edgeSecret []byte
+
+// edgeClientIP is the visitor's address as the web app's edge saw it, for a
+// request that proves it came through that edge by carrying the shared
+// secret. Anyone can send these headers straight to the API, so without the
+// secret (compared in constant time) and a well-formed address they are
+// ignored and clientIP falls back to X-Forwarded-For.
+func edgeClientIP(r *http.Request) (string, bool) {
+	if len(edgeSecret) == 0 {
+		return "", false
+	}
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get(edgeSecretHeader)), edgeSecret) != 1 {
+		return "", false
+	}
+	addr, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get(edgeClientIPHeader)))
+	if err != nil {
+		return "", false
+	}
+	return addr.WithZone("").Unmap().String(), true
+}
+
+// clientIP is the caller's address. Behind the web app it is the address the
+// web app's edge reports, when the request carries the shared secret
+// (edgeClientIP). Otherwise RemoteAddr is our own proxy, so the answer is in
+// X-Forwarded-For — but only its last trustedProxyHops entries were written
+// by infrastructure we run. Anything left of them came from the client and
+// can be forged, so it is never used: taking the first entry would let
+// anyone dodge per-IP limits by sending a fake header.
 func clientIP(r *http.Request) string {
+	if ip, ok := edgeClientIP(r); ok {
+		return ip
+	}
 	if hops := trustedProxyHops; hops > 0 {
 		var parts []string
 		for _, h := range r.Header.Values("X-Forwarded-For") {

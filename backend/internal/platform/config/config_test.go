@@ -258,3 +258,20 @@ func TestMainnetExecutionNeedsOnChainPassesRequired(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateProduction_EdgeSharedSecretMustBeLong(t *testing.T) {
+	t.Setenv("REDIS_ADDR", "redis.internal:6379")
+	c := prodConfig()
+	c.Auth.EdgeSharedSecret = "short"
+	if err := c.ValidateProduction(); err == nil || !strings.Contains(err.Error(), "EDGE_SHARED_SECRET") {
+		t.Fatalf("a short edge secret must be refused, got %v", err)
+	}
+	c.Auth.EdgeSharedSecret = strings.Repeat("a", 32)
+	if err := c.ValidateProduction(); err != nil {
+		t.Fatalf("a 32 character edge secret refused: %v", err)
+	}
+	c.Auth.EdgeSharedSecret = ""
+	if err := c.ValidateProduction(); err != nil {
+		t.Fatalf("no edge secret is a valid configuration: %v", err)
+	}
+}
