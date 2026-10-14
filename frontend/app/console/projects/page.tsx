@@ -1087,7 +1087,7 @@ function UsagePanel({ usage }: { usage: ProjectUsage | null }) {
       <div className={styles.sectionHeader}>
         <div>
           <h2>Usage</h2>
-          <p>{month} · Sandbox runs are free.</p>
+          <p>{month} · Demo runs are free.</p>
         </div>
       </div>
       <div className={styles.usageGrid}>

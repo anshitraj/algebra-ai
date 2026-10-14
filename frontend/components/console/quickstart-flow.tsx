@@ -245,8 +245,8 @@ export function QuickstartFlow({ demo = false }: { demo?: boolean }) {
         return;
       }
       await api.createPass({
-        // The name practice mode gives its pass too (lib/practice.ts): one pass, whichever way in.
-        label: "Practice pass",
+        // The name demo mode gives its pass too (lib/practice.ts): one pass, whichever way in.
+        label: "Demo pass",
         agent_kind: "custom",
         currency: "USDC",
         budget_minor_units: 1_000_000,
@@ -385,8 +385,8 @@ export function QuickstartFlow({ demo = false }: { demo?: boolean }) {
     ).values(),
   );
 
-  // Never the page's h1: the console page and the landing demo each have their own.
-  const Title = demo ? "h3" : "h2";
+  // The console page's h1. The landing demo sits under its own page title, so there it is an h3.
+  const Title = demo ? "h3" : "h1";
   return (
     <section
       className={`${styles.guide} ${demo ? styles.demo : ""}`}

@@ -1,4 +1,4 @@
-// The pass a signed-in person practises with. Practice mode is Algebra's
+// The pass a signed-in person practises with. Demo mode is Algebra's
 // sandbox: simulated providers and USDC, no wallet and no chain. A real
 // account's sandbox pass lives in its own project's sandbox environment, so
 // its budget is never mixed with a pass that pays real or test money.
@@ -11,7 +11,7 @@ import type { SpendPass } from "./types";
 let pending: Promise<SpendPass | null> | null = null;
 
 /**
- * The person's active practice pass, made when they have none. Null when they
+ * The person's active demo pass, made when they have none. Null when they
  * have no project to put it in (the workspace is made on first read, so that
  * means the API couldn't be asked).
  */
@@ -39,7 +39,7 @@ async function find(): Promise<SpendPass | null> {
   // The same limits as the developer quickstart's sandbox pass: 1 USDC a month,
   // at most 0.05 a call, so the chat's examples meet every outcome.
   const made = await api.createPass({
-    label: "Practice pass",
+    label: "Demo pass",
     agent_kind: "custom",
     currency: "USDC",
     budget_minor_units: 1_000_000,

@@ -30,7 +30,7 @@ const USES = [
 ];
 const STEPS = ["Welcome", "Your agents", "How it works"];
 const EASE = [0.16, 1, 0.3, 1] as const;
-// The first question, asked in practice mode (play money, no wallet): it works as written.
+// The first question, asked in demo mode (play money, no wallet): it works as written.
 const FIRST_QUESTION = "What does SOL cost right now? Use the best provider";
 
 export function OnboardingFlow() {
@@ -80,7 +80,7 @@ export function OnboardingFlow() {
     };
     try {
       setUser(await api.completeOnboarding(answers));
-      // A new person's first place is practice mode: an answer in seconds, with no wallet and no funds.
+      // A new person's first place is demo mode: an answer in seconds, with no wallet and no funds.
       saveNetwork("sandbox");
       setDestination(skipped ? "/console" : `/console/agent?prompt=${encodeURIComponent(FIRST_QUESTION)}`);
       setDone(true);
@@ -200,7 +200,7 @@ export function OnboardingFlow() {
                     <p className={styles.description}>
                       {firstName(user) ? `${firstName(user)}, your` : "Your"}{" "}
                       account is ready. Let’s ask your first question in
-                      practice mode: play money, no wallet needed.
+                      demo mode: play money, no wallet needed.
                     </p>
                   </div>
                   <div className={styles.readyCard}>
@@ -232,7 +232,7 @@ export function OnboardingFlow() {
                     </Link>
                   )}
                   <p className={styles.footnote}>
-                    Practice mode uses play money: nothing real moves.
+                    Demo mode uses play money: nothing real moves.
                   </p>
                 </>
               ) : (
@@ -414,12 +414,12 @@ export function OnboardingFlow() {
                         <WalkthroughCard
                           index={2}
                           title="Watch it work"
-                          description="Follow each call, payment, and signed receipt. Start safely with play money in practice mode."
+                          description="Follow each call, payment, and signed receipt. Start safely with play money in demo mode."
                         />
                       </ol>
                       <div className={styles.sandboxNote}>
                         <span aria-hidden="true">✦</span> Your first question runs
-                        in practice mode. No wallet or real funds needed.
+                        in demo mode. No wallet or real funds needed.
                       </div>
                     </>
                   )}

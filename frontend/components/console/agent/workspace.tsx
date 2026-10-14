@@ -63,7 +63,7 @@ const SUGGESTIONS: Record<string, string[]> = {
     "Search the web for Solana payment channels, under 0.01 USDC",
     "Make a test call on devnet and show me its receipt",
   ],
-  // Practice mode: the sandbox serves token prices and token risk, from providers that misbehave like real ones.
+  // Demo mode: the sandbox serves token prices and token risk, from providers that misbehave like real ones.
   // Each of these works as written, so one tap is a complete first answer.
   sandbox: [
     "What does SOL cost right now? Use the best provider",
@@ -131,7 +131,7 @@ function saveChat(key: string, chat: SavedChat) {
 /**
  * Whether a pass can pay on the chat's network: a project's pass pays only in
  * its own environment (the server refuses anything else), a personal pass
- * anywhere on a chain. In practice mode a signed-in person uses only a practice
+ * anywhere on a chain. In demo mode a signed-in person uses only a practice
  * pass, so play money never comes out of a budget meant for test or real money;
  * a demo account's one pass is a personal one made for the sandbox.
  */
@@ -167,7 +167,7 @@ export function AgentWorkspace() {
   const [vaults, setVaults] = useState<Record<string, number>>({});
   const [passId, setPassId] = useState("");
   const [autoPay, setAutoPay] = useState(false);
-  // Practising needs a practice pass: made once, the first time a signed-in person practises.
+  // Practising needs a demo pass: made once, the first time a signed-in person practises.
   const [practiceSetup, setPracticeSetup] = useState<"idle" | "working" | "done" | "failed">("idle");
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -240,7 +240,7 @@ export function AgentWorkspace() {
     if (callsKey > 0) refreshRails();
   }, [callsKey, refreshRails]);
 
-  // Practice mode needs a pass of its own: simulated USDC, kept apart from a pass that pays test or real
+  // Demo mode needs a pass of its own: simulated USDC, kept apart from a pass that pays test or real
   // money. A signed-in account gets one the first time it practises (a demo account was given its pass at
   // sign-up). One attempt per visit: a failure says so, rather than asking the server in a loop.
   const needsPracticePass = ready && practice && !demo && passes !== null && !passes.some((p) => passFits(p, network, demo));
@@ -661,10 +661,10 @@ export function AgentWorkspace() {
                 {practice && !demo && fitting !== null && fitting.length === 0 ? (
                   <span className="inline-flex min-h-11 items-center gap-1.5 px-2.5 text-xs text-muted">
                     {practiceSetup === "failed" ? (
-                      "Couldn't set up practice. Reload to try again."
+                      "Couldn't set up the demo. Reload to try again."
                     ) : (
                       <>
-                        <Spinner size={12} /> Setting up practice…
+                        <Spinner size={12} /> Setting up the demo…
                       </>
                     )}
                   </span>
@@ -698,7 +698,7 @@ export function AgentWorkspace() {
             </div>
           </form>
           <p className={composerStyles.note}>
-            {network === "sandbox" ? "Practice mode: play USDC, nothing real moves" : `USDC on Solana ${networkLabel(network).toLowerCase()}`} · You choose every payment · Your spending limit is checked on every request
+            {network === "sandbox" ? "Demo mode: play USDC, nothing real moves" : `USDC on Solana ${networkLabel(network).toLowerCase()}`} · You choose every payment · Your spending limit is checked on every request
           </p>
         </div>
       </section>
@@ -903,7 +903,7 @@ function EmptyState({
   pass: SpendPass | null | undefined;
   network: string;
   demo: boolean;
-  /** Practice mode's pass couldn't be made. */
+  /** Demo mode's pass couldn't be made. */
   practiceFailed: boolean;
   anyProvider: boolean;
   loadingProviders: boolean;
@@ -934,10 +934,10 @@ function EmptyState({
         <span>
           {practice
             ? pass
-              ? `Practice mode: I pay from “${pass.label}” with play USDC, ${formatUSDC(pass.remaining_minor_units)} left. Nothing real moves, and no wallet is needed.`
+              ? `Demo mode: I pay from “${pass.label}” with play USDC, ${formatUSDC(pass.remaining_minor_units)} left. Nothing real moves, and no wallet is needed.`
               : practiceFailed
-                ? "Practice mode: I couldn't set up your practice pass. Reload the page to try again."
-                : "Practice mode: play money, no wallet needed, nothing real moves. Setting up your practice pass…"
+                ? "Demo mode: I couldn't set up your demo pass. Reload the page to try again."
+                : "Demo mode: play money, no wallet needed, nothing real moves. Setting up your demo pass…"
             : pass === undefined
               ? "Every paid call is checked against your Spend Pass first."
               : pass === null
@@ -982,7 +982,7 @@ function EmptyState({
 
       {practice && !loadingProviders && anyProvider && (
         <p className="mt-6 text-sm leading-relaxed text-muted">
-          Practice has sample sellers for token prices, token risk, weather, web search, news and AI answers. For the whole catalog of paid APIs, with free test money,{" "}
+          The demo has sample sellers for token prices, token risk, weather, web search, news and AI answers. For the whole catalog of paid APIs, with free test money,{" "}
           <Link href={demo ? "/signup" : "/console/quickstart"} className="font-medium text-primary hover:underline">
             {demo ? "create your account" : "go real in three steps"}
           </Link>
@@ -994,7 +994,7 @@ function EmptyState({
 }
 
 /**
- * Under a practice answer: that was play money, and here is the way to the real
+ * Under a demo answer: that was play money, and here is the way to the real
  * thing. Practice is where a new person starts; this is the step after it.
  */
 function GoRealNote({ demo }: { demo: boolean }) {
@@ -1006,7 +1006,7 @@ function GoRealNote({ demo }: { demo: boolean }) {
       className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-2xl border border-border-strong bg-primary-tint/40 px-5 py-4"
     >
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-foreground">That was practice.</p>
+        <p className="text-sm font-semibold text-foreground">That was a demo.</p>
         <p className="mt-0.5 text-sm leading-relaxed text-muted">
           {demo
             ? "The money and the sellers were simulated. Create an account to pay real sellers with free test money."

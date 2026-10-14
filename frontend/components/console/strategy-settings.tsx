@@ -255,7 +255,7 @@ export function CompareStrategies({
       .listPasses()
       .then((r) => {
         if (!live) return;
-        // A pass of this network's environment first: a practice pass can't be asked about a chain, nor a test one about practice.
+        // A pass of this network's environment first: a demo pass can't be asked about a chain, nor a test one about practice.
         const env =
           network === "sandbox" ? "sandbox" : network === "solana-devnet" ? "devnet" : "mainnet";
         const fits = (p: SpendPass) => !p.environment || p.environment === env;

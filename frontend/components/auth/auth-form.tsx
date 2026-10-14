@@ -330,7 +330,7 @@ function DemoPanel({ busy, error, onStart }: { busy: boolean; error: string | nu
         {busy ? "Setting things up…" : "Try it now"}
       </button>
       <p className="mt-3 text-center text-xs text-muted">
-        A fresh practice account just for you. No email, no password; it ends after 3 days. By starting it you agree to the{" "}
+        A fresh demo account just for you. No email, no password; it ends after 3 days. By starting it you agree to the{" "}
         <Link href="/terms" className="underline hover:text-foreground">
           Terms
         </Link>

@@ -1,29 +1,23 @@
-import { PageHeader } from "@/components/console/ui";
 import { GetStarted } from "@/components/console/get-started";
 import { QuickstartFlow } from "@/components/console/quickstart-flow";
 
-// Two ways in, in the order a new person needs them. First the plain one: try a
-// question in practice mode, then go real on Solana's test network in three
-// steps (GetStarted). Below it, folded away, the guided sandbox run for a
-// developer: a pass, a key, a preview, a receipt, then the code to call it
-// from their own project (QuickstartFlow, which the landing page's demo uses too).
+// The guided run is the page: a pass, a key, a preview, a receipt and the code to
+// call it from a project, in the sandbox (simulated USDC, no wallet). Below it,
+// for the person who would rather use the chat or free test money on Solana's
+// test network: the demo chat, then the three real steps (GetStarted).
 export default function QuickstartPage() {
   return (
     <div className="mx-auto max-w-5xl">
-      <div className="mx-auto max-w-3xl">
-        <PageHeader
-          title="Quickstart"
-          description="Try a question in practice mode first, then go real in three steps with free test money. A signed receipt at the end, and no address to copy anywhere."
-        />
+      <QuickstartFlow />
+      <section aria-labelledby="beyond-the-guide" className="mx-auto mt-12 max-w-3xl border-t border-border pt-10">
+        <h2 id="beyond-the-guide" className="font-display text-xl font-semibold text-foreground">
+          Prefer the chat, or ready for test money?
+        </h2>
+        <p className="mt-1 text-sm leading-relaxed text-muted">
+          Ask the agent in demo mode with no wallet, then go real on Solana&apos;s test network in three steps. A signed receipt at the end, and no address to copy anywhere.
+        </p>
         <GetStarted />
-      </div>
-
-      <details className="mt-10 rounded-lg border border-border bg-surface open:pb-5">
-        <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-foreground">For developers: a sandbox API key, a preview and the code</summary>
-        <div className="px-2 sm:px-5">
-          <QuickstartFlow />
-        </div>
-      </details>
+      </section>
     </div>
   );
 }

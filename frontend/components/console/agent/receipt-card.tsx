@@ -75,7 +75,7 @@ export function ReceiptCard({ receipt: r }: { receipt: ReceiptInfo }) {
         </span>
         <p className="text-sm text-foreground">
           Paid <span className="font-mono font-semibold tabular-nums">{r.paid}</span> to <span className="font-mono">{r.provider}</span>
-          {net ? (r.network === "sandbox" ? " in practice mode" : ` on ${net}`) : ""}
+          {net ? (r.network === "sandbox" ? " in demo mode" : ` on ${net}`) : ""}
         </p>
         {testMoney && (
           <span className="ml-auto rounded-full border border-dashed border-border-strong px-2 py-0.5 text-[0.6875rem] text-muted">

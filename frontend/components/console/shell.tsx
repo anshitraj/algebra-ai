@@ -373,13 +373,13 @@ function EmailBanner({ userId }: { userId: string }) {
   );
 }
 
-// Every screen of a demo account says so: it works in practice mode, where the
+// Every screen of a demo account says so: it works in demo mode, where the
 // providers and the money are simulated. The API enforces it; this says so.
 function DemoBanner() {
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-border bg-accent-tint px-4 py-2 text-center text-xs text-accent print:hidden">
       <span>
-        <strong className="font-semibold">Practice mode</strong> · play money and simulated providers. Nothing real moves, and this practice account ends after 3 days.
+        <strong className="font-semibold">Demo mode</strong> · play money and simulated providers. Nothing real moves, and this demo account ends after 3 days.
       </span>
       <Link href="/signup" className="font-semibold underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
         Create your account
