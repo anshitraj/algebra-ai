@@ -34,17 +34,31 @@ export function GlassboundAccent() {
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
+    let started = false;
+    const prepare = () => {
+      if (started) return;
+      started = true;
+      setLoad(true);
+      observer.disconnect();
+    };
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
-          setLoad(true);
-          observer.disconnect();
-        }
+        if (entry.isIntersecting) prepare();
       },
-      { rootMargin: "200px" },
+      { rootMargin: "1200px" },
     );
     observer.observe(element);
-    return () => observer.disconnect();
+    // Prepare the shader during idle time, before a fast scroll reaches it.
+    // The scene itself only draws while visible.
+    const idle = "requestIdleCallback" in window
+      ? window.requestIdleCallback(prepare, { timeout: 1500 })
+      : null;
+    const timer = idle === null ? setTimeout(prepare, 500) : null;
+    return () => {
+      observer.disconnect();
+      if (idle !== null) window.cancelIdleCallback(idle);
+      if (timer !== null) clearTimeout(timer);
+    };
   }, []);
 
   return (
