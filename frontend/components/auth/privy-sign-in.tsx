@@ -19,10 +19,11 @@
 // carry Privy's SDK.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PrivyProvider, getIdentityToken, useLoginWithEmail, useLoginWithSiws, useLogout, usePrivy, useUser, type User as PrivyUser } from "@privy-io/react-auth";
+import { PrivyProvider, useIdentityToken, useLoginWithEmail, useLoginWithSiws, useLogout, usePrivy, useUser, type User as PrivyUser } from "@privy-io/react-auth";
 import { toSolanaWalletConnectors, useCreateWallet } from "@privy-io/react-auth/solana";
 import * as api from "@/lib/api-client";
 import type { User } from "@/lib/types";
+import { NoIdentityToken, gatherIdentityToken } from "@/lib/privy-identity";
 import { connectAccount, shouldTryOffchain, signWithWallet, walletFailure, watchWallets, type InstalledWallet } from "@/lib/solana-wallets";
 import { IconWallet, Spinner } from "@/components/icons";
 import { AuthInput, FormError, SubmitButton } from "./fields";
@@ -82,8 +83,13 @@ function refusedSince(t0: number): string {
 // Privy's servers answer 429 when one of their limits is used up. Some of those limits are
 // counted per week (wallet sign-ins are, per wallet), so a few minutes' wait may change nothing.
 // Algebra's own API was never asked. detail names the call Privy refused, when the browser saw it.
-function rateLimited(detail: string) {
-  return `Privy, which runs this sign-in, refused it for too many requests. Algebra's server was never asked, and trying again right away won't help: use another sign-in method, or try later. (Privy: too_many_requests${detail ? `; ${detail}` : ""})`;
+// kept: Privy accepted the sign-in and still has the person signed in, so nothing is lost by waiting.
+function rateLimited(detail: string, kept = false) {
+  const code = `(Privy: too_many_requests${detail ? `; ${detail}` : ""})`;
+  if (kept) {
+    return `Privy kept refusing this sign-in for too many requests, even after a few tries. Your code was accepted and is still good, so there is nothing to resend: wait about a minute, then press Try again. ${code}`;
+  }
+  return `Privy, which runs this sign-in, refused it for too many requests. Algebra's server was never asked, and trying again right away won't help: use another sign-in method, or try later. ${code}`;
 }
 
 function isRateLimited(err: unknown): boolean {
@@ -102,6 +108,11 @@ function privyCode(err: unknown): string {
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : typeof err === "string" ? err : "";
+}
+
+/** text as a sentence: ends with a full stop unless it already ends in one of . ! ? */
+function endSentence(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`;
 }
 
 /** What a Privy error code means for the person, always with the code itself and Privy's own reason when it gave one. */
@@ -147,6 +158,17 @@ function hasSolanaWallet(user: PrivyUser) {
   return user.linkedAccounts.some((a) => a.type === "wallet" && a.chainType === "solana");
 }
 
+/**
+ * Whether Privy still has the person signed in after this failure, so pressing Try again needs
+ * no new code. Algebra refusing the token is final; its own busy or outage answers pass.
+ */
+function keepsPrivySession(err: unknown): boolean {
+  // The app's Privy dashboard is set up wrong: trying again can't change that.
+  if (err instanceof NoIdentityToken) return false;
+  if (err instanceof api.ApiError) return err.status === 429 || err.status >= 500;
+  return true;
+}
+
 type Busy = null | "email" | "code" | "wallet" | "finishing";
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -156,6 +178,7 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
   const { logout } = useLogout();
   const { refreshUser } = useUser();
   const { createWallet } = useCreateWallet();
+  const { identityToken } = useIdentityToken();
   const { generateSiwsMessage, generateSiwsOffchainMessage, loginWithSiws } = useLoginWithSiws();
 
   const [step, setStep] = useState<"email" | "code">("email");
@@ -167,9 +190,23 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
   const [walletsOpen, setWalletsOpen] = useState(false);
   const [busyWallet, setBusyWallet] = useState("");
   const [cooldown, setCooldown] = useState(0);
+  // Set when Privy accepted the sign-in but the last steps didn't finish: Privy still has the person
+  // signed in, so Try again picks up from there and costs no new code.
+  const [resume, setResume] = useState<PrivyUser | null>(null);
+  // What is happening while the person waits (Privy asked us to slow down).
+  const [notice, setNotice] = useState<string | null>(null);
   // Only a sign-in the person started here is traded: Privy's callbacks also
   // fire for a session left over from an earlier visit.
   const started = useRef(false);
+  // Which attempt is current, so one the watchdog gave up on can't act when it finally answers.
+  const runs = useRef(0);
+  // The Privy user whose sign-in is being finished or waiting to be, signed out of when the page goes.
+  const pending = useRef<PrivyUser | null>(null);
+  // The identity token the SDK holds, readable inside a running attempt.
+  const storedToken = useRef(identityToken);
+  useEffect(() => {
+    storedToken.current = identityToken;
+  }, [identityToken]);
   // When the attempt began (performance.now()), to read what was refused during it.
   const attemptAt = useRef(0);
 
@@ -195,54 +232,103 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
   }, [logout]);
   useEffect(() => {
     if (busy !== "code" && busy !== "finishing") return;
-    const t = setTimeout(() => {
-      started.current = false;
-      void logoutRef.current().catch(() => {});
-      setError("Sign-in is taking too long. Check your connection, then send a new code and try again.");
-      setStep("email");
-      setCode("");
-      setBusy(null);
-    }, 45_000);
+    const t = setTimeout(
+      () => {
+        started.current = false;
+        runs.current++;
+        setNotice(null);
+        if (busy === "finishing" && pending.current) {
+          // Privy accepted the code: keep that, and let the person try the last steps again.
+          setResume(pending.current);
+          setError("Sign-in is taking too long. Your code was accepted and is still good: check your connection, then press Try again.");
+        } else {
+          void logoutRef.current().catch(() => {});
+          setError("Sign-in is taking too long. Check your connection, then send a new code and try again.");
+          setStep("email");
+          setCode("");
+        }
+        setBusy(null);
+      },
+      // The last steps wait out Privy's "too busy" pauses, so they get longer than a code check.
+      busy === "finishing" ? 75_000 : 45_000,
+    );
     return () => clearTimeout(t);
   }, [busy]);
+
+  // A sign-in left waiting for Try again is not left signed in with Privy for long, or after the page goes.
+  useEffect(() => {
+    if (!resume) return;
+    const t = setTimeout(() => {
+      pending.current = null;
+      void logoutRef.current().catch(() => {});
+      setResume(null);
+      setError("That sign-in timed out. Send a new code to start again.");
+      setStep("email");
+    }, 10 * 60_000);
+    return () => clearTimeout(t);
+  }, [resume]);
+  useEffect(
+    () => () => {
+      if (pending.current) void logoutRef.current().catch(() => {});
+    },
+    [],
+  );
 
   /** Whatever got Privy signed in, trade it for Algebra's session. */
   const finish = useCallback(
     async (privyUser: PrivyUser) => {
       if (!started.current) return;
       started.current = false;
+      const run = ++runs.current;
+      pending.current = privyUser;
       setBusy("finishing");
+      setNotice(null);
       // Which step is running, for the message when one fails: Privy is signed in by now.
-      let step = "making your wallet";
+      let step: string = "making your wallet";
       try {
-        const made = !hasSolanaWallet(privyUser);
-        if (made) await createWallet();
-        // The token Privy issued at sign-in already names the wallet they came with. Only a wallet
-        // made just now needs a fresh one: a refresh is one more request against Privy's limits.
-        step = "reading your Privy identity";
-        let token = made ? null : await getIdentityToken();
-        let refreshFailed: unknown;
-        if (!token) {
-          // A refresh Privy refuses is not the end: the token from sign-in still proves who this
-          // is. It only lacks the wallet made a moment ago, which the next sign-in records.
-          await refreshUser().catch((e: unknown) => (refreshFailed = e));
-          token = await getIdentityToken();
-        }
-        if (!token) {
-          throw (
-            refreshFailed ??
-            new Error("Privy didn't send an identity token. Turn on “Return user data in an identity token” in the Privy dashboard.")
-          );
-        }
+        // The token Privy stored at sign-in, refreshed only when it lacks a wallet made just now, and
+        // asked for again after a pause if Privy says it is too busy. The SDK's own getIdentityToken()
+        // is a request to Privy every time, which is how a sign-in that worked could end in a 429.
+        const { token } = await gatherIdentityToken({
+          did: privyUser.id,
+          walletJustMade: !hasSolanaWallet(privyUser),
+          createWallet: () => createWallet(),
+          refreshUser,
+          stored: () => storedToken.current,
+          isRefused: isRateLimited,
+          onStep: (s) => (step = s),
+          onWait: (seconds) => setNotice(`Privy asked us to slow down. Trying again in ${seconds} seconds…`),
+        });
+        // The watchdog gave up on this attempt while Privy was being asked.
+        if (run !== runs.current) return;
+        setNotice(null);
         step = "signing in to Algebra";
         const { user } = await api.signInWithPrivy(token);
+        pending.current = null;
         await logout().catch(() => {});
         onSignedIn(user);
       } catch (err) {
-        // Read before signing out of Privy, which makes requests of its own.
+        if (run !== runs.current) return;
+        // Read before anything else asks Privy for something.
         const refused = err instanceof api.ApiError ? "" : refusedSince(attemptAt.current);
-        await logout().catch(() => {});
         const where = [`while ${step}`, refused].filter(Boolean).join("; ");
+        setNotice(null);
+        if (keepsPrivySession(err)) {
+          // Privy accepted the code and still has the person signed in: stay that way, so Try again costs
+          // no new code (and no new request to Privy for one).
+          setResume(privyUser);
+          setError(
+            isRateLimited(err)
+              ? rateLimited(where, true)
+              : err instanceof api.ApiError
+                ? err.message
+                : `${endSentence(errorText(err) || "Sign-in with Privy didn't complete")} Your code is still good: press Try again. (${where})`,
+          );
+          setBusy(null);
+          return;
+        }
+        pending.current = null;
+        await logout().catch(() => {});
         setError(
           isRateLimited(err)
             ? rateLimited(where)
@@ -251,6 +337,7 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
               : `${errorText(err) || "Sign-in with Privy didn't complete. Try again."} (${where})`,
         );
         // Privy is signed out and its one-time code is spent: start again from the top.
+        setResume(null);
         setStep("email");
         setCode("");
         setBusy(null);
@@ -366,7 +453,60 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
     setError(null);
   }
 
+  /** The last steps again with the Privy sign-in already accepted: no new code. */
+  function tryAgain(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (busy || !resume) return;
+    begin();
+    started.current = true;
+    void finish(resume);
+  }
+
+  /** Give up on the accepted sign-in: Privy is signed out and the person starts from the email. */
+  async function startOver() {
+    if (busy) return;
+    started.current = false;
+    runs.current++;
+    pending.current = null;
+    setResume(null);
+    setNotice(null);
+    setError(null);
+    setStep("email");
+    setCode("");
+    await logout().catch(() => {});
+  }
+
   const working = busy === "code" || busy === "finishing";
+
+  if (resume) {
+    const who = resume.email?.address;
+    return (
+      <form onSubmit={tryAgain} className="space-y-4">
+        <p className="text-sm leading-relaxed text-foreground">
+          {who ? (
+            <>
+              Privy accepted the code for <span className="font-medium break-all">{who}</span>.
+            </>
+          ) : (
+            "Privy accepted your sign-in."
+          )}{" "}
+          It is still holding it, so there is nothing to resend.
+        </p>
+        {error && <FormError>{error}</FormError>}
+        <SubmitButton busy={working}>{working ? "Signing you in…" : "Try again"}</SubmitButton>
+        {notice && (
+          <p role="status" className="text-xs leading-relaxed text-muted">
+            {notice}
+          </p>
+        )}
+        <div className="text-xs">
+          <button type="button" onClick={() => void startOver()} disabled={working} className="font-medium text-muted hover:text-foreground">
+            {who ? "Use a different email" : "Start over"}
+          </button>
+        </div>
+      </form>
+    );
+  }
 
   if (step === "code") {
     return (
@@ -420,6 +560,11 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
         </div>
         {error && <FormError>{error}</FormError>}
         <SubmitButton busy={working}>{busy === "finishing" ? "Signing you in…" : "Sign in"}</SubmitButton>
+        {notice && (
+          <p role="status" className="text-xs leading-relaxed text-muted">
+            {notice}
+          </p>
+        )}
         <div className="flex items-center justify-between gap-3 text-xs">
           <button
             type="button"
@@ -528,6 +673,12 @@ function Panel({ initialError, onSignedIn }: Omit<Props, "appId">) {
       {busy === "wallet" && busyWallet && (
         <p role="status" className="mt-2.5 text-xs leading-relaxed text-muted">
           Approve the request in {busyWallet}. You sign one message to prove the wallet is yours: it sends no funds and costs nothing.
+        </p>
+      )}
+
+      {notice && (
+        <p role="status" className="mt-2.5 text-xs leading-relaxed text-muted">
+          {notice}
         </p>
       )}
 
