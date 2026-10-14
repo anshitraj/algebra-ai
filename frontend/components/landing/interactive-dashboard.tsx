@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { QuickstartFlow } from "@/components/console/quickstart-flow";
 import { Logo } from "@/components/logo";
 import { ProviderLogo } from "@/components/provider-logo";
 import { IconArrowRight, IconBan, IconCheck, IconChevronDown, IconClock, IconGauge, IconGrid, IconList, IconPlus, IconReceipt, IconSearch, IconShield, IconStop, IconStore, IconX } from "@/components/icons";
 import { FEATURED_PROVIDERS } from "@/lib/paysh";
 
-type View = "Overview" | "Providers" | "Spend passes" | "Activity";
+type View = "Quickstart" | "Overview" | "Providers" | "Spend passes" | "Activity";
 type Execution = { id: string; capability: string; provider: string; host: string; amount: number; state: "Delivered" | "Blocked"; time: string };
 const initialExecutions: Execution[] = [
   { id: "demo_001", capability: "token.price", provider: "Birdeye", host: "birdeye.so", amount: 0.003, state: "Delivered", time: "2 min ago" },
@@ -23,7 +24,7 @@ const nav: { label: View; icon: React.ReactNode }[] = [
 ];
 
 export function InteractiveDashboard({ standalone = false }: { standalone?: boolean }) {
-  const [view, setView] = useState<View>("Overview");
+  const [view, setView] = useState<View>(standalone ? "Quickstart" : "Overview");
   const [period, setPeriod] = useState("7 days");
   const [paused, setPaused] = useState(false);
   const [running, setRunning] = useState(false);
@@ -88,12 +89,13 @@ export function InteractiveDashboard({ standalone = false }: { standalone?: bool
           <Link href="/" className="dashboard-brand"><Logo size={26} /><span>algebra</span></Link>
           <div className="workspace-label"><span className="workspace-avatar">A</span><span>Acme workspace<small>Personal workspace</small></span></div>
           <span className="sidebar-caption">WORKSPACE</span>
-          <nav aria-label="Demo dashboard">{nav.map((item) => <button key={item.label} onClick={() => { setView(item.label); setQuery(""); }} aria-current={view === item.label ? "page" : undefined} className={view === item.label ? "active" : ""}>{item.icon}<span>{item.label}</span>{item.label === "Activity" && <small>{executions.length}</small>}</button>)}</nav>
+          <nav aria-label="Demo dashboard">{(standalone ? [{ label: "Quickstart" as const, icon: <IconCheck size={16} /> }, ...nav] : nav).map((item) => <button key={item.label} onClick={() => { setView(item.label); setQuery(""); }} aria-current={view === item.label ? "page" : undefined} className={view === item.label ? "active" : ""}>{item.icon}<span>{item.label}</span>{item.label === "Activity" && <small>{executions.length}</small>}</button>)}</nav>
           <div className="sidebar-bottom"><div className="connection-label"><i /> Solana · USDC</div><Link href="/signup">Create your workspace <IconArrowRight size={14} /></Link><span className="sidebar-account"><span className="workspace-avatar">JD</span><span>Jamie Demo<small>Example account</small></span></span></div>
         </aside>
         <div className="dashboard-content">
           <div className="dashboard-breadcrumb"><span>Workspace <span>/</span> <strong>{view}</strong></span><span className="sandbox-pill"><i /> Sandbox</span></div>
-          <div className="dashboard-heading"><div><span className="dashboard-eyebrow">YOUR AGENT OPERATIONS, AT A GLANCE</span><h3>{view === "Overview" ? "Everything, under control." : view === "Providers" ? "Find the right capability." : view === "Spend passes" ? "Your agent. Your rules." : "Every request, accounted for."}</h3><p>{view === "Overview" ? "A little autonomy. A lot of visibility." : view === "Providers" ? "Explore a catalog snapshot. Live availability appears in your console." : view === "Spend passes" ? "Try adjusting the limits for your example research agent." : "Inspect a request to see its outcome and example receipt."}</p></div><button className="dashboard-action" onClick={runRequest} disabled={paused || running}><IconPlus size={14} />{running ? "Running…" : "Run a request"}</button></div>
+          {view !== "Quickstart" && <div className="dashboard-heading"><div><span className="dashboard-eyebrow">YOUR AGENT OPERATIONS, AT A GLANCE</span><h3>{view === "Overview" ? "Everything, under control." : view === "Providers" ? "Find the right capability." : view === "Spend passes" ? "Your agent. Your rules." : "Every request, accounted for."}</h3><p>{view === "Overview" ? "A little autonomy. A lot of visibility." : view === "Providers" ? "Explore a catalog snapshot. Live availability appears in your console." : view === "Spend passes" ? "Try adjusting the limits for your example research agent." : "Inspect a request to see its outcome and example receipt."}</p></div><button className="dashboard-action" onClick={runRequest} disabled={paused || running}><IconPlus size={14} />{running ? "Running…" : "Run a request"}</button></div>}
+          {standalone && <div hidden={view !== "Quickstart"}><QuickstartFlow demo /></div>}
 
           {(view === "Overview" || view === "Activity") && <>
             <div className="dashboard-metrics"><Metric label="TOTAL SPEND" value={`$${shownSpent.toFixed(2)}`} detail={`${period} · USDC`} icon={<IconGauge size={14} />} /><Metric label="SUCCESSFUL CALLS" value={(period === "24 hours" ? Math.round(calls / 7) : period === "30 days" ? calls * 4 : calls).toLocaleString("en-US")} detail="Verified and delivered" icon={<IconCheck size={14} />} /><Metric label="ACTIVE SPEND PASS" value={paused ? "Paused" : "1 active"} detail={`${budget.toFixed(0)} USDC budget`} icon={<IconShield size={14} />} /></div>
