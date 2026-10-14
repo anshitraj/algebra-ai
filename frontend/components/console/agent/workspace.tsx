@@ -14,6 +14,7 @@ import { formatUSDC } from "@/lib/money";
 import { getOnchainPass } from "@/lib/onchain-pass";
 import type { Simulation } from "@/lib/routing-types";
 import { networkLabel, useNetwork } from "@/lib/network";
+import { approvalRule } from "@/lib/pass-rules";
 import { IconArrowUp, IconLock, IconRefresh, IconShield, IconStop } from "@/components/icons";
 import { useConsoleData } from "../console-data";
 import { ApprovalCard, type ApprovalOutcome } from "./approval-card";
@@ -698,7 +699,7 @@ function TurnView({
         )}
       </AnimatePresence>
 
-      {turn.status === "stopped" && <p className="text-sm text-muted">Stopped. Nothing past the last completed step was done.</p>}
+      {turn.status === "stopped" && <p className="text-sm text-muted">Stopped. Steps not started yet will not run. A payment already underway still completes and is recorded under Executions.</p>}
       {turn.error && (
         <p role="alert" className="rounded-xl bg-danger-tint px-4 py-3 text-sm text-danger">
           {turn.error}
@@ -812,7 +813,11 @@ function EmptyState({
             : pass === null
               ? "No Spend Pass picked: I can find APIs and read their prices, and I'll pay once you pick a pass below."
               : `I pay from “${pass.label}” ${network === "sandbox" ? "in the sandbox, with simulated USDC" : `on Solana ${where}`}: ${formatUSDC(pass.remaining_minor_units)} left${
-                  pass.approve_above_minor_units ? `, and I'll ask you from ${formatUSDC(pass.approve_above_minor_units)} a call` : ""
+                  approvalRule(pass).kind === "always"
+                    ? ", and I'll ask you before every call"
+                    : approvalRule(pass).kind === "above"
+                      ? `, and I'll ask you from ${formatUSDC(pass.approve_above_minor_units as number)} a call`
+                      : ""
                 }.`}
         </span>
       </motion.p>

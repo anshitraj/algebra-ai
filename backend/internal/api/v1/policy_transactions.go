@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/project-algebra/algebra/internal/app"
@@ -90,7 +89,7 @@ func (a *API) evaluateTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Conditions == nil {
-		writeError(w, errors.New("missing \"conditions\" — Algebra does not assume a default budget policy for a third-party integrator; send at least an empty {} to explicitly allow everything"))
+		writeError(w, badRequest("missing \"conditions\" — Algebra does not assume a default budget policy for a third-party integrator; send at least an empty {} to explicitly allow everything"))
 		return
 	}
 

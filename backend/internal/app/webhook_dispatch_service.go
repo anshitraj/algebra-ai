@@ -6,11 +6,17 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/tenant"
+	"github.com/project-algebra/algebra/internal/platform/safehttp"
 )
 
 // WebhookDispatchService is the outbound-sending half of the webhook
@@ -28,22 +34,90 @@ import (
 // needs a real queue (SQS, Cloud Tasks, ...) behind this.
 type WebhookDispatchService struct {
 	endpoints WebhookEndpointStore
-	client    *http.Client
+	client    WebhookHTTP
 	now       func() time.Time
+}
+
+// WebhookHTTP is the client deliveries go out through. *safehttp.Client
+// satisfies it: it dials only public addresses, speaks only https and never
+// follows a redirect, which matters because the destination is a URL a tenant
+// chose and the request is made from inside Algebra's own network.
+type WebhookHTTP interface {
+	Do(req *http.Request) (*safehttp.Response, error)
 }
 
 func NewWebhookDispatchService(endpoints WebhookEndpointStore) *WebhookDispatchService {
 	return &WebhookDispatchService{
 		endpoints: endpoints,
-		client:    &http.Client{Timeout: 10 * time.Second},
+		client:    safehttp.New(safehttp.Options{Timeout: 10 * time.Second}),
 		now:       time.Now,
 	}
+}
+
+// SetHTTPClient replaces the delivery client (tests).
+func (s *WebhookDispatchService) SetHTTPClient(c WebhookHTTP) { s.client = c }
+
+// ErrInvalidWebhookURL: the URL can't be a webhook destination.
+var ErrInvalidWebhookURL = errors.New("app: invalid webhook URL")
+
+// maxWebhookURL bounds a destination's length.
+const maxWebhookURL = 2048
+
+// ValidateWebhookURL accepts only a public https destination: it refuses plain
+// http, credentials in the URL, names that only resolve inside a network
+// (localhost, .local, .internal, a bare service name) and IP literals in
+// private, loopback, link-local or otherwise non-public ranges.
+//
+// This is the early, readable refusal. It can't see what a public-looking name
+// resolves to, so the delivery client re-checks the address it actually dials,
+// after DNS, and refuses a non-public one whatever the registered URL says.
+func ValidateWebhookURL(raw string) error {
+	reject := func(why string) error { return fmt.Errorf("%w: %s", ErrInvalidWebhookURL, why) }
+	if len(raw) > maxWebhookURL {
+		return reject("it is longer than 2048 characters")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return reject("it isn't a valid URL")
+	}
+	if u.Scheme != "https" {
+		return reject("it must be an https:// URL")
+	}
+	if u.User != nil {
+		return reject("it must not carry a username or password")
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return reject("it has no host")
+	}
+	if p := u.Port(); p != "" {
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return reject("its port isn't valid")
+		}
+	}
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if safehttp.BlockedIP(addr, false) {
+			return reject("it points at a private or reserved address")
+		}
+		return nil
+	}
+	switch {
+	case host == "localhost", strings.HasSuffix(host, ".localhost"),
+		strings.HasSuffix(host, ".local"), strings.HasSuffix(host, ".internal"), strings.HasSuffix(host, ".localdomain"):
+		return reject("it points at a name that only resolves inside a network")
+	case !strings.Contains(strings.TrimSuffix(host, "."), "."):
+		return reject("it must be a fully qualified public hostname")
+	}
+	return nil
 }
 
 // CreateEndpoint registers a new webhook destination for tenantID and
 // returns its generated shared secret exactly once — the REST/MCP layer
 // never sees it again after this call, same posture as a bearer token.
-func (s *WebhookDispatchService) CreateEndpoint(ctx context.Context, tenantID, url string, eventTypes []string) (*tenant.WebhookEndpoint, string, error) {
+func (s *WebhookDispatchService) CreateEndpoint(ctx context.Context, tenantID, endpointURL string, eventTypes []string) (*tenant.WebhookEndpoint, string, error) {
+	if err := ValidateWebhookURL(endpointURL); err != nil {
+		return nil, "", err
+	}
 	if eventTypes == nil {
 		// tenant_webhook_endpoints.event_types is TEXT[] NOT NULL — a Go nil
 		// slice binds as SQL NULL (the column's DEFAULT '{}' only applies
@@ -56,7 +130,7 @@ func (s *WebhookDispatchService) CreateEndpoint(ctx context.Context, tenantID, u
 		return nil, "", fmt.Errorf("app: generating webhook secret: %w", err)
 	}
 	ep := &tenant.WebhookEndpoint{
-		ID: newID("whep"), TenantID: tenantID, URL: url, Secret: secret,
+		ID: newID("whep"), TenantID: tenantID, URL: endpointURL, Secret: secret,
 		EventTypes: eventTypes, CreatedAt: s.now(),
 	}
 	if err := s.endpoints.Create(ctx, ep); err != nil {
@@ -129,6 +203,5 @@ func (s *WebhookDispatchService) deliverOnce(ctx context.Context, ep tenant.Webh
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
-	return resp.StatusCode >= 200 && resp.StatusCode < 300
+	return resp.Status >= 200 && resp.Status < 300
 }
