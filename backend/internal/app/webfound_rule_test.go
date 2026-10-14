@@ -46,7 +46,7 @@ func TestWebFoundRule_DefaultWaitsForThePerson(t *testing.T) {
 	var rej *ReservationRejected
 	_, err = rig.exec.Do(ctx, DoRequest{AgentID: "agent_w", Spec: spec, Candidates: []routing.Candidate{webCand("found")}})
 	if !errors.As(err, &rej) || rej.Reason != RejectApproval || len(rej.ReasonCodes) == 0 || rej.ReasonCodes[0] != spendpass.ReasonWebFoundNeedsApproval {
-		t.Fatalf("held for the person: %v (reason %q codes %v)", err, func() string { if rej != nil { return rej.Reason }; return "" }(), func() []string { if rej != nil { return rej.ReasonCodes }; return nil }())
+		t.Fatalf("held for the person (with the web-found reason): %v", err)
 	}
 	if rig.runner.ran("found") != 0 {
 		t.Fatal("nothing was paid while it waited")
