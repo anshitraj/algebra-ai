@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveProvider } from "@/lib/agent/models";
 import { buildSystemPrompt } from "@/lib/agent/system-prompt";
-import { consumeAgentTurn, getAgentToken, getPasses, getRails, ServerApiError, type ChatNetwork, type ServerIdentity, type TurnQuota } from "@/lib/agent/server-client";
+import { consumeAgentTurn, getAgentToken, getOnchainNetworks, getPasses, getRails, ServerApiError, type ChatNetwork, type ServerIdentity, type TurnQuota } from "@/lib/agent/server-client";
 import { toolsFor } from "@/lib/agent/tools";
 import { trimHistory } from "@/lib/agent/history";
 import { runTool } from "@/lib/agent/run-tool";
@@ -88,7 +88,11 @@ export async function POST(request: Request) {
   // effect on the very next message. The API checks the pass again on every
   // payment; this only keeps the agent from promising what it can't do.
   const wanted = typeof body.spend_pass_id === "string" ? body.spend_pass_id.trim() : "";
-  const [passes, rails] = await Promise.all([wanted ? getPasses(cookie).catch(() => null) : [], getRails(cookie).catch(() => [])]);
+  const [passes, rails, vaults] = await Promise.all([
+    wanted ? getPasses(cookie).catch(() => null) : [],
+    getRails(cookie).catch(() => []),
+    getOnchainNetworks().catch(() => []),
+  ]);
   if (passes === null) return NextResponse.json({ error: "Can't read your Spend Passes right now. Try again in a moment." }, { status: 502 });
   const pass = wanted ? (passes.find((p) => p.id === wanted && p.active && p.currency === "USDC") ?? null) : null;
   if (wanted && !pass) {
@@ -103,7 +107,13 @@ export async function POST(request: Request) {
   const quota = await consumeAgentTurn(cookie).catch((): TurnQuota => ({ ok: true }));
   if (!quota.ok) return NextResponse.json({ error: quotaMessage(quota) }, { status: 429 });
   const identity: ServerIdentity = { ...token, cookie, passId: pass?.id, pass: pass ?? undefined, network };
-  const systemPrompt = buildSystemPrompt({ network, pass, rail: rails.find((r) => r.network === network), mode: token.mode });
+  const systemPrompt = buildSystemPrompt({
+    network,
+    pass,
+    rail: rails.find((r) => r.network === network),
+    vault: vaults.find((n) => n.network === network),
+    mode: token.mode,
+  });
   const tools = toolsFor();
   const history = trimHistory(Array.isArray(body.history) ? body.history : []);
 

@@ -1,4 +1,5 @@
 import { approvalRule } from "../pass-rules";
+import { railFacts, type VaultNetwork } from "./rail-facts";
 import type { RailStatus, SpendPass } from "../types";
 import type { ChatNetwork } from "./server-client";
 
@@ -22,6 +23,8 @@ export type PromptContext = {
   network: ChatNetwork;
   pass: SpendPass | null;
   rail: RailStatus | undefined;
+  /** The on-chain Spend Pass program on this network, when it has one: where payments must come from a vault. */
+  vault?: VaultNetwork;
   mode: "live" | "demo";
 };
 
@@ -31,7 +34,7 @@ export type PromptContext = {
  * it. Rebuilt on every turn by the route handler, so a pass revoked or a
  * network switched in another tab takes effect on the very next message.
  */
-export function buildSystemPrompt({ network, pass, rail, mode }: PromptContext): string {
+export function buildSystemPrompt({ network, pass, rail, vault, mode }: PromptContext): string {
   const parts = [BASE_PROMPT];
   const sandbox = network === "sandbox";
   const where = sandbox
@@ -45,22 +48,7 @@ export function buildSystemPrompt({ network, pass, rail, mode }: PromptContext):
       : `This chat pays on ${where}. Only providers payable there are searched and every payment is restricted to it.`,
   ];
 
-  // The sandbox has no wallet, so there is nothing to say about one.
-  if (!sandbox) {
-    if (!rail?.configured) {
-      facts.push(
-        `This server has no wallet for ${network === "solana" ? "mainnet" : "devnet"}, so calls can be searched and priced but not paid: payments will fail. Say so if the user asks to pay, and suggest switching networks at the top if the other one has a wallet.`
-      );
-    } else if (rail.error) {
-      facts.push("The wallet is set but the Solana node can't be reached right now, so payments may fail.");
-    } else if (typeof rail.funded === "boolean") {
-      facts.push(
-        rail.funded
-          ? `The paying wallet is funded${rail.max_payment_minor ? `; it pays at most ${usdc(rail.max_payment_minor)} per call` : ""}.`
-          : "The paying wallet holds no USDC on this network right now.",
-      );
-    }
-  }
+  facts.push(...railFacts(network, rail, vault));
 
   if (!pass) {
     facts.push(

@@ -137,6 +137,12 @@ export async function getRails(cookie: string): Promise<RailStatus[]> {
   return r.rails ?? [];
 }
 
+/** The on-chain Spend Pass program per network, and whether Algebra's payer can pay fees (public). */
+export async function getOnchainNetworks(): Promise<{ network: string; required: boolean; signer_ready?: boolean }[]> {
+  const r = await apiFetch<{ networks: { network: string; required: boolean; signer_ready?: boolean }[] | null }>("/api/v1/onchain/networks", null);
+  return r.networks ?? [];
+}
+
 // --- public ---
 
 export function searchProviders(p: { query: string; network: string; category?: string; limit?: number }) {

@@ -1,0 +1,5 @@
+# Files that run on Linux keep LF line endings in every checkout. A Windows
+# checkout with core.autocrlf turns start.sh into "#!/bin/sh\r", and the
+# container then dies with "exec /app/start.sh: no such file or directory".
+*.sh        text eol=lf
+Dockerfile* text eol=lf
