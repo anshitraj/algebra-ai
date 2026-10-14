@@ -124,8 +124,10 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
   const outcome = String(d.outcome ?? "");
   const network = typeof d.network === "string" ? d.network : undefined;
   const tx = typeof d.transaction === "string" && d.transaction ? d.transaction : undefined;
+  const pullTx = typeof d._pull_transaction === "string" && d._pull_transaction ? d._pull_transaction : undefined;
   const rows: { label: string; value: string }[] = [];
   if (typeof d.paid === "string" && (d.paid_minor as number) > 0) rows.push({ label: "Paid", value: `${d.paid}${network ? ` on ${networkWord(network)}` : ""}` });
+  if (pullTx) rows.push({ label: "Spend Pass pull", value: `${pullTx.slice(0, 8)}…${pullTx.slice(-8)}` });
   if (tx) rows.push({ label: "Transaction", value: `${tx.slice(0, 8)}…${tx.slice(-8)}` });
   const routing = d.routing as { mode?: string; ranked?: { rank: number; provider: string; price?: string }[] } | undefined;
   if (routing?.mode && pickLabel(routing.mode)) rows.push({ label: "Picked by", value: pickLabel(routing.mode) });
@@ -138,8 +140,10 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
   const links = [
     ...(intentId && d._receipt ? [{ title: "Receipt (PDF)", url: `/api/v1/economic-intents/${encodeURIComponent(intentId)}/receipt.pdf` }] : []),
     ...(intentId && d._receipt ? [{ title: "Receipt, signed by Algebra", url: `/console/executions/${encodeURIComponent(intentId)}/invoice` }] : []),
-    ...(onChain ? [{ title: `Transaction on Solscan${where}`, url: solscanTx(tx, network) }] : []),
-    ...(onChain ? [{ title: `Transaction on Solana Explorer${where}`, url: explorerTx(tx, network) }] : []),
+    ...(onChain && pullTx ? [{ title: `Spend Pass pull (on-chain program) on Solscan${where}`, url: solscanTx(pullTx, network) }] : []),
+    ...(onChain && pullTx ? [{ title: `Spend Pass pull (on-chain program) on Solana Explorer${where}`, url: explorerTx(pullTx, network) }] : []),
+    ...(onChain ? [{ title: `Payment to the provider on Solscan${where}`, url: solscanTx(tx, network) }] : []),
+    ...(onChain ? [{ title: `Payment to the provider on Solana Explorer${where}`, url: explorerTx(tx, network) }] : []),
     { title: "Every paid call, with its receipt", url: "/console/executions" },
   ];
 

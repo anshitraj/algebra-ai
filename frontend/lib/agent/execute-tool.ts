@@ -137,6 +137,21 @@ function summarizeRejections(b: Record<string, unknown>): string[] | undefined {
   return [...by.entries()].map(([code, ps]) => `${code}: ${[...new Set(ps)].slice(0, 4).join(", ")}`);
 }
 
+/**
+ * For a payment funded by an on-chain Spend Pass: the program's pull from the pass's
+ * vault, so the step card can link it next to the payment. Best effort; for the card only.
+ */
+async function withPull<T extends Record<string, unknown>>(out: T, identity: ServerIdentity): Promise<T> {
+  if (out.outcome !== "delivered" || !identity.cookie || !identity.passId || typeof out.intent_id !== "string") return out;
+  if (out.network !== "solana" && out.network !== "solana-devnet") return out;
+  try {
+    const pull = (await client.getOnchainPulls(identity.cookie, identity.passId)).find((p) => p.intent_id === out.intent_id && p.pull_signature);
+    return pull ? { ...out, _pull_transaction: pull.pull_signature } : out;
+  } catch {
+    return out;
+  }
+}
+
 /** A dry run's answer as the cards the person chooses from. */
 function optionGroupOf(sim: Simulation, req: { work: string; input: Record<string, unknown>; max: number; named?: string; network: string }): OptionGroup {
   const cls = WORK_CLASSES.find((c) => c.id === req.work);
@@ -299,7 +314,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
             a = await client.executeIntent(identity, a.body.intent_id, [provider]);
           }
         }
-        const out = outcomeOf(a, provider, identity, approved);
+        const out = await withPull(outcomeOf(a, provider, identity, approved), identity);
         // The approval couldn't be recorded here (an expired session, say): the approval card takes over, with the decision.
         const held = out.outcome === "approval_required" ? { _decision: await decisionFor(identity, req) } : {};
         const routing = (a.body.routing ?? (a.body.outcome as Record<string, unknown> | undefined)?.routing) as
@@ -321,7 +336,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         // "routed": the intent came from route_work, so Algebra routes it again
         // across every provider of its class.
         const a = await client.executeIntent(identity, str(input, "intent_id"), providerId === "routed" ? [] : [providerId]);
-        return { ok: true, data: outcomeOf(a, providerId, identity, true) };
+        return { ok: true, data: await withPull(outcomeOf(a, providerId, identity, true), identity) };
       }
       case "execution_status": {
         const v = await client.getIntent(identity, str(input, "intent_id"));

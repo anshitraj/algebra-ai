@@ -35,3 +35,6 @@ Thumbs.db
 # Local data (keys, the dev database, merchant sessions): never commit, wherever it sits
 /tmp/
 .data/
+
+# Pitch deck and talk script: kept locally, not in the repository
+/docs/pitch/

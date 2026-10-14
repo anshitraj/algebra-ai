@@ -53,6 +53,7 @@ var personas = []persona{
 	{Name: "skycast", Title: "SkyCast Weather (demo)", Class: "weather.forecast", ListedMinor: 1_200, AskMinor: 1_200, Scheme: "exact", Method: "POST", Delay: 30 * time.Millisecond},
 	{Name: "nimbus", Title: "Nimbus Weather (demo, slow)", Class: "weather.forecast", ListedMinor: 1_000, AskMinor: 1_000, Scheme: "exact", Method: "POST", Delay: 1100 * time.Millisecond},
 	{Name: "stratus", Title: "Stratus Weather (demo, premium)", Class: "weather.forecast", ListedMinor: 3_000, AskMinor: 3_000, Scheme: "exact", Method: "POST"},
+	{Name: "openmeteo", Title: "Weather by Open-Meteo (demo seller)", Class: "weather.forecast", ListedMinor: 1_500, AskMinor: 1_500, Scheme: "exact", Method: "GET"},
 
 	{Name: "sentinel", Title: "Sentinel Token Risk (demo)", Class: "solana.token-risk", ListedMinor: 4_000, AskMinor: 4_000, Scheme: "exact", Method: "POST"},
 	{Name: "rugwatch", Title: "RugWatch Token Risk (demo, slow)", Class: "solana.token-risk", ListedMinor: 2_000, AskMinor: 2_000, Scheme: "exact", Method: "POST", Delay: 900 * time.Millisecond},
@@ -199,6 +200,18 @@ func (s *server) handle(p persona) http.HandlerFunc {
 		input := readInput(r)
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
+		// Fetch the live data before taking the payment, so a lookup that
+		// fails costs the caller nothing.
+		var live map[string]any
+		if hasLive(p.Class) {
+			d, err := fetchLive(ctx, p.Class, input)
+			if err != nil {
+				log.Printf("%s: no live data, payment not taken: %v", p.Name, err)
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "no live data: " + err.Error()})
+				return
+			}
+			live = d
+		}
 		var settle string
 		var charged int64
 		var payer string
@@ -216,7 +229,7 @@ func (s *server) handle(p persona) http.HandlerFunc {
 			return
 		}
 		time.Sleep(p.Delay)
-		body := p.answer(input, charged)
+		body := p.answer(input, charged, live)
 		s.remember(key, cached{body: body, settle: settle, at: time.Now()})
 		log.Printf("%s: paid %d by %s, settlement %s", p.Name, charged, payer, settle)
 		s.respond(w, body, settle, charged, payer)
@@ -287,9 +300,18 @@ func readInput(r *http.Request) map[string]any {
 	return in
 }
 
-// answer is the persona's (demo) data: the shape a real provider of the class
+// answer is the persona's data. When the class has a live source (live is not
+// nil) it is that real data, fetched before the payment, which names its source
+// instead of saying demo. Otherwise it is the shape a real provider of the class
 // returns, made up but stable for the same input, and always marked demo.
-func (p persona) answer(in map[string]any, charged int64) []byte {
+func (p persona) answer(in map[string]any, charged int64, live map[string]any) []byte {
+	if live != nil {
+		out := map[string]any{"provider": "demo:" + p.Name, "seller": "Algebra's own provider on Solana devnet, paid in devnet USDC"}
+		for k, v := range live {
+			out[k] = v
+		}
+		return mustBytes(out)
+	}
 	str := func(k string) string { s, _ := in[k].(string); return truncate(s, 200) }
 	seed := 0
 	for _, r := range fmt.Sprint(in) {

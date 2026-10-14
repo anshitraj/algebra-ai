@@ -1,6 +1,8 @@
 // Command demo-provider is a set of paid x402 APIs on Solana devnet, for
 // showing Algebra's router and spend firewall against real payments without
-// spending real money. Every response says it is a demo.
+// spending real money. token.price answers carry a live price from Jupiter's
+// price API and name their source and seller; the metered LLM's answer is a
+// placeholder and says it is a demo.
 //
 // It serves several "providers" of each class of work that differ the way real
 // ones do (see personas.go), so Cheapest, Balanced and Fastest each have a
