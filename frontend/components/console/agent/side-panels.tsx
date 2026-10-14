@@ -282,7 +282,7 @@ function VaultRow({ passId, network }: { passId: string; network: string }) {
             <p className="text-sm text-foreground">No vault yet</p>
             <p className="mt-0.5 text-xs leading-snug text-muted">
               Lock USDC from your wallet in a Solana program, so this pass can only spend it within its limits.{" "}
-              <Link href="/console/passes" className="font-medium text-primary hover:underline">
+              <Link href={`/console/passes#pass-${encodeURIComponent(passId)}`} className="font-medium text-primary hover:underline">
                 Create the vault
               </Link>
             </p>

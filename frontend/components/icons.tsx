@@ -79,6 +79,12 @@ export const IconLock = (p: IconProps) => (
     <path d="M8 10.5V7.5a4 4 0 018 0v3" />
   </Svg>
 );
+export const IconUnlock = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4.5" y="10.5" width="15" height="10" rx="2.5" />
+    <path d="M8 10.5V7.5a4 4 0 017.6-1.7" />
+  </Svg>
+);
 export const IconShield = (p: IconProps) => (
   <Svg {...p}>
     <path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z" />

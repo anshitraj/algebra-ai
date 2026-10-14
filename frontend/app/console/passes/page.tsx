@@ -50,6 +50,12 @@ export default function PassesPage() {
       .catch((e) => setError(e instanceof Error ? e.message : "Couldn't load your passes"));
   }
   useEffect(load, []);
+  // Arriving from the chat (#pass-<id>): the passes load after the page, so the browser's own jump finds nothing.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!passes || !id.startsWith("pass-")) return;
+    document.getElementById(id)?.scrollIntoView({ block: "center" });
+  }, [passes]);
   // Arriving from onboarding (?new=1): open the form straight away.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reading the URL once on arrival
@@ -463,7 +469,7 @@ function PassCard({ pass: p, onRevoked }: { pass: SpendPass; onRevoked: () => vo
   }
 
   return (
-    <Panel className={status === "Active" ? "" : "opacity-70"}>
+    <Panel id={`pass-${p.id}`} className={status === "Active" ? "" : "opacity-70"}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

@@ -94,9 +94,9 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
   );
 }
 
-export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
+export function Panel({ children, className = "", id }: { children: ReactNode; className?: string; id?: string }) {
   return (
-    <div className={`console-panel rounded-lg border border-border bg-surface p-6 ${className}`}>
+    <div id={id} className={`console-panel scroll-mt-24 rounded-lg border border-border bg-surface p-6 ${className}`}>
       {children}
     </div>
   );

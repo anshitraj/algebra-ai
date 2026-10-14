@@ -31,12 +31,23 @@ const TESTED_TITLE = "Algebra paid it and it delivered. One transaction worked; 
 const PINNED_TITLE = "Its payee is pinned: a request to be paid at any other address is refused, and the endpoint blocked.";
 const BLOCKED_TITLE = "Blocked: nothing is paid to it until a person unblocks it.";
 
-/** One seller in a comparison or a decision. */
-export function SellerChips({ seller }: { seller?: Seller }) {
+const DEMO_TITLE = "Run by Algebra on Solana devnet for testing: test USDC, nothing real moves.";
+const UNKNOWN_TITLE =
+  "Algebra has no record of who runs this endpoint, so it can't be called verified. It can still be paid: every payment is limited by your Spend Pass.";
+
+/** One seller in a comparison or a decision. `provider` is its id: Algebra's own demo sellers are named as such. */
+export function SellerChips({ seller, provider }: { seller?: Seller; provider?: string }) {
+  if (provider?.startsWith("demo:")) {
+    return (
+      <span className="flex flex-wrap gap-1">
+        <Chip tone="fact" title={DEMO_TITLE}>Algebra demo</Chip>
+      </span>
+    );
+  }
   if (!seller || !seller.known) {
     return (
       <span className="flex flex-wrap gap-1">
-        <Chip tone="warn" title="Algebra's registry has no record of this endpoint: who runs it is unknown.">Not in registry</Chip>
+        <Chip tone="warn" title={UNKNOWN_TITLE}>Unknown seller</Chip>
       </span>
     );
   }
@@ -66,7 +77,7 @@ export function SellerChips({ seller }: { seller?: Seller }) {
 /** A provider in a listing: its endpoints' facts, counted. */
 export function ProviderTrustChips({ trust }: { trust?: ProviderTrust }) {
   if (!trust || trust.endpoints === 0) {
-    return <Chip tone="warn" title="Algebra's registry has no record of this provider yet: who runs it is unknown.">Not in registry</Chip>;
+    return <Chip tone="warn" title={UNKNOWN_TITLE}>Unknown seller</Chip>;
   }
   const all = trust.endpoints;
   return (
@@ -97,7 +108,7 @@ export function ProviderTrustChips({ trust }: { trust?: ProviderTrust }) {
 export function EndpointTrustChips({ rows }: { rows?: EndpointTrust[] }) {
   if (!rows || rows.length === 0) return null;
   const known = rows.filter((r) => r.known);
-  if (known.length === 0) return <Chip tone="warn" title="Algebra's registry has no record of this endpoint.">Not in registry</Chip>;
+  if (known.length === 0) return <Chip tone="warn" title={UNKNOWN_TITLE}>Unknown seller</Chip>;
   const pick = known.find((r) => r.trust === "blocked") ?? known.find((r) => r.verified) ?? known[0];
   return (
     <SellerChips

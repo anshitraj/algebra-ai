@@ -15,7 +15,7 @@ import { getOnchainPass } from "@/lib/onchain-pass";
 import type { Simulation } from "@/lib/routing-types";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { approvalRule } from "@/lib/pass-rules";
-import { IconArrowUp, IconLock, IconRefresh, IconShield, IconStop } from "@/components/icons";
+import { IconArrowUp, IconLock, IconRefresh, IconShield, IconStop, IconUnlock } from "@/components/icons";
 import { useConsoleData } from "../console-data";
 import { ApprovalCard, type ApprovalOutcome } from "./approval-card";
 import { ModelPicker, type ModelChoice, type ProviderEntry } from "./model-picker";
@@ -45,6 +45,8 @@ type Turn = {
   reply?: string;
   error?: string;
   status: "running" | "done" | "error" | "stopped";
+  /** Started in this page session: only such a turn's offers may be paid automatically, never one a reload brought back. */
+  live?: boolean;
 };
 
 const SUGGESTIONS: Record<string, string[]> = {
@@ -76,6 +78,8 @@ const MIN_VISIBLE_MS: Record<string, number> = { search_providers: 3000, get_pro
 
 const MODEL_KEY = "algebra:agent-model";
 const PASS_KEY = "algebra:agent-pass";
+// "Ask before paying" turned off: the recommended offer is paid when the pass allows it. Per browser; off by default.
+const AUTO_KEY = "algebra:auto-pay";
 // Provider history carries every tool result, so a long chat can get big.
 // Keep the newest turns that fit; the conversation matters more than its tail.
 const CHAT_MAX_BYTES = 400_000;
@@ -94,8 +98,8 @@ function loadChat(key: string): SavedChat | null {
     // A turn interrupted by the reload is no longer running.
     parsed.turns = parsed.turns.map((t) =>
       t.status === "running"
-        ? { ...t, status: "stopped", steps: t.steps.map((s) => (s.status === "running" ? { ...s, status: "error", summary: "Interrupted by a page reload" } : s)) }
-        : t
+        ? { ...t, live: false, status: "stopped", steps: t.steps.map((s) => (s.status === "running" ? { ...s, status: "error", summary: "Interrupted by a page reload" } : s)) }
+        : { ...t, live: false }
     );
     return parsed;
   } catch {
@@ -157,6 +161,7 @@ export function AgentWorkspace() {
   // What each pass has locked in its Solana vault on the chosen network; a pass with none isn't a key.
   const [vaults, setVaults] = useState<Record<string, number>>({});
   const [passId, setPassId] = useState("");
+  const [autoPay, setAutoPay] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
@@ -276,7 +281,7 @@ export function AgentWorkspace() {
       const text = raw.trim();
       if (!text || running) return;
       const id = uid();
-      setTurns((ts) => [...ts, { id, user: text, steps: [], notes: [], approvals: [], status: "running" }]);
+      setTurns((ts) => [...ts, { id, user: text, steps: [], notes: [], approvals: [], status: "running", live: true }]);
       setInput("");
       setRunning(true);
       stickRef.current = true;
@@ -462,6 +467,33 @@ export function AgentWorkspace() {
     }
   }
 
+  // localStorage is unavailable during SSR, so what the person chose last time is read after mount.
+  useEffect(() => {
+    try {
+      setAutoPay(window.localStorage.getItem(AUTO_KEY) === "on");
+    } catch {
+      // storage blocked: asks before paying, as by default
+    }
+  }, []);
+
+  function changeAutoPay(on: boolean) {
+    if (
+      on &&
+      network === "solana" &&
+      !window.confirm(
+        "Pay automatically on Solana mainnet?\n\nAlgebra will pay the recommended provider with real USDC as soon as your Spend Pass allows it, without asking. Anything your pass makes wait for your yes still waits. You can turn this off again here."
+      )
+    ) {
+      return;
+    }
+    setAutoPay(on);
+    try {
+      window.localStorage.setItem(AUTO_KEY, on ? "on" : "off");
+    } catch {
+      // storage blocked: the choice still applies for this page
+    }
+  }
+
   function pickPass(id: string) {
     setPassId(id);
     try {
@@ -536,6 +568,7 @@ export function AgentWorkspace() {
                     onPay={onPay}
                     canAnswer={!running && i === turns.length - 1}
                     pass={pass ?? undefined}
+                    autoPay={autoPay}
                   />
                 ))}
               </div>
@@ -579,7 +612,7 @@ export function AgentWorkspace() {
               <div className={composerStyles.controls}>
                 <ModelPicker providers={providers} value={choice} onChange={pickModel} lockedProvider={lockedProvider} />
                 <PassPicker passes={fitting} vaults={vaults} value={pass ? passId : ""} onChange={pickPass} disabled={running} sandbox={network === "sandbox"} />
-                {pass && <AskBeforePaying />}
+                {pass && <AskBeforePayingToggle asks={!autoPay} onChange={(asks) => changeAutoPay(!asks)} />}
               </div>
               <span className={composerStyles.hint}>
                 <kbd className="font-mono">Enter</kbd> to send
@@ -628,8 +661,10 @@ function TurnView({
   onPay,
   canAnswer,
   pass,
+  autoPay,
 }: {
   pass?: SpendPass;
+  autoPay: boolean;
   turn: Turn;
   latest: boolean;
   onResolved: (turnId: string, intentId: string, o: ApprovalOutcome) => void;
@@ -671,7 +706,15 @@ function TurnView({
       )}
 
       {turn.options && turn.options.length > 0 && (
-        <OptionsBoard groups={turn.options} paid={turn.paidGroups} active={canAnswer && turn.status === "done"} onPay={(choices, text) => onPay(turn.id, choices, text)} />
+        <OptionsBoard
+          groups={turn.options}
+          paid={turn.paidGroups}
+          active={canAnswer && turn.status === "done"}
+          auto={autoPay && !!turn.live}
+          remainingMinor={pass?.remaining_minor_units}
+          passId={pass?.id}
+          onPay={(choices, text) => onPay(turn.id, choices, text)}
+        />
       )}
 
       {turn.receipts?.map((r) => (
@@ -716,17 +759,28 @@ function TurnView({
 
 /** Which Spend Pass the chat pays under. Only active USDC passes can pay for API calls. */
 /**
- * "Ask before paying" is always on in the chat: the agent compares providers and shows cards, and nothing is
- * paid until the person picks one and presses Pay. That press is recorded on the server as their approval.
+ * "Ask before paying", on by default: the agent compares providers and nothing is paid until the person picks
+ * an offer and presses Pay (that press is recorded on the server as their approval). Off, the recommended
+ * offer is paid as soon as the Spend Pass allows it outright; anything the pass makes wait for a yes still waits,
+ * and the server checks every payment either way.
  */
-function AskBeforePaying() {
+function AskBeforePayingToggle({ asks, onChange }: { asks: boolean; onChange: (asks: boolean) => void }) {
   return (
-    <span
-      title="Every payment waits for you: the agent shows the options as cards, and nothing is paid until you pick one and press Pay. The agent can't pay on its own."
-      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-foreground"
+    <button
+      type="button"
+      role="switch"
+      aria-checked={asks}
+      onClick={() => onChange(!asks)}
+      title={
+        asks
+          ? "On: the agent shows the offers and nothing is paid until you pick one and press Pay. Click to let it pay the recommended offer on its own when your Spend Pass allows it."
+          : "Off: the recommended offer is paid on its own when your Spend Pass allows it. Anything your pass makes wait for your yes still waits. Click to be asked before every payment again."
+      }
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-foreground transition-colors hover:bg-primary-tint"
     >
-      <IconLock size={13} className="text-primary" /> Asks before paying
-    </span>
+      {asks ? <IconLock size={13} className="text-primary" /> : <IconUnlock size={13} className="text-accent" />}
+      {asks ? "Asks before paying" : "Pays within my pass"}
+    </button>
   );
 }
 

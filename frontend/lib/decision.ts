@@ -61,10 +61,11 @@ export function reasonLine(raw: string): { code: string; text: string } {
 }
 
 /** What a person does about a refusal that comes from the pass's vault: the sentence, the action and where it is done. */
-export function vaultFix(reasons: string[]): { text: string; action: string; href: string } | null {
+export function vaultFix(reasons: string[], passId?: string): { text: string; action: string; href: string } | null {
   const codes = reasons.map((r) => r.split(":")[0].trim());
   const has = (...c: string[]) => codes.find((x) => c.includes(x));
-  const href = "/console/passes";
+  // The Spend passes page, scrolled to this pass when it is known.
+  const href = passId ? `/console/passes#pass-${encodeURIComponent(passId)}` : "/console/passes";
   if (has("ONCHAIN_PASS_REQUIRED", "ONCHAIN_PASS_MISSING", "ONCHAIN_PASS_OTHER_NETWORK")) {
     return { text: "Payments on this network come from a Spend Pass vault, and this pass has none yet.", action: "Create the vault", href };
   }
