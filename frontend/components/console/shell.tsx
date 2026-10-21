@@ -33,7 +33,6 @@ import { NetworkProvider } from "@/lib/network";
 import { NotificationsProvider } from "@/lib/notifications";
 import { NetworkSwitch } from "./network-switch";
 import { NotificationBell } from "./notification-bell";
-import { WalletMenu } from "./wallet-menu";
 
 type NavItem = { href: string; label: string; icon: React.ReactNode; badge?: "approvals" };
 
@@ -154,12 +153,11 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
             <MobileApprovalsPill />
             <NetworkSwitch compact />
             <NotificationBell />
-            <WalletMenu compact />
           </div>
         </header>
         <div className="console-toolbar hidden shrink-0 items-center gap-3 border-b border-border md:flex print:hidden">
           <div className="console-breadcrumb"><span>Workspace</span><span>/</span><strong>{[...PRIMARY, ...CONTROLS, ...DEVELOPERS].find((item) => isActive(pathname, item.href))?.label ?? "Settings"}</strong></div>
-          <div className="console-toolbar-actions"><Link href="/console/connect" className="console-status">Connect an agent <IconArrowRight size={13} /></Link><NetworkSwitch /><NotificationBell /><WalletMenu /></div>
+          <div className="console-toolbar-actions"><Link href="/console/connect" className="console-status">Connect an agent <IconArrowRight size={13} /></Link><NetworkSwitch /><NotificationBell /></div>
         </div>
         <main className={`min-h-0 flex-1 ${fullBleed ? "overflow-hidden" : "overflow-y-auto"} print:overflow-visible`}>
           {fullBleed ? children : <div className="px-5 py-8 md:px-10 md:py-10">{children}</div>}

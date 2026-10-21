@@ -20,9 +20,6 @@ import type {
   SessionInfo,
   SpendPass,
   User,
-  FaucetDrop,
-  FaucetStatus,
-  WalletsView,
 } from "./types";
 import type {
   APIKey,
@@ -137,9 +134,14 @@ export function signIn(email: string, password: string) {
   return apiFetch<{ user: User }>("/api/v1/auth/login", { method: "POST", body: { email, password } });
 }
 
-/** Trades the identity token Privy issued at sign-in for an Algebra session. */
-export function signInWithPrivy(identityToken: string) {
-  return apiFetch<{ user: User }>("/api/v1/auth/privy", { method: "POST", body: { identity_token: identityToken } });
+/** Emails a six-digit sign-in code to an address. resend_in is the seconds before another may be asked for. */
+export function sendLoginCode(email: string) {
+  return apiFetch<{ ok: boolean; resend_in: number }>("/api/v1/auth/code/send", { method: "POST", body: { email } });
+}
+
+/** Signs in with the code emailed to an address, making the account the first time. */
+export function verifyLoginCode(email: string, code: string) {
+  return apiFetch<{ user: User }>("/api/v1/auth/code/verify", { method: "POST", body: { email, code } });
 }
 
 /** One click, no signup: a fresh demo account that pays on a simulated rail. */
@@ -243,21 +245,6 @@ export function listProviders(params: { q?: string; category?: string; source?: 
 /** id is a provider ID ("paysh:birdeye.data", "circle:birdeye") or a catalog's own name for it. */
 export function getProvider(id: string) {
   return apiFetch<ProviderDetail>(`/api/v1/providers/${id.split("/").map(encodeURIComponent).join("/")}`);
-}
-
-/** Whether this server has a devnet faucet, what a drop is, and the wallet it would go to. */
-export function getFaucet() {
-  return apiFetch<FaucetStatus>("/api/v1/me/faucet");
-}
-
-/** Tops up one of the person's own wallets (default: the one a drop would go to) with devnet SOL and USDC. */
-export function requestFaucet(address?: string) {
-  return apiFetch<{ drop: FaucetDrop }>("/api/v1/me/faucet", { method: "POST", body: address ? { address } : {} });
-}
-
-/** The signed-in person's own wallets and what each holds on a cluster. force skips the server's few-second cache. */
-export function myWallets(network: string, force = false) {
-  return apiFetch<WalletsView>(`/api/v1/me/wallets?network=${encodeURIComponent(network)}${force ? "&refresh=1" : ""}`);
 }
 
 /** Mainnet and devnet: whether Algebra can pay on each, from which wallet, with what balance. */

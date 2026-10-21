@@ -15,20 +15,17 @@ const csp = [
   "default-src 'self'",
   // Razorpay Checkout (billing page only) loads its script and opens its
   // payment frames from these origins.
-  // Privy (sign-in): its auth frame, Cloudflare's bot check and the
-  // WalletConnect relay, as listed in Privy's CSP guide.
-  "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://challenges.cloudflare.com",
+  "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  // Solana: the public RPC endpoints the account wallet signs against (components/console/account-wallet-signer.tsx)
-  // and Jupiter's public Swap API for "Convert SOL to USDC" (components/console/convert-sol.tsx). Without them the
-  // browser blocks both in production (the CSP is production-only, so a dev server never shows it).
-  "connect-src 'self' https://*.razorpay.com https://auth.privy.io wss://relay.walletconnect.com wss://relay.walletconnect.org wss://www.walletlink.org https://*.rpc.privy.systems https://explorer-api.walletconnect.com https://api.mainnet-beta.solana.com https://api.devnet.solana.com wss://api.mainnet-beta.solana.com wss://api.devnet.solana.com https://lite-api.jup.ag",
+  // The browser talks to this site and Razorpay's checkout only: the API is proxied through the site,
+  // and nothing in the page calls a wallet, an RPC node or a sign-in provider (the CSP is
+  // production-only, so a dev server never shows what it would block).
+  "connect-src 'self' https://*.razorpay.com",
   // The order page's delivery map is a Google Maps embed, loaded only when
   // the user opens it.
-  "frame-src https://api.razorpay.com https://checkout.razorpay.com https://maps.google.com https://www.google.com https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com",
-  "child-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org",
+  "frame-src https://api.razorpay.com https://checkout.razorpay.com https://maps.google.com https://www.google.com",
   "worker-src 'self'",
   "manifest-src 'self'",
   "frame-ancestors 'none'",

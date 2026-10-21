@@ -11,7 +11,6 @@ import { mcpSetup } from "@/lib/mcp-clients";
 import { formatUSDC } from "@/lib/money";
 import { Button, ErrorNote, Skeleton } from "./ui";
 import { Copy, Snippet } from "./snippet";
-import { DevnetAirdropCard } from "./airdrop-action";
 import {
   IconArrowLeft,
   IconArrowRight,
@@ -995,7 +994,18 @@ export function QuickstartFlow({ demo = false }: { demo?: boolean }) {
                             </p>
                           </>
                         ) : (
-                          <DevnetAirdropCard />
+                          <>
+                            <Link
+                              href="/console/agent"
+                              className={styles.secondaryLink}
+                            >
+                              Try it on Devnet with test money
+                              <IconArrowRight size={14} />
+                            </Link>
+                            <p className={styles.note}>
+                              Pick Devnet at the top of the page. Algebra pays real sellers from its own test wallet, inside your pass&apos;s limits.
+                            </p>
+                          </>
                         )}
                       </div>
                     ) : (

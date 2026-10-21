@@ -7,12 +7,10 @@ import type { AgentKind, BudgetPeriod, IssuedPass, PassConnect, ProviderSummary,
 import { mcpSetup } from "@/lib/mcp-clients";
 import { formatMoney } from "@/lib/money";
 import { catalogName } from "@/lib/paysh";
-import { useNetwork } from "@/lib/network";
 import { IconCheck, IconPlus, IconShield, IconX, Spinner } from "@/components/icons";
 import { Button, ErrorNote, Field, Input, PageHeader, Panel, Skeleton } from "@/components/console/ui";
 import { Copy, Snippet } from "@/components/console/snippet";
 import { ProviderLogo } from "@/components/provider-logo";
-import { OnchainPassPanel } from "@/components/console/onchain-pass";
 
 const AGENTS: { value: AgentKind; label: string; hint: string }[] = [
   { value: "claude", label: "Claude", hint: "Claude Code, Claude Desktop" },
@@ -435,7 +433,6 @@ function IssuedCard({ pass, connect, onDone }: { pass: IssuedPass; connect: Pass
 }
 
 function PassCard({ pass: p, onRevoked }: { pass: SpendPass; onRevoked: () => void }) {
-  const { demo } = useNetwork();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The server says whether the pass can still spend (not revoked, not expired).
@@ -509,8 +506,6 @@ function PassCard({ pass: p, onRevoked }: { pass: SpendPass; onRevoked: () => vo
           <div className={`h-full rounded-full ${used >= 0.9 ? "bg-danger" : "bg-primary"}`} style={{ width: `${used * 100}%` }} />
         </div>
       </div>
-      {/* A demo pass spends play money: it has no vault to make. */}
-      {p.currency === "USDC" && !demo && p.environment !== "sandbox" && <OnchainPassPanel passId={p.id} label={p.label} active={status === "Active"} />}
     </Panel>
   );
 }

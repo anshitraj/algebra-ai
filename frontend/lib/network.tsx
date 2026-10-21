@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import * as api from "./api-client";
-import type { RailStatus, WalletsView } from "./types";
+import type { RailStatus } from "./types";
 
 /** A Solana cluster the console can work on. */
 export type Cluster = "solana" | "solana-devnet";
@@ -99,12 +99,8 @@ type NetworkState = {
   setNetwork: (n: Network) => void;
   /** Whether this server can pay on each cluster, from which wallet, with what balance. Null until read. */
   rails: RailStatus[] | null;
-  /** Reads the wallets again, after a payment moved a balance. */
+  /** Reads the rails again, after a payment moved a balance. */
   refreshRails: () => void;
-  /** What the person's own wallets hold on the chosen cluster. Null until read, or when it couldn't be. */
-  wallets: WalletsView | null;
-  /** Reads them again; force skips the server's short cache (after sending funds, say). */
-  refreshWallets: (force?: boolean) => void;
 };
 
 const Ctx = createContext<NetworkState>({
@@ -117,8 +113,6 @@ const Ctx = createContext<NetworkState>({
   setNetwork: () => {},
   rails: null,
   refreshRails: () => {},
-  wallets: null,
-  refreshWallets: () => {},
 });
 
 /**
@@ -139,8 +133,6 @@ export function NetworkProvider({ children, demo = false }: { children: React.Re
   const [rails, setRails] = useState<RailStatus[] | null>(null);
   const [practiceAvailable, setPracticeAvailable] = useState(true);
   const [railsKey, setRailsKey] = useState(0);
-  const [wallets, setWallets] = useState<WalletsView | null>(null);
-  const [walletsRead, setWalletsRead] = useState({ n: 0, force: false });
 
   useEffect(() => {
     // The same choice wherever it is made: another switch on the page, another tab.
@@ -162,22 +154,7 @@ export function NetworkProvider({ children, demo = false }: { children: React.Re
 
   const refreshRails = useCallback(() => setRailsKey((k) => k + 1), []);
 
-  // The person's own wallets on the real cluster, for the wallet menu and the
-  // on-chain pass panel. A demo account has none, and a person with none gets none.
   const { cluster } = saved;
-  useEffect(() => {
-    if (demo) return;
-    let live = true;
-    api
-      .myWallets(cluster, walletsRead.force)
-      .then((v) => live && setWallets(v))
-      .catch(() => live && setWallets(null));
-    return () => {
-      live = false;
-    };
-  }, [cluster, demo, walletsRead]);
-
-  const refreshWallets = useCallback((force = false) => setWalletsRead((r) => ({ n: r.n + 1, force })), []);
 
   const setNetwork = useCallback((n: Network) => {
     setSaved((s) => ({ ...s, choice: n, cluster: n === "sandbox" ? s.cluster : n }));
@@ -199,8 +176,6 @@ export function NetworkProvider({ children, demo = false }: { children: React.Re
         setNetwork,
         rails: demo ? [] : rails,
         refreshRails,
-        wallets: demo || wallets?.network !== cluster ? null : wallets,
-        refreshWallets,
       }}
     >
       {children}

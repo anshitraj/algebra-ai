@@ -35,6 +35,8 @@ const REASONS: Record<string, string> = {
   NETWORK_NOT_ALLOWED: "the call isn't allowed on that network",
   ENVIRONMENT_NETWORK_MISMATCH: "the network isn't one this project's environment may use",
   MAINNET_EXECUTION_DISABLED: "real-money mainnet payments are switched off on this server",
+  TEST_MONEY_ACCOUNT_LIMIT: "you've used today's test-money payments on Devnet; they come back within 24 hours",
+  TEST_MONEY_DAY_LIMIT: "Algebra's shared test wallet has made all its payments for today; try again later",
   ONCHAIN_PASS_REQUIRED: "payments on this network come from a Spend Pass vault, and this pass has none",
   ONCHAIN_PASS_MISSING: "the pass's vault is gone: its owner closed it on Solana",
   ONCHAIN_PASS_OTHER_NETWORK: "the pass's vault is on another network",

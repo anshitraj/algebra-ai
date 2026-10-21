@@ -336,14 +336,12 @@ export type User = {
   onboarded: boolean;
   has_password: boolean;
   linked_providers: string[];
-  /** Solana wallets signed in with, or given at sign-in by Privy. Public addresses only. */
-  wallets?: UserWallet[];
   created_at: string;
   /** "demo": shops real listings with a simulated checkout (fake money). */
   mode: "live" | "demo";
   /** Where sign-in alerts and receipts are emailed; empty when nowhere. */
   notification_email?: string;
-  /** Signed in with a wallet, with no address mail can reach and none confirmed. */
+  /** An account whose address can't be mailed (made with a wallet before wallets were dropped), with none confirmed. */
   needs_notification_email?: boolean;
 };
 
@@ -364,57 +362,13 @@ export type NotificationSettings = {
   sending: boolean;
 };
 
-export type UserWallet = {
-  chain: "solana";
-  address: string;
-  /** "embedded": Privy holds the key for the person. "external": their own wallet, e.g. Phantom. */
-  kind: "embedded" | "external";
-  source: string;
-};
-
-/** One of the person's own wallets and what it holds on a cluster. ok is false when the node couldn't be read: then the amounts are unknown, not zero. */
-export type WalletBalance = {
-  address: string;
-  kind: "embedded" | "external";
-  sol_lamports: number;
-  usdc_minor: number;
-  ok: boolean;
-};
-
-/** The devnet faucet (GET /api/v1/me/faucet): devnet SOL and USDC dropped on the person's own wallet. */
-export type FaucetStatus = {
-  enabled: boolean;
-  network: string;
-  /** What one drop sends. */
-  sol_lamports?: number;
-  usdc_minor?: number;
-  /** The faucet wallet (public), so the operator can see where to refill it. */
-  address?: string;
-  /** The person's wallet a drop would go to. */
-  wallet?: string;
-  /** What the account was given, once it has had its one airdrop (an account gets one, ever). */
-  received?: FaucetReceipt;
-};
-
-export type FaucetDrop = { address: string; sol_lamports: number; usdc_minor: number; signature: string };
-
-/** The airdrop an account had: where it went, what it was, and the transaction (empty while it is being sent). */
-export type FaucetReceipt = { address: string; sol_lamports: number; usdc_minor: number; signature?: string; at: string };
-
-export type WalletsView = {
-  network: "solana" | "solana-devnet";
-  usdc_mint: string;
-  wallets: WalletBalance[];
-};
-
 export type AuthProviders = {
   password: boolean;
   google: boolean;
   github: boolean;
   demo?: boolean;
-  /** Sign-in with Privy: email, Google or a Solana wallet. */
-  privy?: boolean;
-  privy_app_id?: string;
+  /** Sign-in with a six-digit code emailed to the address typed: no password, no wallet. */
+  email_code?: boolean;
 };
 
 export type SessionInfo = {

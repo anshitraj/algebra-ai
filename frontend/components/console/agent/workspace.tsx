@@ -11,7 +11,6 @@ import { firstName, useSession } from "@/lib/session";
 import * as api from "@/lib/api-client";
 import type { SpendPass } from "@/lib/types";
 import { formatUSDC } from "@/lib/money";
-import { getOnchainPass } from "@/lib/onchain-pass";
 import type { Simulation } from "@/lib/routing-types";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { approvalRule } from "@/lib/pass-rules";
@@ -176,8 +175,6 @@ export function AgentWorkspace() {
   const [callsKey, setCallsKey] = useState(0);
   const [inspector, setInspector] = useState<"pass" | "activity">("pass");
   const [passes, setPasses] = useState<SpendPass[] | null>(null);
-  // What each pass has locked in its Solana vault on the chosen network; a pass with none isn't a key.
-  const [vaults, setVaults] = useState<Record<string, number>>({});
   const [passId, setPassId] = useState("");
   const [autoPay, setAutoPay] = useState(false);
   // Practising needs a demo pass: made once, the first time a signed-in person practises.
@@ -232,21 +229,6 @@ export function AgentWorkspace() {
       })
       .catch(() => setPasses([]));
   }, [callsKey]);
-
-  useEffect(() => {
-    if (!passes || network === "sandbox") return;
-    let live = true;
-    Promise.all(
-      passes.map((p) =>
-        getOnchainPass(p.id)
-          .then((v) => [p.id, v.exists && v.binding.network === network ? (v.vault_minor ?? 0) : null] as const)
-          .catch(() => [p.id, null] as const),
-      ),
-    ).then((rows) => live && setVaults(Object.fromEntries(rows.filter((r): r is readonly [string, number] => r[1] !== null))));
-    return () => {
-      live = false;
-    };
-  }, [passes, network, callsKey]);
 
   // A payment moves the wallet's balance.
   useEffect(() => {
@@ -682,7 +664,7 @@ export function AgentWorkspace() {
                     )}
                   </span>
                 ) : (
-                  <PassPicker passes={fitting} vaults={vaults} value={pass ? passId : ""} onChange={pickPass} disabled={running} sandbox={network === "sandbox"} />
+                  <PassPicker passes={fitting} value={pass ? passId : ""} onChange={pickPass} disabled={running} />
                 )}
                 {pass && <AskBeforePayingToggle asks={!autoPay} onChange={(asks) => changeAutoPay(!asks)} />}
               </div>
@@ -858,20 +840,14 @@ function AskBeforePayingToggle({ asks, onChange }: { asks: boolean; onChange: (a
 
 function PassPicker({
   passes,
-  vaults,
   value,
   onChange,
   disabled,
-  sandbox,
 }: {
   passes: SpendPass[] | null;
-  /** Vault balance by pass ID, for the passes that have a vault on this network. */
-  vaults: Record<string, number>;
   value: string;
   onChange: (id: string) => void;
   disabled: boolean;
-  /** The sandbox has no chain, so no pass has a vault there: don't say it is missing. */
-  sandbox: boolean;
 }) {
   if (passes === null) return null;
   if (passes.length === 0) {
@@ -894,7 +870,7 @@ function PassPicker({
         <option value="">No pass: look, don&apos;t pay</option>
         {passes.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.label} · {p.id in vaults ? `vault ${formatUSDC(vaults[p.id])}` : `${formatUSDC(p.remaining_minor_units)} left${sandbox ? "" : ", no vault"}`}
+            {p.label} · {formatUSDC(p.remaining_minor_units)} left
           </option>
         ))}
       </select>
