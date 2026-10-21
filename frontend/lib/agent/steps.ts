@@ -119,6 +119,9 @@ export function friendlyFailure(message: string): string {
   if (/insufficient USDC/.test(message)) return "The wallet doesn't hold enough USDC for this call, so nothing was paid.";
   const payee = message.match(/provider's USDC account S+ doesn't exist on (S+)/);
   if (payee) return `The provider's payout account doesn't exist on ${net(payee[1])}, so it can't be paid. Nothing was paid.`;
+  // "authority denied: TEST_MONEY_ACCOUNT_LIMIT": a refusal with a code this page has words for.
+  const denied = message.match(/authority denied: ([A-Z_]+)/);
+  if (denied && REASONS[denied[1]]) return `${REASONS[denied[1]]}. Nothing was paid.`;
   return message.replace(/^payment authority refused: /, "");
 }
 
