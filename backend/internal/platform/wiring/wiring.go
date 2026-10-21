@@ -163,9 +163,7 @@ type Bundle struct {
 	// OAuthProviders holds only the providers with credentials configured,
 	// keyed by name ("google", "github").
 	OAuthProviders map[string]identity.Provider
-	// Privy verifies Privy sign-ins; nil unless PRIVY_APP_ID is set.
-	Privy      *identity.Privy
-	AuthConfig config.AuthConfig
+	AuthConfig     config.AuthConfig
 	// OAuthStateKey signs the short-lived OAuth state/PKCE cookie. Derived
 	// from the master key, never used for anything else.
 	OAuthStateKey []byte
@@ -527,13 +525,6 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	if cfg.Auth.GitHubClientID != "" && cfg.Auth.GitHubClientSecret != "" {
 		oauthProviders["github"] = identity.NewGitHub(cfg.Auth.GitHubClientID, cfg.Auth.GitHubClientSecret)
 	}
-	var privy *identity.Privy
-	if cfg.Auth.PrivyAppID != "" {
-		if privy, err = identity.NewPrivy(cfg.Auth.PrivyAppID, cfg.Auth.PrivyVerificationKey); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("wiring: %w", err)
-		}
-	}
 	stateMAC := hmac.New(sha256.New, masterKey)
 	stateMAC.Write([]byte("algebra:oauth-state:v1"))
 	oauthStateKey := stateMAC.Sum(nil)
@@ -595,12 +586,21 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		db.Close()
 		return nil, fmt.Errorf("wiring: %w", err)
 	}
+	// Who funds a payment, in order: a person's vault when their pass has one,
+	// and otherwise the shared devnet wallet, inside the test-money guard.
+	var funders app.FunderChain
 	if onchainPasses != nil {
-		econSvc.SetFunder(onchainPasses)
+		funders = append(funders, onchainPasses)
 		execSvc.SetVaults(onchainPasses)
 		intentReceiptSvc.SetFunding(onchainPasses)
 	}
-	mainnet := app.MainnetFacts{ExecutionEnabled: cfg.MainnetExecution, PassesRequired: cfg.OnchainPasses.Required["mainnet"]}
+	if guard := buildTestMoneyGuard(cfg, solanaRails, passRepo, limiter); guard != nil {
+		funders = append(funders, guard)
+	}
+	if len(funders) > 0 {
+		econSvc.SetFunder(funders)
+	}
+	mainnet := app.MainnetFacts{ExecutionEnabled: cfg.MainnetExecution, PassesRequired: !cfg.OnchainPasses.Disabled && cfg.OnchainPasses.Required["mainnet"]}
 	for _, r := range solanaRails {
 		if r.Network() == chain.Solana {
 			mainnet.RailConfigured, mainnet.Payer = true, r.Address().String()
@@ -639,7 +639,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, Tenancy: tenancySvc, Leads: leadSvc, Notifications: notificationSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, Signers: signers, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders, Privy: privy,
+		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, Signers: signers, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,
@@ -892,11 +892,38 @@ var defaultSolanaRPC = map[string]string{
 	"mainnet": "https://api.mainnet-beta.solana.com",
 }
 
-// buildOnchainPasses turns on on-chain Spend Passes for every Solana rail that
-// runs: each rail's own payer is the agent of every pass on its cluster, so a
-// pull lands where the rail pays from.
+// buildTestMoneyGuard counts the payments the shared devnet wallet makes (see
+// app.TestMoneyGuard). Nil where no devnet rail runs, or when it is switched off.
+func buildTestMoneyGuard(cfg *config.Config, rails []*solanax402.Rail, passes app.PassOwners, limiter app.RateLimiter) *app.TestMoneyGuard {
+	var names []string
+	for _, r := range rails {
+		if r.Network() == chain.SolanaDevnet {
+			names = append(names, r.Name())
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	if cfg.TestMoney.Off {
+		log.Printf("wiring: the test-money guard is OFF: nothing limits what the devnet wallet pays out")
+		return nil
+	}
+	counted := "in memory (set REDIS_ADDR to share the counts between instances)"
+	if limiter != nil {
+		counted = "in Redis"
+	}
+	log.Printf("wiring: test-money guard on %v: each account up to %d payments a day, everyone up to %d, counted %s", names, cfg.TestMoney.PerAccountPerDay, cfg.TestMoney.PerDay, counted)
+	return app.NewTestMoneyGuard(names, passes, limiter, cfg.TestMoney.PerAccountPerDay, cfg.TestMoney.PerDay)
+}
+
+// buildOnchainPasses turns on on-chain Spend Passes (ONCHAIN_PASSES=on) for
+// every Solana rail that runs: each rail's own payer is the agent of every pass
+// on its cluster, so a pull lands where the rail pays from.
 func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgres.DB, passes *app.SpendPassService, wallets app.UserWalletStore, reservations app.ReservationReader, signers map[string]*payersigner.Signer) (*app.OnchainPassService, error) {
 	if cfg.OnchainPasses.Disabled || len(rails) == 0 {
+		if cfg.OnchainPasses.Disabled && (cfg.OnchainPasses.ProgramID != "" || len(cfg.OnchainPasses.Required) > 0 || len(cfg.OnchainPasses.AnyOwner) > 0) {
+			log.Printf("wiring: the SPEND_PASS_* settings are ignored: on-chain Spend Passes are off (set ONCHAIN_PASSES=on to use them)")
+		}
 		return nil, nil
 	}
 	program, err := spendpass.New(cfg.OnchainPasses.ProgramID)

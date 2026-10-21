@@ -90,13 +90,19 @@ func issuePass(t *testing.T, b *wiring.Bundle) string {
 // pass's token, the person's ID and the pass's ID.
 func issuePassWith(t *testing.T, b *wiring.Bundle, budgetMinor int64) (token, userID, passID string) {
 	t.Helper()
+	return issuePassControlled(t, b, budgetMinor, spendpass.Controls{})
+}
+
+// issuePassControlled is issuePassWith for a pass with these controls.
+func issuePassControlled(t *testing.T, b *wiring.Bundle, budgetMinor int64, controls spendpass.Controls) (token, userID, passID string) {
+	t.Helper()
 	user, err := b.Users.Create(context.Background(), "replay-"+uuid.NewString()+"@example.test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	issued, err := b.SpendPasses.Create(context.Background(), user.ID, spendpass.Pass{
 		Label: "e2e", AgentKind: spendpass.AgentCustom, Currency: "USDC", BudgetMinorUnits: budgetMinor, BudgetPeriod: spendpass.PeriodTotal,
-		ExpiresAt: time.Now().Add(24 * time.Hour),
+		ExpiresAt: time.Now().Add(24 * time.Hour), Controls: controls,
 	})
 	if err != nil {
 		t.Fatal(err)

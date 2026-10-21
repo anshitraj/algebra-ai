@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/project-algebra/algebra/internal/app"
+	"github.com/project-algebra/algebra/internal/domain/spendpass"
 )
 
 // staticFinder stands in for the model: the one endpoint it "found on the web"
@@ -34,7 +35,9 @@ func TestWebDiscoveryOverHTTP_WithoutAGeminiKeyItSaysSo(t *testing.T) {
 
 func TestWebDiscoveryOverHTTP_FindsProbesAndTheCandidateCanBePaid(t *testing.T) {
 	b, base := serve(t)
-	token := issuePass(t, b)
+	// A pass waits for its person before the first payment to a web find (the
+	// default); this one is told to pay it like a listed provider.
+	token, _, _ := issuePassControlled(t, b, 1_000_000, spendpass.Controls{WebFoundProviders: spendpass.WebFoundAllow})
 	b.Execution.SetWebFinder(staticFinder{
 		{Name: "Token Doctor", URL: base + "/api/v1/sandbox/x402/token-risk", Method: "POST", Description: "a service found on the web"},
 		{Name: "Nobody home", URL: base + "/api/v1/sandbox/x402/does-not-exist", Method: "POST"},

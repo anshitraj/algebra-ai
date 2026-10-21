@@ -21,14 +21,13 @@ unset GOOGLE_CREDENTIALS_JSON
 # A devnet payer, unless the operator brought a wallet: Algebra makes the key
 # itself on first start and keeps it sealed in the database (back up
 # ALGEBRA_MASTER_KEY: it opens it). Devnet only; real money needs a key held
-# outside this server. And every payment comes from a person's Spend Pass vault,
-# never from the payer's own funds. Both can be set in the service variables.
+# outside this server. Devnet payments are test money from this one wallet, and
+# the test-money guard (TEST_MONEY_PER_ACCOUNT_PER_DAY, TEST_MONEY_PER_DAY) keeps
+# one account from emptying it. Both can be set in the service variables.
 if [ -z "${SOLANA_CLUSTER:-}" ] && [ -z "${SOLANA_DEVNET_KEYPAIR:-}" ] && [ -z "${SOLANA_DEVNET_KEYPAIR_FILE:-}" ]; then
   : "${SOLANA_DEVNET_SIGNER:=generated}"
   export SOLANA_DEVNET_SIGNER
 fi
-: "${SPEND_PASS_REQUIRED:=devnet}"
-export SPEND_PASS_REQUIRED
 
 if [ "${DEMO_PROVIDER:-on}" != "off" ]; then
   if [ -z "${ECONOMIC_PROVIDERS:-}" ]; then

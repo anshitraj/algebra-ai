@@ -12,7 +12,7 @@ import (
 
 // faucetStatus: GET /api/v1/me/faucet. Whether this server has a devnet
 // faucet, what one drop is, the wallet of the person's own that a drop
-// would go to (the one they signed in with, else the one Privy made), and
+// would go to (the first wallet recorded for the account), and
 // what they were given if they have had their one airdrop.
 func (a *API) faucetStatus(w http.ResponseWriter, r *http.Request) {
 	sess, ok := a.requireSession(w, r)

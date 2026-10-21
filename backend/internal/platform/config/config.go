@@ -135,8 +135,11 @@ type Config struct {
 	// mainnet wallet.
 	Jupiter JupiterConfig
 	// OnchainPasses configures Spend Passes enforced by Algebra's program on
-	// Solana (solana-program/programs/spend-pass).
+	// Solana (solana-program/programs/spend-pass). Off unless ONCHAIN_PASSES=on.
 	OnchainPasses OnchainPassConfig
+	// TestMoney bounds what the shared devnet payer can be made to spend
+	// (TEST_MONEY_*), now that a person's payments don't come from a vault.
+	TestMoney TestMoneyConfig
 
 	// Results is how long the answer to a paid call is kept, so asking again
 	// returns it (RESULT_RETENTION, RESULT_MAX_BYTES; see results.go).
@@ -220,13 +223,31 @@ type DevnetFaucetConfig struct {
 	PerDay int
 }
 
-// OnchainPassConfig configures on-chain Spend Passes. They are on wherever a
-// Solana rail runs, unless SPEND_PASS_PROGRAM_ID is "off".
+// TestMoneyConfig configures the test-money guard: on devnet Algebra pays
+// real sellers from one wallet of its own, with test money, so what stops one
+// stranger from emptying it is a count of payments a day for each account and
+// for the whole server. Each payment is also at most SOLANA_MAX_PAYMENT_USDC,
+// and the pass's own budget and limits apply as always. On by default.
+type TestMoneyConfig struct {
+	// Off is TEST_MONEY_GUARD=off; refused in production unless every payment
+	// comes from a vault.
+	Off bool
+	// PerAccountPerDay and PerDay are the most payments a day for one account
+	// and for everyone (TEST_MONEY_PER_ACCOUNT_PER_DAY, TEST_MONEY_PER_DAY).
+	PerAccountPerDay int
+	PerDay           int
+}
+
+// OnchainPassConfig configures on-chain Spend Passes (a vault per pass, kept
+// by Algebra's program on Solana). They are off unless ONCHAIN_PASSES=on, and
+// then run wherever a Solana rail does, unless SPEND_PASS_PROGRAM_ID is "off".
 type OnchainPassConfig struct {
 	// ProgramID is the Spend Pass program's address; empty means the
 	// address Algebra deployed (spendpass.DefaultProgramID).
 	ProgramID string
-	Disabled  bool
+	// Disabled is true unless ONCHAIN_PASSES=on (or when SPEND_PASS_PROGRAM_ID
+	// is "off"); the other settings here are then read but not acted on.
+	Disabled bool
 	// Required lists clusters ("devnet", "mainnet") where a pass must be on
 	// chain to pay at all (SPEND_PASS_REQUIRED=mainnet,devnet), so the payer
 	// never spends money that isn't a pass's.
@@ -264,14 +285,6 @@ type AuthConfig struct {
 	GoogleClientSecret string
 	GitHubClientID     string
 	GitHubClientSecret string
-
-	// PrivyAppID turns on sign-in with Privy (email, Google or a Solana
-	// wallet; anyone without a wallet is given an embedded Solana one).
-	// PrivyVerificationKey is the app's PEM verification key from the
-	// Privy dashboard, optional: without it the key is fetched from
-	// Privy's JWKS for the app.
-	PrivyAppID           string
-	PrivyVerificationKey string
 
 	// ResendAPIKey/EmailFrom enable real password-reset email. Without
 	// them, reset links are written to the API's log (development only).
@@ -517,11 +530,19 @@ func FromEnv() (*Config, error) {
 	if err := loadOnchainPasses(&cfg.OnchainPasses); err != nil {
 		return nil, err
 	}
+	if err := loadTestMoney(&cfg.TestMoney); err != nil {
+		return nil, err
+	}
 	if err := loadJupiter(&cfg.Jupiter); err != nil {
 		return nil, err
 	}
 	cfg.MainnetExecution = strings.EqualFold(strings.TrimSpace(os.Getenv("MAINNET_EXECUTION")), "on")
-	if err := checkMainnetExecution(cfg.MainnetExecution, cfg.OnchainPasses.Required); err != nil {
+	// Vaults that are switched off can't make mainnet payments come from a vault.
+	mainnetRequired := cfg.OnchainPasses.Required
+	if cfg.OnchainPasses.Disabled {
+		mainnetRequired = nil
+	}
+	if err := checkMainnetExecution(cfg.MainnetExecution, mainnetRequired); err != nil {
 		return nil, err
 	}
 	switch strings.ToLower(os.Getenv("ECONOMIC_SANDBOX")) {
@@ -554,23 +575,21 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	cfg.Auth = AuthConfig{
-		PublicWebURL:         strings.TrimRight(getEnv("PUBLIC_WEB_URL", "http://localhost:3000"), "/"),
-		GoogleClientID:       os.Getenv("GOOGLE_CLIENT_ID"),
-		GoogleClientSecret:   os.Getenv("GOOGLE_CLIENT_SECRET"),
-		GitHubClientID:       os.Getenv("GITHUB_CLIENT_ID"),
-		GitHubClientSecret:   os.Getenv("GITHUB_CLIENT_SECRET"),
-		PrivyAppID:           strings.TrimSpace(os.Getenv("PRIVY_APP_ID")),
-		PrivyVerificationKey: os.Getenv("PRIVY_VERIFICATION_KEY"),
-		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
-		EmailFrom:            getEnv("EMAIL_FROM", "Algebra <no-reply@algebra.local>"),
-		LeadsNotifyEmail:     strings.TrimSpace(os.Getenv("LEADS_NOTIFY_EMAIL")),
-		SessionTTL:           sessionTTL,
-		DevHeaderAuth:        os.Getenv("ALGEBRA_DEV_AUTH") == "true",
-		DemoAccounts:         !strings.EqualFold(os.Getenv("DEMO_ACCOUNTS"), "off"),
-		PasswordLogin:        !strings.EqualFold(os.Getenv("PASSWORD_LOGIN"), "off"),
-		EmailCodeLogin:       !strings.EqualFold(os.Getenv("EMAIL_CODE_LOGIN"), "off"),
-		OperatorToken:        strings.TrimSpace(os.Getenv("ALGEBRA_OPERATOR_TOKEN")),
-		Production:           cfg.Env == "production",
+		PublicWebURL:       strings.TrimRight(getEnv("PUBLIC_WEB_URL", "http://localhost:3000"), "/"),
+		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		GitHubClientID:     os.Getenv("GITHUB_CLIENT_ID"),
+		GitHubClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+		ResendAPIKey:       os.Getenv("RESEND_API_KEY"),
+		EmailFrom:          getEnv("EMAIL_FROM", "Algebra <no-reply@algebra.local>"),
+		LeadsNotifyEmail:   strings.TrimSpace(os.Getenv("LEADS_NOTIFY_EMAIL")),
+		SessionTTL:         sessionTTL,
+		DevHeaderAuth:      os.Getenv("ALGEBRA_DEV_AUTH") == "true",
+		DemoAccounts:       !strings.EqualFold(os.Getenv("DEMO_ACCOUNTS"), "off"),
+		PasswordLogin:      !strings.EqualFold(os.Getenv("PASSWORD_LOGIN"), "off"),
+		EmailCodeLogin:     !strings.EqualFold(os.Getenv("EMAIL_CODE_LOGIN"), "off"),
+		OperatorToken:      strings.TrimSpace(os.Getenv("ALGEBRA_OPERATOR_TOKEN")),
+		Production:         cfg.Env == "production",
 
 		AgentTurnsPerDay:        int(agentTurns),
 		DemoAgentTurnsPerDay:    int(demoAgentTurns),
@@ -676,9 +695,10 @@ func (c *Config) ValidateProduction() error {
 			problems = append(problems, fmt.Sprintf("CORS_ALLOWED_ORIGINS entry %q must be https://", o))
 		}
 	}
-	// Whatever a production server pays with, it pays from a person's vault:
-	// otherwise the payer spends money that is no pass's, with none of the
-	// program's limits on it. (The simulated sandbox has no wallet.)
+	// Real money is paid from a person's vault: otherwise the payer spends money
+	// that is no pass's, with none of the program's limits on it. Test money on
+	// devnet may come from the payer's own wallet, but only inside the test-money
+	// guard's daily counts. (The simulated sandbox has no wallet.)
 	for _, rail := range c.SolanaRails {
 		cl := strings.ToLower(rail.Cluster)
 		if cl == "mainnet-beta" {
@@ -688,8 +708,12 @@ func (c *Config) ValidateProduction() error {
 		if cl == "mainnet" && rail.KMSKeyVersion == "" {
 			problems = append(problems, "the Solana mainnet payer must be a Cloud KMS key (SOLANA_MAINNET_KMS_KEY_VERSION): a key in a file or an environment variable on the server is not accepted with real money; see docs/SIGNER.md")
 		}
-		if c.OnchainPasses.Disabled || !c.OnchainPasses.Required[cl] {
-			problems = append(problems, fmt.Sprintf("the Solana %s rail needs SPEND_PASS_REQUIRED=%s (and the vault program on), so that every payment comes from a Spend Pass vault and never from the payer's own funds", cl, cl))
+		vaulted := !c.OnchainPasses.Disabled && c.OnchainPasses.Required[cl]
+		switch {
+		case cl == "mainnet" && !vaulted:
+			problems = append(problems, "the Solana mainnet rail needs ONCHAIN_PASSES=on and SPEND_PASS_REQUIRED=mainnet, so that every payment comes from a Spend Pass vault and never from the payer's own funds")
+		case cl != "mainnet" && !vaulted && c.TestMoney.Off:
+			problems = append(problems, fmt.Sprintf("the Solana %s rail pays from the server's own test wallet, so TEST_MONEY_GUARD can't be off: keep it on, or make every payment come from a vault (ONCHAIN_PASSES=on, SPEND_PASS_REQUIRED=%s)", cl, cl))
 		}
 	}
 	if len(problems) == 0 {
@@ -962,11 +986,37 @@ func checkMainnetExecution(execution bool, required map[string]bool) error {
 	return nil
 }
 
-// loadOnchainPasses reads the on-chain Spend Pass settings.
+// loadTestMoney reads TEST_MONEY_*: the test-money guard's daily counts.
+func loadTestMoney(c *TestMoneyConfig) error {
+	c.Off = strings.EqualFold(strings.TrimSpace(os.Getenv("TEST_MONEY_GUARD")), "off")
+	perAccount, err := getInt64("TEST_MONEY_PER_ACCOUNT_PER_DAY", 25)
+	if err != nil {
+		return err
+	}
+	if perAccount < 1 || perAccount > 10_000 {
+		return errors.New("config: TEST_MONEY_PER_ACCOUNT_PER_DAY must be between 1 and 10000")
+	}
+	perDay, err := getInt64("TEST_MONEY_PER_DAY", 400)
+	if err != nil {
+		return err
+	}
+	if perDay < 1 || perDay > 1_000_000 {
+		return errors.New("config: TEST_MONEY_PER_DAY must be between 1 and 1000000")
+	}
+	c.PerAccountPerDay, c.PerDay = int(perAccount), int(perDay)
+	return nil
+}
+
+// loadOnchainPasses reads the on-chain Spend Pass settings. The vault is
+// opt-in: without ONCHAIN_PASSES=on the program is never touched and the
+// other SPEND_PASS_* settings do nothing.
 func loadOnchainPasses(c *OnchainPassConfig) error {
 	c.ProgramID = strings.TrimSpace(os.Getenv("SPEND_PASS_PROGRAM_ID"))
 	if strings.EqualFold(c.ProgramID, "off") {
 		c.ProgramID, c.Disabled = "", true
+	}
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("ONCHAIN_PASSES")), "on") {
+		c.Disabled = true
 	}
 	clusters := func(name string) (map[string]bool, error) {
 		out := map[string]bool{}
