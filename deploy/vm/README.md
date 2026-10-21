@@ -4,14 +4,13 @@ One Ubuntu or Debian VM runs everything: Postgres, Redis, the API, the web app, 
 
 **Not run by its author.** These files and steps follow how the stack runs from source on a laptop; no VM was available to try them on. If a step fails, the error is in the unit's log: `sudo journalctl -u algebra-api -n 80 --no-pager`.
 
-You need: the VM's external IP, a hostname that points to it (a domain, or `<ip-with-dashes>.sslip.io`, which needs no purchase), a Privy app, one Gemini (or Anthropic/OpenAI) key, and your devnet payer key file.
+You need: the VM's external IP, a hostname that points to it (a domain, or `<ip-with-dashes>.sslip.io`, which needs no purchase), a Resend account with a verified sending domain (sign-in codes go out by email), one Gemini (or Anthropic/OpenAI) key, and your devnet payer key file.
 
 ## 1. Network and hostname (Cloud console, once)
 
 1. VM instance, then Edit: tick **Allow HTTP traffic** and **Allow HTTPS traffic** (opens 80 and 443). Open nothing else: 3000, 8080, 8402, 5432 and 6379 stay closed.
 2. VPC network, External IP addresses: make the VM's IP **static** (Reserve).
 3. Hostname: either a DNS **A record** for your domain to that IP, or use `34-123-45-67.sslip.io` for IP `34.123.45.67`.
-4. Privy dashboard, your app, Allowed origins: add `https://YOUR_HOSTNAME`. Under Login methods, enable email, Google (if used) and Solana wallets. Turn on "Return user data in an identity token".
 
 ## 2. Install the tools on the VM
 
@@ -75,7 +74,7 @@ sudo nano /etc/algebra/web.env     # your model key
 ```
 
 - `ALGEBRA_MASTER_KEY`: `openssl rand -base64 32`. Make a **new** one; never reuse your laptop's. Losing it makes sealed data unreadable, so keep a copy in Secret Manager.
-- `RESEND_API_KEY`: required to start in production. Without a verified sending domain, email sign-up and reset can't send; Privy sign-in works.
+- `RESEND_API_KEY`: required to start in production, and sign-in needs it: the code goes out by email. Without a verified sending domain Resend delivers only to your own address.
 - The devnet payer key: from your laptop, `gcloud compute scp .data\solana-devnet.json VM_NAME:/tmp/solana-devnet.json`, then on the VM:
   `sudo mv /tmp/solana-devnet.json /var/lib/algebra/ && sudo chown algebra: /var/lib/algebra/solana-devnet.json && sudo chmod 600 /var/lib/algebra/solana-devnet.json`.
   It is a devnet wallet, but keep it off GitHub and out of chat. Or make a fresh one on the VM and fund it from the faucets.
@@ -106,9 +105,9 @@ The devnet faucet is rate-limited; if the demo provider can't fund itself, send 
 ## 7. Check it
 
 1. `https://YOUR_HOSTNAME` shows the site. `curl -sI https://YOUR_HOSTNAME | head` shows HTTP/2 and the security headers.
-2. Sign in with Privy. Hover your wallet in the top bar: address and QR.
-3. Fund that wallet from faucet.circle.com (Solana Devnet USDC) and faucet.solana.com (devnet SOL).
-4. Spend passes: create a pass, then "Create with my account wallet" to make its vault.
+2. Sign in: type your email, then the six-digit code it sends.
+3. The devnet payer pays test money, so keep it funded: faucet.circle.com (Solana Devnet USDC) and faucet.solana.com (devnet SOL). Each account may make `TEST_MONEY_PER_ACCOUNT_PER_DAY` (25) payments a day and everyone `TEST_MONEY_PER_DAY` (400).
+4. Pick **Devnet** at the top of the page, then create a Spend Pass: its budget and limits are what an agent can spend.
 5. Agent chat: "Find a devnet API for token prices and call it". Approve the card. Open the invoice and the Solscan link.
 
 ## Updating

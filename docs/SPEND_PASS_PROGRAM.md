@@ -1,5 +1,12 @@
 # The Spend Pass program on Solana
 
+> **Optional, and off by default (2026-10-21).** The console no longer asks people
+> to make a vault, and sign-in no longer gives them a Solana wallet. The program,
+> the Go client and the service below are intact: set `ONCHAIN_PASSES=on` to use
+> them. Without it, devnet payments are test money from Algebra's own payer wallet,
+> inside the test-money guard; real money waits for a deposit ledger that covers
+> Solana and Base together. Statements below describe the vault when it is on.
+
 A Spend Pass is an agent's permission to spend: a budget, a cap per call, an
 expiry and a kill switch. Algebra has always enforced it on its server. With the
 **Spend Pass program**, the same limits also live on Solana, in a vault funded

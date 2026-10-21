@@ -94,7 +94,7 @@ node and a fake Jupiter (`backend/providers/jupiter/jupitertest`), so nothing le
 
 ## Accounts and sessions
 
-People sign in to the web app with Privy (an email code or a Solana wallet, no password), or with email and password (argon2id) when no Privy app is configured (`backend/internal/api/v1/auth.go`). A sign-in creates:
+People sign in to the web app with a six-digit code emailed to them (no password to make or remember), or with email and password (argon2id) behind a link on the same page while `PASSWORD_LOGIN` is on (`backend/internal/api/v1/auth.go`). The same address is the same account either way. A sign-in creates:
 
 - an **HttpOnly, SameSite=Lax session cookie** (`algebra_session`, SHA-256-hashed at rest in `user_sessions`), and
 - a **per-session console agent**: the identity every agent-scoped endpoint acts as when called with the cookie. Its token is sealed (AES-256-GCM) on the session row; the web app's server-side loop fetches
@@ -103,22 +103,11 @@ People sign in to the web app with Privy (an email code or a Solana wallet, no p
 Signing out revokes both. Human-only endpoints (approving, passes and their controls, the kill switch, everything under `/api/v1/me`) accept **only** the session cookie. An agent bearer token is rejected
 there, which is what keeps approval out of any agent's reach, including the console's own chat.
 
-The Privy button appears once `PRIVY_APP_ID` is set (see `backend/.env.example`). Once the Privy app lists any
-allowed origin (dashboard, Configuration, App settings, Domains), sign-in works only from the listed ones and
-every other address fails with `invalid_origin`: list `http://localhost:<port>` for each port you run the web
-app on, exactly as the browser shows it, next to the production domain. What the app currently allows is in
-its public configuration: `curl -s -H "privy-app-id: $PRIVY_APP_ID" https://auth.privy.io/api/v1/apps/$PRIVY_APP_ID`,
-under `allowed_domains`.
-
-Privy also rate-limits its own calls and answers 429 ("Too many requests. Please wait to try again.") when a
-limit is used up; Algebra's API is never asked in that case. The limits differ by call and some are long: on
-2026-10-13 its answers' `x-ratelimit-*` headers showed wallet sign-in (`siws/authenticate`) at 180 a week for
-each wallet address, reset on Thursday 00:00 UTC, against 1000 every ten seconds for the nonce before it. So a
-429 that survives an hour's wait is a weekly limit, not a burst one. The sign-in page names the call Privy
-refused in its error ("429 from auth.privy.io/api/v1/…"), read from the browser's own record of the request.
+The code is good for ten minutes and five tries (a fifth wrong one burns it), one is sent at most every 30 seconds and six an hour to an address, and only a keyed hash of it is stored
+(`login_codes`). Without `RESEND_API_KEY` the code is printed to the API's log, so locally you read it there and type it in. `EMAIL_CODE_LOGIN=off` closes it.
 
 Password-reset emails go through Resend when `RESEND_API_KEY` is set; otherwise the reset link is printed
-to the API's log, which is fine locally and never in production. `PASSWORD_LOGIN=off` removes email and password sign-in.
+to the API's log, which is fine locally and never in production. `PASSWORD_LOGIN=off` removes email and password sign-in, and the link to it.
 
 ## Scripts without a browser
 
