@@ -298,6 +298,12 @@ type AuthConfig struct {
 	// PASSWORD_LOGIN=off — turn it off once Google/GitHub sign-in is the
 	// only way into a real account.
 	PasswordLogin bool
+	// EmailCodeLogin offers sign-in with a six-digit code emailed to the
+	// address typed (no password, no wallet; the account is made the first
+	// time). On unless EMAIL_CODE_LOGIN=off. Without RESEND_API_KEY the code is
+	// written to the server's log instead of sent, which is how it is used in
+	// development.
+	EmailCodeLogin bool
 
 	// OperatorToken (ALGEBRA_OPERATOR_TOKEN) is the operator's own key, sent
 	// as the X-Algebra-Operator-Token header. It is needed to read Book a
@@ -562,6 +568,7 @@ func FromEnv() (*Config, error) {
 		DevHeaderAuth:        os.Getenv("ALGEBRA_DEV_AUTH") == "true",
 		DemoAccounts:         !strings.EqualFold(os.Getenv("DEMO_ACCOUNTS"), "off"),
 		PasswordLogin:        !strings.EqualFold(os.Getenv("PASSWORD_LOGIN"), "off"),
+		EmailCodeLogin:       !strings.EqualFold(os.Getenv("EMAIL_CODE_LOGIN"), "off"),
 		OperatorToken:        strings.TrimSpace(os.Getenv("ALGEBRA_OPERATOR_TOKEN")),
 		Production:           cfg.Env == "production",
 

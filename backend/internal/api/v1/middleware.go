@@ -121,7 +121,7 @@ func isAuthAbuseTarget(r *http.Request) bool {
 	}
 	switch r.URL.Path {
 	case "/api/v1/auth/login", "/api/v1/auth/signup", "/api/v1/auth/password/forgot", "/api/v1/auth/password/reset",
-		"/api/v1/auth/demo", "/api/v1/auth/privy":
+		"/api/v1/auth/demo", "/api/v1/auth/privy", "/api/v1/auth/code/send", "/api/v1/auth/code/verify":
 		return true
 	}
 	return false

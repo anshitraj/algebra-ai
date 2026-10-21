@@ -537,6 +537,13 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	stateMAC := hmac.New(sha256.New, masterKey)
 	stateMAC.Write([]byte("algebra:oauth-state:v1"))
 	oauthStateKey := stateMAC.Sum(nil)
+	// Sign-in codes are stored as hashes under a key derived from the master
+	// key and used for nothing else.
+	if cfg.Auth.EmailCodeLogin {
+		codeMAC := hmac.New(sha256.New, masterKey)
+		codeMAC.Write([]byte("algebra:login-code:v1"))
+		accountSvc.SetLoginCodes(accountRepo, codeMAC.Sum(nil))
+	}
 	webhookSvc := app.NewWebhookService(postgres.NewWebhookRepo(db), auditRepo, envWebhookSecret)
 	auditSvc := app.NewAuditService(auditRepo, agents)
 	confidentialProvider := arcium.NewLocalEncryptedProvider(encryptor)

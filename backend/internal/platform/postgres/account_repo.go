@@ -267,7 +267,11 @@ func (r *AccountRepo) PurgeExpired(ctx context.Context, now time.Time) (int64, e
 	if err != nil {
 		return s.RowsAffected(), fmt.Errorf("postgres: purging reset tokens: %w", err)
 	}
-	return s.RowsAffected() + t.RowsAffected(), nil
+	c, err := r.db.Pool.Exec(ctx, `DELETE FROM login_codes WHERE expires_at < $1`, now)
+	if err != nil {
+		return s.RowsAffected() + t.RowsAffected(), fmt.Errorf("postgres: purging login codes: %w", err)
+	}
+	return s.RowsAffected() + t.RowsAffected() + c.RowsAffected(), nil
 }
 
 // EraseUser scrubs a user's personal data in one transaction: profile and

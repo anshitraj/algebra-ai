@@ -287,12 +287,105 @@ func (a *API) authProviders(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]any{
 		"password": a.b.AuthConfig.PasswordLogin, "google": google, "github": github,
 		"demo": a.b.AuthConfig.DemoAccounts && a.b.Demo != nil, "privy": a.b.Privy != nil,
+		"email_code": a.b.AuthConfig.EmailCodeLogin && a.b.Accounts.LoginCodesOn(),
 	}
 	if a.b.Privy != nil {
 		// Public: Privy's sign-in runs in the browser and needs the app ID.
 		out["privy_app_id"] = a.b.Privy.AppID()
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+type sendLoginCodeRequest struct {
+	Email string `json:"email"`
+}
+
+// loginCodesPerAddressPerHour bounds how many codes one address is sent in an
+// hour, whoever asks: a stranger typing someone's address over and over must
+// not fill their inbox.
+const loginCodesPerAddressPerHour = 6
+
+// sendLoginCode: POST /api/v1/auth/code/send {"email"}. Emails a six-digit code
+// to the address. The answer is the same whether or not the address has an
+// account; signing in with the code makes one.
+func (a *API) sendLoginCode(w http.ResponseWriter, r *http.Request) {
+	if !a.b.AuthConfig.EmailCodeLogin || !a.b.Accounts.LoginCodesOn() {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: app.ErrLoginCodesOff.Error()})
+		return
+	}
+	var req sendLoginCodeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	address, err := account.NormalizeEmail(req.Email)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
+		return
+	}
+	if a.limiter != nil {
+		sum := sha256.Sum256([]byte(address))
+		ok, retry, err := a.limiter.Allow(r.Context(), "quota:login-code:"+base64.RawURLEncoding.EncodeToString(sum[:12]), loginCodesPerAddressPerHour, time.Hour)
+		if err == nil && !ok {
+			w.Header().Set("Retry-After", formatSeconds(retry))
+			writeJSON(w, http.StatusTooManyRequests, errorBody{Error: "too many codes were sent to this address: try again in a while"})
+			return
+		}
+	}
+	if err := a.b.Accounts.RequestLoginCode(r.Context(), address, a.b.AuthConfig.PublicWebURL); err != nil {
+		var soon *account.LoginCodeTooSoon
+		if errors.As(err, &soon) {
+			w.Header().Set("Retry-After", formatSeconds(soon.RetryAfter))
+			writeJSON(w, http.StatusTooManyRequests, errorBody{Error: soon.Error()})
+			return
+		}
+		log.Printf("auth: sending a sign-in code: %v", err)
+		writeJSON(w, http.StatusBadGateway, errorBody{Error: "we couldn't send the email just now: try again in a moment"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "resend_in": int(account.LoginCodeCooldown / time.Second)})
+}
+
+type verifyLoginCodeRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+// verifyLoginCode: POST /api/v1/auth/code/verify {"email","code"}. The right
+// code signs in, and makes the account the first time.
+func (a *API) verifyLoginCode(w http.ResponseWriter, r *http.Request) {
+	if !a.b.AuthConfig.EmailCodeLogin || !a.b.Accounts.LoginCodesOn() {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: app.ErrLoginCodesOff.Error()})
+		return
+	}
+	var req verifyLoginCodeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	res, err := a.b.Accounts.SignInWithLoginCode(r.Context(), req.Email, req.Code, clientMeta(r))
+	if err != nil {
+		switch {
+		case errors.Is(err, account.ErrLoginCodeWrong), errors.Is(err, account.ErrLoginCodeGone):
+			writeJSON(w, http.StatusUnauthorized, errorBody{Error: err.Error()})
+		default:
+			writeError(w, err)
+		}
+		return
+	}
+	a.setSessionCookie(w, res.Token)
+	// The code mailed a moment ago already told them: an alert for a sign-in
+	// they just made would be a second email for nothing. A first sign-in still
+	// gets its welcome.
+	if res.Created {
+		a.signedIn(r, res)
+	}
+	resp := a.toUserResponse(r.Context(), res.User)
+	status := http.StatusOK
+	if res.Created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, sessionResponse{User: &resp})
 }
 
 type privySignInRequest struct {

@@ -101,6 +101,8 @@ type AccountService struct {
 	mailer     Mailer
 	guardrails GuardrailStore
 	wallets    UserWalletStore
+	codes      LoginCodeStore
+	codeKey    []byte
 	now        func() time.Time
 	sessionTTL time.Duration
 	resetTTL   time.Duration
@@ -119,6 +121,9 @@ func NewAccountService(store AccountStore, agents *AgentService, agentStore Agen
 // SessionTTL is how long a new session lives — the transport uses it for
 // the cookie's Max-Age.
 func (s *AccountService) SessionTTL() time.Duration { return s.sessionTTL }
+
+// SetMailer replaces the mailer: tests read what would be sent.
+func (s *AccountService) SetMailer(m Mailer) { s.mailer = m }
 
 // SignUp creates a password account and signs it in.
 func (s *AccountService) SignUp(ctx context.Context, name, email, password string, meta account.ClientMeta) (*SignInResult, error) {
