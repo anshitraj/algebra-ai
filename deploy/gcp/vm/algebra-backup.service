@@ -1,0 +1,8 @@
+[Unit]
+Description=Algebra database backup to the private bucket
+After=postgresql.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/algebra-backup

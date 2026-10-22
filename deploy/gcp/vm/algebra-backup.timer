@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly Algebra database backup (03:00 India time)
+
+[Timer]
+OnCalendar=*-*-* 21:30:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
