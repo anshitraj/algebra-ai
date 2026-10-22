@@ -54,6 +54,19 @@ SQL
 # (\set) were tried first and set a different password; this is the form that was tested.
 printf "ALTER ROLE algebra PASSWORD '%s';\n" "$dbpw" | runuser -u postgres -- psql -v ON_ERROR_STOP=1 -q
 unset dbpw
+# Sized for 16 GB of memory and an SSD; a settings file of its own, so a package upgrade never overwrites it.
+install -d /etc/postgresql/16/main/conf.d
+cat > /etc/postgresql/16/main/conf.d/algebra.conf <<'CONF'
+shared_buffers = 2GB
+effective_cache_size = 8GB
+maintenance_work_mem = 512MB
+work_mem = 16MB
+random_page_cost = 1.1
+wal_compression = on
+checkpoint_completion_target = 0.9
+log_min_duration_statement = 1000
+CONF
+systemctl restart postgresql
 # Postgres listens on localhost only and has TLS on (APP_ENV=production refuses a database without it).
 echo "listen_addresses=$(runuser -u postgres -- psql -Atc 'show listen_addresses') ssl=$(runuser -u postgres -- psql -Atc 'show ssl')"
 
@@ -66,7 +79,7 @@ cat >> "$conf" <<EOF
 bind 127.0.0.1 -::1
 protected-mode yes
 requirepass $rpw
-maxmemory 256mb
+maxmemory 512mb
 maxmemory-policy volatile-lru
 # END algebra
 EOF

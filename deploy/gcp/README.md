@@ -14,13 +14,13 @@ dashboard**, and a leak of the VM's configuration alone gives an attacker nothin
 | What | Where |
 |---|---|
 | Project | `algebra-prod-7802b5` (own project: no key, role or workload is shared with any other) |
-| VM | `algebra-1`, e2-medium (2 vCPU, 4 GB), Debian 12, Mumbai (`asia-south1-b`), shielded boot, deletion protection |
+| VM | `algebra-1`, e2-standard-4 (4 vCPU, 16 GB), Debian 12, Mumbai (`asia-south1-b`), shielded boot, deletion protection. It started as e2-medium and was upsized on 2026-10-22: the stack used about 0.7 GB, so this is headroom (and room to host the web app here later), not need |
 | Reaching it | `gcloud compute ssh algebra-1 --tunnel-through-iap` (your Google login). **No port is open**: the one firewall rule lets Google's IAP range reach SSH |
 | Secrets | Secret Manager, read by the VM's service account only; the master key is stored **wrapped by Cloud KMS** and unwrapped at start |
 | Backups | nightly `pg_dump` to a private bucket; the VM can only add objects; each is kept 14 days (a compromised VM can't erase them), deleted after 45 |
 | Logs and metrics | Google Ops Agent to Cloud Logging and Monitoring |
 | Updates | `unattended-upgrades` (security), reboot at 03:00 India time only if one needs it |
-| Cost | about 35 USD a month: VM 27, disk 3, external address 3.7, the rest pennies. Budget alert at 4,000 INR with mails at 50, 90 and 100 percent |
+| Cost | about 125 USD a month (about 10,500 INR): VM about 115, disk 3, external address 3.7, the rest pennies (estimates, not quotes: read the billing report). Budget alert at 15,000 INR with mails at 50, 90 and 100 percent |
 
 ## How a secret reaches the API
 
@@ -62,7 +62,7 @@ Get-Clipboard | gcloud secrets versions add algebra-resend-api-key --project alg
 | Health | `curl -s http://127.0.0.1:8080/readyz` on the VM; `https://api.usealgebra.xyz/readyz` from anywhere |
 | Which commit runs | `cat /opt/algebra/VERSION` |
 | The generated devnet payer's address | on the VM: `sudo -u algebra bash -c 'set -a; . /etc/algebra/api.conf; . /run/algebra/api.env; /opt/algebra/bin/solana-wallet -generated'` |
-| Resize the VM | stop it, `gcloud compute instances set-machine-type algebra-1 --machine-type e2-standard-2 --zone asia-south1-b`, start it (about 3 minutes down). Turn deletion protection off only to delete it |
+| Resize the VM | `gcloud compute instances stop algebra-1 ...`, `gcloud compute instances set-machine-type algebra-1 --machine-type e2-standard-2 --zone asia-south1-b ...` (or any other), `... start`: about 3 minutes down, and every service comes back by itself at boot. Turn deletion protection off only to delete it |
 
 ## Restore from a backup
 

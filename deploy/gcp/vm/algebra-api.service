@@ -37,8 +37,8 @@ SystemCallArchitectures=native
 CapabilityBoundingSet=
 AmbientCapabilities=
 # Keep a runaway from starving the database that shares this machine.
-MemoryHigh=1200M
-MemoryMax=1500M
+MemoryHigh=5G
+MemoryMax=6G
 
 [Install]
 WantedBy=multi-user.target

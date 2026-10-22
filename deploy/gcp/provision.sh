@@ -1,7 +1,7 @@
 #!/bin/bash
 # The Google Cloud resources Algebra runs on, as commands. This is the record of what was created on
 # 2026-10-22 (project algebra-prod-7802b5); to build the same thing again in a new project, run it
-# with a new PROJECT. It creates billable resources (about 35 USD a month: see README.md).
+# with a new PROJECT. It creates billable resources (about 125 USD a month: see README.md).
 #
 # Usage: PROJECT=algebra-prod-xxxxxx BILLING=XXXXXX-XXXXXX-XXXXXX deploy/gcp/provision.sh
 # Needs: gcloud signed in as someone who may create projects and link this billing account.
@@ -74,7 +74,7 @@ gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAc
 
 echo "== the VM: shielded boot, OS Login (no SSH keys in metadata), deletion protection"
 gcloud compute instances create algebra-1 --project "$PROJECT" --zone "$ZONE" \
-  --machine-type e2-medium --image-family debian-12 --image-project debian-cloud \
+  --machine-type e2-standard-4 --image-family debian-12 --image-project debian-cloud \
   --boot-disk-size 30GB --boot-disk-type pd-balanced \
   --subnet algebra-subnet --tags algebra-vm --labels app=algebra \
   --service-account "$SA" --scopes cloud-platform \
