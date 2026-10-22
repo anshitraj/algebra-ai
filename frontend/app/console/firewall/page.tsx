@@ -2,28 +2,34 @@
 
 import { useCallback, useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
-import type { SpendPass } from "@/lib/types";
+import type { IssuedPass, PassConnect, SpendPass } from "@/lib/types";
 import type { ClassRow, KillSwitchState, Simulation } from "@/lib/routing-types";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { Button, ErrorNote, Field, Input, PageHeader, Panel, Skeleton } from "@/components/console/ui";
 import { PolicyGuide } from "@/components/console/policy-guide";
 import { DecisionPanel } from "@/components/console/decision-panel";
-import { IconBan, IconCheck, IconShield, IconStop, Spinner } from "@/components/icons";
+import { CreatePass, IssuedCard } from "@/components/console/pass-create";
+import { IconBan, IconCheck, IconPlus, IconShield, IconStop, Spinner } from "@/components/icons";
 
 /**
- * The spend firewall: what stops an agent before money moves, and a way to ask
- * "would this pass?" without paying anything.
+ * Spend passes and their rules, on one page: a pass is what an agent holds, its
+ * rules are what stops it before money moves, and a dry run asks "would this
+ * pass?" without paying anything.
  */
 export default function FirewallPage() {
   const [passes, setPasses] = useState<SpendPass[] | null>(null);
+  const [connect, setConnect] = useState<PassConnect | null>(null);
   const [kill, setKill] = useState<KillSwitchState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [issued, setIssued] = useState<IssuedPass | null>(null);
 
   const load = useCallback(async () => {
     try {
       const [p, k] = await Promise.all([api.listPasses(), api.getKillSwitch()]);
       setPasses((p.passes ?? []).filter((x) => x.active && x.currency === "USDC"));
+      setConnect(p.connect);
       setKill(k);
       setError(null);
     } catch (e) {
@@ -36,22 +42,81 @@ export default function FirewallPage() {
     load();
   }, [load]);
 
+  // Arriving from onboarding (?new=1): open the form straight away.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reading the URL once on arrival
+    if (new URLSearchParams(window.location.search).get("new") === "1") setCreating(true);
+  }, []);
+
+  // Arriving from the chat (#pass-<id>): the passes load after the page, so the browser's own jump finds nothing.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!passes || !id.startsWith("pass-")) return;
+    document.getElementById(id)?.scrollIntoView({ block: "center" });
+  }, [passes]);
+
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Spend firewall"
-        description="Your rules, enforced before every payment. Set spending speed, control new providers, or pause every agent at once."
+        description="Each agent holds a Spend Pass: a budget and your rules, enforced before every payment. Choose when it must ask you, or pause every agent at once."
+        actions={
+          !creating && !issued ? (
+            <Button onClick={() => setCreating(true)}>
+              <IconPlus size={15} /> New pass
+            </Button>
+          ) : undefined
+        }
       />
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <KillSwitch state={kill} onChange={(k) => { setKill(k); load(); }} />
 
+      {(issued || creating) && (
+        <div className="mt-6 space-y-4">
+          {issued && connect && (
+            <IssuedCard
+              pass={issued}
+              connect={issued.connect ?? connect}
+              onDone={() => {
+                setIssued(null);
+                load();
+              }}
+            />
+          )}
+          {creating && (
+            <CreatePass
+              onCancel={() => setCreating(false)}
+              onCreated={(p) => {
+                setCreating(false);
+                setIssued(p);
+              }}
+            />
+          )}
+        </div>
+      )}
+
       <section className="mt-8">
-        <h2 className="text-sm font-medium text-foreground">Rules for each pass</h2>
-        <p className="mt-1 text-sm text-muted">Open a policy to see its rules. Algebra checks them before every payment.</p>
+        <h2 className="text-sm font-medium text-foreground">Your passes</h2>
+        <p className="mt-1 text-sm text-muted">Open a pass to see its rules. Algebra checks them before every payment.</p>
         <div className="mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {!passes && !error && <Skeleton className="col-span-full h-80" />}
-          {passes?.length === 0 && <p className="col-span-full text-sm text-muted">No active USDC Spend Pass. Create one under Spend passes.</p>}
+          {passes?.length === 0 && !creating && !issued && (
+            <div className="col-span-full rounded-2xl border border-dashed border-border-strong px-6 py-12 text-center">
+              <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-primary-tint text-primary">
+                <IconShield size={20} />
+              </span>
+              <p className="font-display mt-4 text-lg font-semibold text-foreground">No Spend Pass yet</p>
+              <p className="mx-auto mt-1.5 max-w-md text-sm text-muted">
+                Give Claude 1 USDC a week for market data, asking you before every payment. Revoke it with one click.
+              </p>
+              <div className="mt-5">
+                <Button onClick={() => setCreating(true)}>
+                  <IconPlus size={15} /> Create your first pass
+                </Button>
+              </div>
+            </div>
+          )}
           {passes?.map((p) => <PolicyGuide key={p.id} pass={p} onSaved={load} />)}
         </div>
       </section>

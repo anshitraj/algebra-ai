@@ -66,8 +66,8 @@ export function reasonLine(raw: string): { code: string; text: string } {
 export function vaultFix(reasons: string[], passId?: string): { text: string; action: string; href: string } | null {
   const codes = reasons.map((r) => r.split(":")[0].trim());
   const has = (...c: string[]) => codes.find((x) => c.includes(x));
-  // The Spend passes page, scrolled to this pass when it is known.
-  const href = passId ? `/console/passes#pass-${encodeURIComponent(passId)}` : "/console/passes";
+  // The Spend firewall page, scrolled to this pass when it is known.
+  const href = passId ? `/console/firewall#pass-${encodeURIComponent(passId)}` : "/console/firewall";
   if (has("ONCHAIN_PASS_REQUIRED", "ONCHAIN_PASS_MISSING", "ONCHAIN_PASS_OTHER_NETWORK")) {
     return { text: "Payments on this network come from a Spend Pass vault, and this pass has none yet.", action: "Create the vault", href };
   }

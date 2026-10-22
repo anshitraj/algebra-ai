@@ -114,6 +114,12 @@ function sentences(d: Draft, p: SpendPass): { icon: React.ReactNode; text: strin
 
 const STEPS = ["Approval", "Per call", "Providers", "Speed", "Review"] as const;
 
+/** When this pass asks the person, in a few words: the cover of its folder. */
+export function askLine(p: SpendPass) {
+  const a = p.approve_above_minor_units;
+  return a == null ? "Never asks" : a === 0 ? "Asks every time" : `Asks at ${formatUSDC(a)}+`;
+}
+
 /** One pass: its rules as sentences, and "Change rules" opens the guide. */
 export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () => void }) {
   const detailsId = useId();
@@ -151,6 +157,21 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
     setOpen(true);
   }
 
+  async function revoke() {
+    if (!window.confirm(`Revoke "${pass.label}"? The agent loses access immediately and the pass can't be turned back on.`)) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.revokePass(pass.id);
+      onSaved();
+    } catch (e) {
+      // Revoking is how a person stops an agent spending: a failure must never be silent.
+      setMsg(`${e instanceof Error ? e.message : "Couldn't reach Algebra"}. The pass is still active.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function freeze() {
     setBusy(true);
     setMsg(null);
@@ -165,7 +186,7 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
   }
 
   return (
-    <article className={`${styles.card} ${expanded ? styles.expanded : ""}`}>
+    <article id={`pass-${pass.id}`} className={`${styles.card} ${expanded ? styles.expanded : ""}`}>
       <div className={styles.cover}>
         <div className={styles.eyebrow}>
           <span><IconShield size={13} /> Spending policy</span>
@@ -174,7 +195,7 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
         <div ref={folderRef} className={styles.folder}>
           <GlassFolder
             label={pass.label}
-            meta="4 spending rules"
+            meta={askLine(pass)}
             tone="dark"
             art="aurora"
             seed={hashString(pass.id) % 997}
@@ -221,6 +242,9 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
             )}
             <Button variant={frozen ? "secondary" : "danger"} onClick={freeze} disabled={busy}>
               {busy ? <Spinner size={14} /> : frozen ? <IconCheck size={14} /> : <IconBan size={14} />} {frozen ? "Unfreeze" : "Freeze"}
+            </Button>
+            <Button variant="secondary" onClick={revoke} disabled={busy}>
+              Revoke
             </Button>
           </div>
         </div>

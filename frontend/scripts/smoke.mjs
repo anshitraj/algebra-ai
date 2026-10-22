@@ -34,7 +34,6 @@ const CONSOLE_PAGES = [
   "/console",
   "/console/agent",
   "/console/providers",
-  "/console/passes",
   "/console/firewall",
   "/console/routing",
   "/console/intelligence",

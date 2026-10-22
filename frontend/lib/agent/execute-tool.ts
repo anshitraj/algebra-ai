@@ -66,7 +66,7 @@ async function decisionFor(identity: ServerIdentity, req: client.ExecuteBody): P
 
 function needPass(identity: ServerIdentity) {
   if (!identity.passId) {
-    throw new Error("No Spend Pass is selected for this chat, so nothing can be paid. Ask the user to pick one above the message box, or create one under Spend passes.");
+    throw new Error("No Spend Pass is selected for this chat, so nothing can be paid. Ask the user to pick one above the message box, or create one on the Spend firewall page.");
   }
 }
 

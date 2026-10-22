@@ -60,7 +60,7 @@ export function PassPanel({
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <PanelHeading action={<Link href="/console/passes" className="text-xs font-medium text-primary hover:underline">Passes</Link>}>
+      <PanelHeading action={<Link href="/console/firewall" className="text-xs font-medium text-primary hover:underline">Passes</Link>}>
         Spend Pass
       </PanelHeading>
       {pass === undefined ? (

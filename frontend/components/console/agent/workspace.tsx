@@ -79,8 +79,6 @@ const MIN_VISIBLE_MS: Record<string, number> = { search_providers: 3000, get_pro
 
 const MODEL_KEY = "algebra:agent-model";
 const PASS_KEY = "algebra:agent-pass";
-// "Ask before paying" turned off: the recommended offer is paid when the pass allows it. Per browser; off by default.
-const AUTO_KEY = "algebra:auto-pay";
 // Provider history carries every tool result, so a long chat can get big.
 // Keep the newest turns that fit; the conversation matters more than its tail.
 const CHAT_MAX_BYTES = 400_000;
@@ -176,7 +174,6 @@ export function AgentWorkspace() {
   const [inspector, setInspector] = useState<"pass" | "activity">("pass");
   const [passes, setPasses] = useState<SpendPass[] | null>(null);
   const [passId, setPassId] = useState("");
-  const [autoPay, setAutoPay] = useState(false);
   // Practising needs a demo pass: made once, the first time a signed-in person practises.
   const [practiceSetup, setPracticeSetup] = useState<"idle" | "working" | "done" | "failed">("idle");
   const abortRef = useRef<AbortController | null>(null);
@@ -486,33 +483,6 @@ export function AgentWorkspace() {
     }
   }
 
-  // localStorage is unavailable during SSR, so what the person chose last time is read after mount.
-  useEffect(() => {
-    try {
-      setAutoPay(window.localStorage.getItem(AUTO_KEY) === "on");
-    } catch {
-      // storage blocked: asks before paying, as by default
-    }
-  }, []);
-
-  function changeAutoPay(on: boolean) {
-    if (
-      on &&
-      network === "solana" &&
-      !window.confirm(
-        "Pay automatically on Solana mainnet?\n\nAlgebra will pay the recommended provider with real USDC as soon as your Spend Pass allows it, without asking. Anything your pass makes wait for your yes still waits. You can turn this off again here."
-      )
-    ) {
-      return;
-    }
-    setAutoPay(on);
-    try {
-      window.localStorage.setItem(AUTO_KEY, on ? "on" : "off");
-    } catch {
-      // storage blocked: the choice still applies for this page
-    }
-  }
-
   function pickPass(id: string) {
     setPassId(id);
     try {
@@ -527,6 +497,9 @@ export function AgentWorkspace() {
   const fitting = passes === null ? null : passes.filter((p) => passFits(p, network, demo));
   const pass = fitting === null ? undefined : (fitting.find((p) => p.id === passId) ?? null);
   const rail = rails?.find((r) => r.network === network);
+  // Whether the chat asks is the pass's own rule, the one the server enforces: only a pass that never asks lets the
+  // chat pay the recommended offer itself. Every other rule shows the offers and waits for Pay, which is the yes.
+  const autoPay = !!pass && approvalRule(pass).kind === "never";
   const firstFitting = fitting?.[0]?.id ?? "";
 
   // A pass picked on another network can't pay here (a test pass while practising, say): the first one that
@@ -666,7 +639,7 @@ export function AgentWorkspace() {
                 ) : (
                   <PassPicker passes={fitting} value={pass ? passId : ""} onChange={pickPass} disabled={running} />
                 )}
-                {pass && <AskBeforePayingToggle asks={!autoPay} onChange={(asks) => changeAutoPay(!asks)} />}
+                {pass && <AskBeforePaying pass={pass} />}
               </div>
               <span className={composerStyles.hint}>
                 <kbd className="font-mono">Enter</kbd> to send
@@ -813,28 +786,30 @@ function TurnView({
 
 /** Which Spend Pass the chat pays under. Only active USDC passes can pay for API calls. */
 /**
- * "Ask before paying", on by default: the agent compares providers and nothing is paid until the person picks
- * an offer and presses Pay (that press is recorded on the server as their approval). Off, the recommended
- * offer is paid as soon as the Spend Pass allows it outright; anything the pass makes wait for a yes still waits,
- * and the server checks every payment either way.
+ * What this chat does before it pays, read from the pass: the same rule the server enforces for every agent.
+ * "Every payment" and "above an amount" show the offers and nothing is paid until the person presses Pay (that
+ * press is recorded on the server as their approval). "Never" pays the recommended offer as soon as the pass
+ * allows it. The rule is changed on the Spend firewall page, in one place.
  */
-function AskBeforePayingToggle({ asks, onChange }: { asks: boolean; onChange: (asks: boolean) => void }) {
+function AskBeforePaying({ pass }: { pass: SpendPass }) {
+  const rule = approvalRule(pass);
+  const asks = rule.kind !== "never";
+  const label = rule.kind === "always" ? "Asks before every payment" : rule.kind === "above" ? "Asks before paying" : "Pays within this pass";
+  const title =
+    rule.kind === "always"
+      ? "This pass asks for your yes on every payment. Pick an offer and press Pay."
+      : rule.kind === "above"
+        ? `This pass asks from ${formatUSDC(rule.minor)}. In the chat you always pick an offer and press Pay. Change the rule on the Spend firewall page.`
+        : "This pass never asks: the recommended offer is paid on its own when the pass allows it. Change the rule on the Spend firewall page.";
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={asks}
-      onClick={() => onChange(!asks)}
-      title={
-        asks
-          ? "On: the agent shows the offers and nothing is paid until you pick one and press Pay. Click to let it pay the recommended offer on its own when your Spend Pass allows it."
-          : "Off: the recommended offer is paid on its own when your Spend Pass allows it. Anything your pass makes wait for your yes still waits. Click to be asked before every payment again."
-      }
+    <Link
+      href={`/console/firewall#pass-${encodeURIComponent(pass.id)}`}
+      title={title}
       className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-foreground transition-colors hover:bg-primary-tint"
     >
       {asks ? <IconLock size={13} className="text-primary" /> : <IconUnlock size={13} className="text-accent" />}
-      {asks ? "Asks before paying" : "Pays within my pass"}
-    </button>
+      {label}
+    </Link>
   );
 }
 
@@ -852,7 +827,7 @@ function PassPicker({
   if (passes === null) return null;
   if (passes.length === 0) {
     return (
-      <Link href="/console/passes" className="inline-flex min-h-11 items-center rounded-lg px-2.5 text-xs font-medium text-primary hover:bg-primary-tint">
+      <Link href="/console/firewall" className="inline-flex min-h-11 items-center rounded-lg px-2.5 text-xs font-medium text-primary hover:bg-primary-tint">
         Create a USDC pass to pay
       </Link>
     );

@@ -16,7 +16,6 @@ import {
   IconCheck,
   IconEye,
   IconTag,
-  IconLock,
   IconInbox,
   IconList,
   IconLogOut,
@@ -46,8 +45,7 @@ const PRIMARY: NavItem[] = [
 ];
 
 const CONTROLS: NavItem[] = [
-  { href: "/console/passes", label: "Spend passes", icon: <IconShield /> },
-  { href: "/console/firewall", label: "Spend firewall", icon: <IconLock /> },
+  { href: "/console/firewall", label: "Spend firewall", icon: <IconShield /> },
 ];
 
 const DEVELOPERS: NavItem[] = [

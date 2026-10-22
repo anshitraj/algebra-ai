@@ -92,7 +92,7 @@ export default function OverviewPage() {
       {passes && active.length > 0 && <section className="live-budget-panel" aria-labelledby="budget-heading"><div className="live-budget-heading"><h2 id="budget-heading">Spending authority</h2><span>Live spend pass balances</span></div><div className="live-budget-bars">{active.slice(0, 4).map((pass) => {
         const used = pass.budget_minor_units > 0 ? Math.min(pass.spent_minor_units / pass.budget_minor_units * 100, 100) : 0;
         return <div className="live-budget-row" key={pass.id}><div><strong>{pass.label}</strong><span>{formatMoney(pass.spent_minor_units, pass.currency)} / {formatMoney(pass.budget_minor_units, pass.currency)}</span></div><div className="live-budget-track" role="meter" aria-label={`${pass.label} budget used`} aria-valuenow={Math.round(used)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${used}%` }} /></div></div>;
-      })}</div><p>Each agent can spend only within its pass. <Link href="/console/passes" className="font-medium text-foreground underline">Manage spending limits</Link></p></section>}
+      })}</div><p>Each agent can spend only within its pass. <Link href="/console/firewall" className="font-medium text-foreground underline">Manage spending limits</Link></p></section>}
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <section className="min-w-0" aria-labelledby="recent-heading">
@@ -129,7 +129,7 @@ export default function OverviewPage() {
             <h2 id="passes-heading" className="font-display text-base font-semibold text-foreground">
               Spend passes
             </h2>
-            <Link href="/console/passes" className="text-xs font-medium text-primary hover:underline">
+            <Link href="/console/firewall" className="text-xs font-medium text-primary hover:underline">
               Manage
             </Link>
           </div>
@@ -186,7 +186,7 @@ function GettingStarted({ providers }: { providers?: number }) {
         ? `Demo mode, with play money and no wallet: an answer and a signed receipt in seconds. Behind it, ${providers.toLocaleString("en-US")} paid APIs to choose from.`
         : "Demo mode, with play money and no wallet: an answer and a signed receipt in seconds.",
     },
-    { href: "/console/passes", icon: <IconShield size={16} />, title: "Set a spending limit", body: "A Spend Pass: a USDC budget, the most one call may cost, and which sellers it may pay." },
+    { href: "/console/firewall", icon: <IconShield size={16} />, title: "Set a spending limit", body: "A Spend Pass: a USDC budget, the most one call may cost, and which sellers it may pay." },
     { href: "/console/connect", icon: <IconPlug size={16} />, title: "Connect your own agent", body: "Claude, Cursor or any tool that speaks MCP or REST pays through Algebra, inside your limit." },
   ];
   return (

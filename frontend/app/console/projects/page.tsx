@@ -803,7 +803,7 @@ function ProjectPanel({
                     Keys use Spend Passes in the same project and environment.
                   </p>
                 </div>
-                <Link className={styles.textLink} href="/console/passes">
+                <Link className={styles.textLink} href="/console/firewall">
                   Spend Passes <IconArrowRight size={14} />
                 </Link>
               </div>

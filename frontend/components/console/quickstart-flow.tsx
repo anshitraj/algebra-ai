@@ -593,7 +593,7 @@ export function QuickstartFlow({ demo = false }: { demo?: boolean }) {
                         <p>
                           A Spend Pass is your agent&apos;s permission to spend.
                           It sets the budget, per-call ceiling and allowed
-                          providers. You can manage it in Spend passes.
+                          providers. You can manage it in the Spend firewall.
                           {pass && (
                             <>
                               {" "}

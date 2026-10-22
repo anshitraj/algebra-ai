@@ -63,7 +63,7 @@ test("automatic payment stays within what the pass has left and within three at 
 
 test("the vault link lands on the pass's own card", () => {
   const fix = vaultFix(["ONCHAIN_PASS_REQUIRED"], "pass_a1256abe-e77e");
-  assert.equal(fix?.href, "/console/passes#pass-pass_a1256abe-e77e");
-  assert.equal(vaultFix(["ONCHAIN_PASS_REQUIRED"])?.href, "/console/passes");
+  assert.equal(fix?.href, "/console/firewall#pass-pass_a1256abe-e77e");
+  assert.equal(vaultFix(["ONCHAIN_PASS_REQUIRED"])?.href, "/console/firewall");
   assert.equal(vaultFix(["PASS_BUDGET_EXHAUSTED"]), null);
 });
