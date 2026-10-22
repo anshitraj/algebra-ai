@@ -35,6 +35,13 @@ docker compose -f deploy/docker-compose.yml --profile app up -d    # all of it
 
 The `api` and `web` services here are for trying the stack together: plain http, `APP_ENV=development`, the sandbox providers on. They need `ALGEBRA_MASTER_KEY` in the environment (`openssl rand -base64 32`).
 
+## Production today: one Google Cloud VM behind Cloudflare
+
+The API, Postgres, Redis and the demo sellers run on one hardened VM in their own Google Cloud project, reached
+through a Cloudflare tunnel (no open port), with every secret in Secret Manager and the master key wrapped by Cloud KMS.
+How it is built, deployed, restored and rotated: [`gcp/README.md`](gcp/README.md). The frontend stays on Vercel.
+Railway is no longer used (see the note at the top of [`railway-vercel.md`](railway-vercel.md)).
+
 ## For real: each part on its own host
 
 1. **Postgres and Redis**: managed ones. The API refuses to start in production against a database without TLS or without Redis.

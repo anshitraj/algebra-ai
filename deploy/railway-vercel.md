@@ -1,5 +1,11 @@
 # Test deployment: backend on Railway, frontend on Vercel (devnet)
 
+> **Not used any more (2026-10-22).** Railway [disclosed](https://cybersecuritynews.com/railway-security-incident/) on
+> 2026-10-21 that customers' environment variables may have been read and decrypted, and Algebra's API moved to its own
+> Google Cloud VM: see [gcp/README.md](gcp/README.md), which also keeps secrets out of any hosting dashboard. This page
+> is kept only for the steps that still apply to the Vercel side. If you host on any platform, treat every secret you
+> ever set there as exposed after an incident like that, and rotate it.
+
 The quickest way to put Algebra on the internet for testing. Railway runs the API with Postgres and Redis; Vercel runs the web app and proxies `/api/v1` and `/mcp` to the API. Devnet only; mainnet stays off. For a long-lived deployment use the VM guide ([vm/README.md](vm/README.md)) or Cloud Run ([../docs/GCP_DEPLOYMENT.md](../docs/GCP_DEPLOYMENT.md)).
 
 **Not run by its author.** No Railway or Vercel account was available. Two things are unverified and decided by your plans, not by this code:

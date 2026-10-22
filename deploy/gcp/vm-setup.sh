@@ -16,7 +16,7 @@ install -d -m 0755 /etc/algebra
 MD=http://metadata.google.internal/computeMetadata/v1
 secret() {
   curl -fsS -H "Authorization: Bearer $TOKEN" \
-    "https://secretmanager.googleapis.com/v1/projects/$PROJECT/secrets/$1/versions/latest:access" | jq -er .payload.data | base64 -d
+    "https://secretmanager.googleapis.com/v1/projects/$PROJECT/secrets/$1/versions/latest:access" | jq -er .payload.data | base64 -d | tr -d '\r\n'
 }
 
 echo "== packages"
@@ -34,6 +34,8 @@ curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings
 echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' > /etc/apt/sources.list.d/cloudflared.list
 apt-get update -y
 apt-get install -y postgresql-16 redis-server cloudflared
+# Debian ships a mail server listening on localhost:25; Algebra sends mail through Resend, so remove it.
+apt-get purge -y exim4-base exim4-config exim4-daemon-light >/dev/null 2>&1 || true
 
 echo "== users and folders"
 id algebra >/dev/null 2>&1 || useradd --system --home /opt/algebra --shell /usr/sbin/nologin algebra
@@ -44,13 +46,13 @@ install -d -o root -g algebra -m 0750 /etc/algebra
 
 echo "== postgres"
 dbpw=$(secret algebra-db-password)
-# The password goes in on stdin (never on a command line anyone can list with ps).
-runuser -u postgres -- psql -v ON_ERROR_STOP=1 -f - <<SQL
-\set pw '$dbpw'
-SELECT format('CREATE ROLE algebra LOGIN PASSWORD %L', :'pw') WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'algebra') \gexec
-SELECT format('ALTER ROLE algebra PASSWORD %L', :'pw') \gexec
+runuser -u postgres -- psql -v ON_ERROR_STOP=1 -q <<'SQL'
+SELECT 'CREATE ROLE algebra LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'algebra') \gexec
 SELECT 'CREATE DATABASE algebra OWNER algebra' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'algebra') \gexec
 SQL
+# The password goes in on stdin (never on a command line anyone can list with ps). psql's own variables
+# (\set) were tried first and set a different password; this is the form that was tested.
+printf "ALTER ROLE algebra PASSWORD '%s';\n" "$dbpw" | runuser -u postgres -- psql -v ON_ERROR_STOP=1 -q
 unset dbpw
 # Postgres listens on localhost only and has TLS on (APP_ENV=production refuses a database without it).
 echo "listen_addresses=$(runuser -u postgres -- psql -Atc 'show listen_addresses') ssl=$(runuser -u postgres -- psql -Atc 'show ssl')"
