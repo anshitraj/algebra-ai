@@ -46,7 +46,7 @@ const PRIMARY: NavItem[] = [
 ];
 
 const CONTROLS: NavItem[] = [
-  { href: "/console/firewall", label: "Spend firewall", icon: <IconShield /> },
+  { href: "/console/firewall", label: "Spend Passes", icon: <IconShield /> },
 ];
 
 const DEVELOPERS: NavItem[] = [
@@ -144,7 +144,7 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
           >
             <IconMenu />
           </button>
-          <Link href="/console" className="flex items-center gap-2 text-foreground">
+          <Link href="/console/agent" className="flex items-center gap-2 text-foreground">
             <Logo size={20} />
             <span className="hidden font-display text-sm font-semibold min-[480px]:inline">Algebra</span>
           </Link>
@@ -248,7 +248,7 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
 function SidebarBalance() {
   const { network, practice } = useNetwork();
   // Accounts hold no wallet since sign-in moved to emailed codes: say what payments are made in, not a balance.
-  const what = practice ? "Play USDC" : network === "solana" ? "Mainnet USDC" : "Devnet test USDC";
+  const what = practice ? "Play USDC" : network === "solana" ? "Mainnet USDC" : "Testnet credits";
   return <Link href="/console/firewall" className="console-chat-balance"><div><span>{practice ? "Demo workspace" : "Paying with"}</span><IconWallet size={14} /></div><strong>{what}</strong></Link>;
 }
 

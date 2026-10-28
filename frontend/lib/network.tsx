@@ -14,16 +14,19 @@ export type Cluster = "solana" | "solana-devnet";
  */
 export type Network = Cluster | "sandbox";
 
-/** The three places to work, in the order a new person meets them. */
+/**
+ * The two places a signed-in person works: Testnet (Solana devnet, paid from Algebra's test wallet out of the
+ * account's test credits) and Mainnet (real USDC). Demo mode ("sandbox") is only for demo accounts, which have
+ * no choice.
+ */
 export const NETWORKS: { id: Network; label: string; hint: string }[] = [
-  { id: "sandbox", label: "Demo", hint: "Simulated USDC: no wallet needed and nothing real moves" },
-  { id: "solana-devnet", label: "Devnet", hint: "Free test USDC on Solana's test network, paid from Algebra's test wallet: nothing real moves" },
+  { id: "solana-devnet", label: "Testnet", hint: "Test USDC from your 10 USDC of credits, paid on Solana devnet: nothing real moves" },
   { id: "solana", label: "Mainnet", hint: "Real USDC on Solana mainnet" },
 ];
 
-const WORDS: Record<string, string> = { solana: "Mainnet", "solana-devnet": "Devnet", sandbox: "Demo" };
+const WORDS: Record<string, string> = { solana: "Mainnet", "solana-devnet": "Testnet", sandbox: "Demo" };
 
-/** What a sentence calls a network: "Mainnet", "Devnet" or "Demo". The switch uses the same words (NETWORKS). */
+/** What a sentence calls a network: "Mainnet", "Testnet" or "Demo". The switch uses the same words (NETWORKS). */
 export function networkLabel(n: string | undefined): string {
   return (n && WORDS[n]) || (n ?? "");
 }
@@ -43,13 +46,13 @@ function stored(key: string): string | null {
 }
 
 /**
- * The saved choice, or demo mode when there is none (or storage is
- * blocked): the first place a new person works needs no wallet and no money.
- * Devnet and Mainnet are picked on purpose.
+ * The saved choice, or Testnet when there is none (or storage is blocked):
+ * the first place a new person works spends test credits, never real money.
+ * Mainnet is picked on purpose. A choice of demo mode saved before Testnet
+ * existed becomes Testnet.
  */
 export function readSavedNetwork(): Network {
-  const saved = stored(KEY);
-  return saved === "solana" || saved === "solana-devnet" || saved === "sandbox" ? saved : "sandbox";
+  return stored(KEY) === "solana" ? "solana" : "solana-devnet";
 }
 
 /** The real cluster the wallet and vault panels talk to: the last one chosen, devnet until one is. */
@@ -127,7 +130,7 @@ export function NetworkProvider({ children, demo = false }: { children: React.Re
   // there, so there is no server-rendered markup for it to differ from, and nobody sees the default flash by.
   const [saved, setSaved] = useState<{ choice: Network; cluster: Cluster; ready: boolean }>(() =>
     typeof window === "undefined"
-      ? { choice: "sandbox", cluster: "solana-devnet", ready: false }
+      ? { choice: "solana-devnet", cluster: "solana-devnet", ready: false }
       : { choice: readSavedNetwork(), cluster: readSavedCluster(), ready: true },
   );
   const [rails, setRails] = useState<RailStatus[] | null>(null);
@@ -161,8 +164,8 @@ export function NetworkProvider({ children, demo = false }: { children: React.Re
     saveNetwork(n);
   }, []);
 
-  // A server without demo mode can't offer it: fall back to the saved real cluster.
-  const choice: Network = !practiceAvailable && saved.choice === "sandbox" ? saved.cluster : saved.choice;
+  // Demo mode belongs to demo accounts: anyone else works on a cluster.
+  const choice: Network = saved.choice === "sandbox" ? saved.cluster : saved.choice;
   const network: Network = demo ? "sandbox" : choice;
   return (
     <Ctx.Provider

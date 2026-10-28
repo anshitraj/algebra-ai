@@ -76,7 +76,7 @@ const CLIENTS: { id: McpClient; label: string; location: string }[] = [
 ];
 const ENV_COPY: Record<Environment, string> = {
   sandbox: "Test with simulated providers and USDC. No real funds are used.",
-  devnet: "Use Solana Devnet with test USDC. No real funds are used.",
+  devnet: "Testnet: Solana devnet with test USDC. No real funds are used.",
   mainnet:
     "Use real USDC on Solana. Spending follows your project’s Spend Pass limits.",
 };

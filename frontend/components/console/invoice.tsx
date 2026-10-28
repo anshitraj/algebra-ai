@@ -149,7 +149,7 @@ export function Invoice({ intentId }: { intentId: string }) {
           </span>
           {c?.test && (
             <span className="rounded-full bg-accent-tint px-2.5 py-1 text-xs font-medium text-accent">
-              {network === "sandbox" ? "Sandbox: simulated USDC" : "Devnet: test USDC, no real value"}
+              {network === "sandbox" ? "Sandbox: simulated USDC" : "Testnet: test USDC, no real value"}
             </span>
           )}
           <span className="text-xs text-muted">

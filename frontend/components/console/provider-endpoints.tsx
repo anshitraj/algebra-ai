@@ -228,7 +228,7 @@ function EndpointRow({
         {e.callable && !here && (
           <p className="mt-0.5 text-xs text-muted">
             {demo
-              ? "Demo mode can't pay this one: it uses play money. Switch to Devnet at the top to pay it."
+              ? "Demo mode can't pay this one: it uses play money. Switch to Testnet at the top to pay it."
               : "Not payable on this network: switch at the top."}
           </p>
         )}

@@ -253,6 +253,19 @@ export function listRails() {
   return apiFetch<{ rails: RailStatus[]; sandbox: boolean }>("/api/v1/rails");
 }
 
+/** The account's Testnet credits (404 when the server runs no Testnet). */
+export type TestCredits = {
+  network: string;
+  usdc_granted_minor: number;
+  usdc_used_minor: number;
+  usdc_left_minor: number;
+  sol_lamports: number;
+};
+
+export function getTestCredits() {
+  return apiFetch<TestCredits>("/api/v1/me/credits");
+}
+
 // --- economic intents ---
 
 export function listMyEconomicIntents(limit = 50) {

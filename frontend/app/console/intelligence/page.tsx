@@ -7,6 +7,7 @@ import type { IntelChange, IntelEndpoint, IntelEndpointDetail, IntelProviderFace
 import { catalogName } from "@/lib/paysh";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel } from "@/lib/network";
+import { ChainMark, chainName, hasChainMark } from "@/components/chain-logos";
 import { providerTitle, shortHost } from "@/lib/provider-presentation";
 import { ProviderLogo } from "@/components/provider-logo";
 import { Button, ErrorNote, Input, Skeleton, timeAgo } from "@/components/console/ui";
@@ -23,6 +24,9 @@ const NETWORKS = [
   { id: "solana", label: "Solana mainnet" },
   { id: "solana-devnet", label: "Solana devnet" },
   { id: "base", label: "Base" },
+  { id: "base-sepolia", label: "Base Sepolia" },
+  { id: "arc", label: "Arc" },
+  { id: "arc-testnet", label: "Arc testnet" },
   { id: "sandbox", label: "Sandbox" },
 ];
 const LEVELS = [
@@ -62,7 +66,7 @@ const LEVEL_COLUMNS: { key: keyof IntelEndpoint["levels"]; label: string; hint: 
 ];
 
 const sourceName = (s: string) => (s === "sandbox" ? "Algebra sandbox" : catalogName(s));
-const networkName = (n: string) => (n === "base" ? "Base" : networkLabel(n) || "—");
+const networkName = (n: string) => (/^(base|arc)/.test(n) ? chainName(n) : networkLabel(n) || "—");
 const labelOf = (list: { id: string; label: string }[], id: string) => list.find((x) => x.id === id)?.label ?? id;
 
 const select =
@@ -541,7 +545,7 @@ function Row({ e, face, open, onToggle, canManage, onChanged }: { e: IntelEndpoi
           </div>
         </td>
         <td className={styles.wideOnly}>
-          <span className={styles.network}><span className={`${styles.dot} ${styles[`net_${e.network.replace(/[^a-z]/g, "")}`] ?? styles.dotIdle}`} />{networkName(e.network)}</span>
+          <span className={styles.network}>{hasChainMark(e.network) ? <ChainMark network={e.network} size={13} /> : <span className={`${styles.dot} ${styles[`net_${e.network.replace(/[^a-z]/g, "")}`] ?? styles.dotIdle}`} />}{networkName(e.network)}</span>
           <span className={styles.cellMeta}>{e.protocol}</span>
         </td>
         <td className={styles.wideOnly}>

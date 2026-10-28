@@ -27,7 +27,8 @@ export function safeNext(next: string | null): string | null {
 
 export function destinationFor(user: User, next: string | null) {
   if (!user.onboarded) return "/onboarding";
-  return safeNext(next) ?? "/console";
+  // The agent chat is where a signed-in person starts; the overview is one click away.
+  return safeNext(next) ?? "/console/agent";
 }
 
 export function AuthForm({ mode }: { mode: Mode }) {

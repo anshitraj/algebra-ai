@@ -593,7 +593,7 @@ export function QuickstartFlow({ demo = false }: { demo?: boolean }) {
                         <p>
                           A Spend Pass is your agent&apos;s permission to spend.
                           It sets the budget, per-call ceiling and allowed
-                          providers. You can manage it in the Spend firewall.
+                          providers. You can manage it on the Spend Passes page.
                           {pass && (
                             <>
                               {" "}
@@ -999,11 +999,11 @@ export function QuickstartFlow({ demo = false }: { demo?: boolean }) {
                               href="/console/agent"
                               className={styles.secondaryLink}
                             >
-                              Try it on Devnet with test money
+                              Try it on Testnet with test credits
                               <IconArrowRight size={14} />
                             </Link>
                             <p className={styles.note}>
-                              Pick Devnet at the top of the page. Algebra pays real sellers from its own test wallet, inside your pass&apos;s limits.
+                              Pick Testnet at the top of the page. Algebra pays real devnet sellers from its own test wallet, out of your 10 USDC of test credits and inside your pass&apos;s limits.
                             </p>
                           </>
                         )}

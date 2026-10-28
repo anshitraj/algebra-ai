@@ -1,6 +1,6 @@
-// Chain marks for "Powered by Solana" and the chains that are coming next.
-// The Solana mark is its official three-bar logo; the others are simple marks
-// in each chain's own colour, shown muted because Algebra doesn't run there yet.
+// Chain marks: Solana, Base and Arc (the chains the vault and the catalogs
+// speak), and the chains that are coming next. Solana's is its three-bar logo,
+// Base's its blue square, Arc's its arch in Arc's own gradient.
 
 import { useId } from "react";
 
@@ -38,12 +38,55 @@ export function PoweredBySolana({ className = "" }: { className?: string }) {
   );
 }
 
-function BaseMark({ size = 14 }: { size?: number }) {
+/** The Base mark (the blue square). */
+export function BaseMark({ size = 14, className = "" }: { size?: number; className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
+    <svg viewBox="0 0 24 24" width={size} height={size} className={className} role="img" aria-label="Base">
       <rect width="24" height="24" rx="5" fill="#0000FF" />
     </svg>
   );
+}
+
+/** The Arc mark (Circle's chain: the arch, in Arc's gradient). */
+export function ArcMark({ size = 14, className = "" }: { size?: number; className?: string }) {
+  const id = useId();
+  return (
+    <svg viewBox="0 0 31 32" width={(size * 31) / 32} height={size} className={className} role="img" aria-label="Arc">
+      <defs>
+        <linearGradient id={id} x1="0" y1="32" x2="31" y2="0" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#1C2998" />
+          <stop offset="0.53" stopColor="#3E2B63" />
+          <stop offset="1" stopColor="#942753" />
+        </linearGradient>
+      </defs>
+      <path
+        fill={`url(#${id})`}
+        d="M0 32C0.260374 24.166 1.59328 16.8547 3.82135 11.1696C6.64316 3.96673 10.728 0 15.3227 0C19.9174 0 24.0016 3.96673 26.824 11.1696C28.292 14.9157 29.372 19.3668 30.0119 24.2089C30.0691 24.6414 30.1178 25.0809 30.1678 25.5195C30.184 25.5466 30.1938 25.5718 30.1905 25.5923C30.1905 25.5923 30.5666 27.9326 30.6465 32H30.604C30.0462 31.5439 23.4681 26.3931 12.5636 27.8845C12.7282 26.0457 12.9544 24.2565 13.2467 22.5415C13.2617 22.4538 13.2789 22.3692 13.2942 22.2821C17.5711 22.1536 21.3146 22.6486 24.1853 23.2972C24.1746 23.2293 24.1657 23.1594 24.1547 23.0918C23.5647 19.4302 22.6941 16.0779 21.5717 13.2131C19.7364 8.52888 17.3416 5.61852 15.3227 5.61852C13.3038 5.61852 10.909 8.52888 9.07379 13.2131C8.62954 14.3462 8.22512 15.5545 7.86244 16.8291C7.35258 18.615 6.92424 20.5296 6.58214 22.5413C6.0758 25.5124 5.75944 28.6987 5.64292 32H0Z"
+      />
+    </svg>
+  );
+}
+
+/** Whether ChainMark has a mark for a network. */
+export function hasChainMark(network: string | undefined): boolean {
+  return /^(solana|base|arc)/i.test(network ?? "");
+}
+
+/** A chain's mark by network name ("solana", "base-sepolia", "arc"…); null for a chain without one. */
+export function ChainMark({ network, size = 14, className = "" }: { network: string | undefined; size?: number; className?: string }) {
+  const n = (network ?? "").toLowerCase();
+  if (n.startsWith("solana")) return <SolanaMark size={size} className={className} />;
+  if (n.startsWith("base")) return <BaseMark size={size} className={className} />;
+  if (n.startsWith("arc")) return <ArcMark size={size} className={className} />;
+  return null;
+}
+
+/** A chain's name for people: "Solana", "Base", "Arc" (test networks say so). */
+export function chainName(network: string | undefined): string {
+  const n = (network ?? "").toLowerCase();
+  const test = /devnet|sepolia|testnet/.test(n);
+  const name = n.startsWith("solana") ? "Solana" : n.startsWith("base") ? "Base" : n.startsWith("arc") ? "Arc" : network ?? "";
+  return test ? `${name} (test)` : name;
 }
 
 function EthereumMark({ size = 14 }: { size?: number }) {
@@ -74,6 +117,7 @@ function PolygonMark({ size = 14 }: { size?: number }) {
 
 const NEXT = [
   { name: "Base", mark: BaseMark },
+  { name: "Arc", mark: ArcMark },
   { name: "Ethereum", mark: EthereumMark },
   { name: "Arbitrum", mark: ArbitrumMark },
   { name: "Polygon", mark: PolygonMark },

@@ -30,7 +30,7 @@ const USES = [
 ];
 const STEPS = ["Welcome", "Your agents", "How it works"];
 const EASE = [0.16, 1, 0.3, 1] as const;
-// The first question, asked in demo mode (play money, no wallet): it works as written.
+// The first question, asked on Testnet (test credits, no wallet): Algebra's devnet price sellers answer it.
 const FIRST_QUESTION = "What does SOL cost right now? Use the best provider";
 
 export function OnboardingFlow() {
@@ -80,9 +80,10 @@ export function OnboardingFlow() {
     };
     try {
       setUser(await api.completeOnboarding(answers));
-      // A new person's first place is demo mode: an answer in seconds, with no wallet and no funds.
-      saveNetwork("sandbox");
-      setDestination(skipped ? "/console" : `/console/agent?prompt=${encodeURIComponent(FIRST_QUESTION)}`);
+      // A new person's first place is Testnet, in the agent chat: an answer in seconds, paid from the
+      // account's test credits, with no wallet and nothing real moving.
+      saveNetwork("solana-devnet");
+      setDestination(skipped ? "/console/agent" : `/console/agent?prompt=${encodeURIComponent(FIRST_QUESTION)}`);
       setDone(true);
       window.scrollTo({ top: 0, behavior: "instant" });
     } catch (err) {
@@ -199,8 +200,8 @@ export function OnboardingFlow() {
                     </h1>
                     <p className={styles.description}>
                       {firstName(user) ? `${firstName(user)}, your` : "Your"}{" "}
-                      account is ready. Let’s ask your first question in
-                      demo mode: play money, no wallet needed.
+                      account is ready, with 10 USDC of Testnet credits. Let’s
+                      ask your first question: no wallet needed.
                     </p>
                   </div>
                   <div className={styles.readyCard}>
@@ -221,18 +222,18 @@ export function OnboardingFlow() {
                     </span>
                   </div>
                   <Link className={styles.primary} href={destination}>
-                    {destination === "/console"
-                      ? "Open my workspace"
+                    {destination === "/console/agent"
+                      ? "Open the agent chat"
                       : "Ask my first question"}
                     <IconArrowRight size={18} />
                   </Link>
-                  {destination !== "/console" && (
+                  {destination !== "/console/agent" && (
                     <Link href="/console" className={styles.secondaryLink}>
                       Explore my workspace first
                     </Link>
                   )}
                   <p className={styles.footnote}>
-                    Demo mode uses play money: nothing real moves.
+                    Testnet uses test credits: nothing real moves.
                   </p>
                 </>
               ) : (
@@ -414,12 +415,12 @@ export function OnboardingFlow() {
                         <WalkthroughCard
                           index={2}
                           title="Watch it work"
-                          description="Follow each call, payment, and signed receipt. Start safely with play money in demo mode."
+                          description="Follow each call, payment, and signed receipt. Start safely on Testnet with test credits."
                         />
                       </ol>
                       <div className={styles.sandboxNote}>
                         <span aria-hidden="true">✦</span> Your first question runs
-                        in demo mode. No wallet or real funds needed.
+                        on Testnet, from 10 USDC of test credits. No wallet or real funds needed.
                       </div>
                     </>
                   )}

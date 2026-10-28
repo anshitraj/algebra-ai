@@ -14,10 +14,11 @@ import { formatUSDC } from "@/lib/money";
 import type { Simulation } from "@/lib/routing-types";
 import { networkLabel, useNetwork } from "@/lib/network";
 import { approvalRule } from "@/lib/pass-rules";
-import { ensurePracticePass } from "@/lib/practice";
-import { IconArrowUp, IconLock, IconRefresh, IconShield, IconStop, IconUnlock, Spinner } from "@/components/icons";
+import { ensureStarterPass } from "@/lib/practice";
+import { IconArrowUp, IconRefresh, IconShield, IconStop, Spinner } from "@/components/icons";
 import { useConsoleData } from "../console-data";
 import { ApprovalCard, type ApprovalOutcome } from "./approval-card";
+import { AskBeforePaying } from "./ask-before-paying";
 import { ModelPicker, type ModelChoice, type ProviderEntry } from "./model-picker";
 import { answerText, QuestionCard } from "./question-card";
 import { OptionsBoard } from "./options-card";
@@ -239,20 +240,22 @@ export function AgentWorkspace() {
     if (callsKey > 0) refreshRails();
   }, [callsKey, refreshRails]);
 
-  // Demo mode needs a pass of its own: simulated USDC, kept apart from a pass that pays test or real
-  // money. A signed-in account gets one the first time it practises (a demo account was given its pass at
-  // sign-up). One attempt per visit: a failure says so, rather than asking the server in a loop.
-  const needsPracticePass = ready && practice && !demo && passes !== null && !passes.some((p) => passFits(p, network, demo));
+  // Demo mode and Testnet each need a pass of their own (simulated USDC, test credits), kept apart from a
+  // pass that pays real money. A signed-in account gets one the first time it works there (a demo account
+  // was given its pass at sign-up). Mainnet passes are only ever made on purpose. One attempt per visit: a
+  // failure says so, rather than asking the server in a loop.
+  const starterEnv = practice ? "sandbox" : network === "solana-devnet" ? "devnet" : null;
+  const needsPracticePass = ready && starterEnv !== null && !demo && passes !== null && !passes.some((p) => passFits(p, network, demo));
   useEffect(() => {
-    if (!needsPracticePass || practiceSetup !== "idle") return;
+    if (!needsPracticePass || !starterEnv || practiceSetup !== "idle") return;
     setPracticeSetup("working");
-    ensurePracticePass()
+    ensureStarterPass(starterEnv)
       .then((p) => {
         setPracticeSetup(p ? "done" : "failed");
         if (p) setCallsKey((k) => k + 1);
       })
       .catch(() => setPracticeSetup("failed"));
-  }, [needsPracticePass, practiceSetup]);
+  }, [needsPracticePass, starterEnv, practiceSetup]);
 
   // Each person's chat is kept apart: the slot is named for the signed-in account.
   const userId = user?.id ?? "";
@@ -661,7 +664,15 @@ export function AgentWorkspace() {
                 ) : (
                   <PassPicker passes={fitting} value={pass ? passId : ""} onChange={pickPass} disabled={running} />
                 )}
-                {pass && <AskBeforePaying pass={pass} />}
+                {pass && (
+                  <AskBeforePaying
+                    pass={pass}
+                    disabled={running}
+                    onChanged={(askAbove) =>
+                      setPasses((all) => all && all.map((p) => (p.id === pass.id ? { ...p, approve_above_minor_units: askAbove } : p)))
+                    }
+                  />
+                )}
               </div>
               <span className={composerStyles.hint}>
                 <kbd className="font-mono">Enter</kbd> to send
@@ -810,34 +821,6 @@ function TurnView({
 }
 
 /** Which Spend Pass the chat pays under. Only active USDC passes can pay for API calls. */
-/**
- * What this chat does before it pays, read from the pass: the same rule the server enforces for every agent.
- * "Every payment" and "above an amount" show the offers and nothing is paid until the person presses Pay (that
- * press is recorded on the server as their approval). "Never" pays the recommended offer as soon as the pass
- * allows it. The rule is changed on the Spend firewall page, in one place.
- */
-function AskBeforePaying({ pass }: { pass: SpendPass }) {
-  const rule = approvalRule(pass);
-  const asks = rule.kind !== "never";
-  const label = rule.kind === "always" ? "Asks before every payment" : rule.kind === "above" ? "Asks before paying" : "Pays within this pass";
-  const title =
-    rule.kind === "always"
-      ? "This pass asks for your yes on every payment. Pick an offer and press Pay."
-      : rule.kind === "above"
-        ? `This pass asks from ${formatUSDC(rule.minor)}. In the chat you always pick an offer and press Pay. Change the rule on the Spend firewall page.`
-        : "This pass never asks: the recommended offer is paid on its own when the pass allows it. Change the rule on the Spend firewall page.";
-  return (
-    <Link
-      href={`/console/firewall#pass-${encodeURIComponent(pass.id)}`}
-      title={title}
-      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-foreground transition-colors hover:bg-primary-tint"
-    >
-      {asks ? <IconLock size={13} className="text-primary" /> : <IconUnlock size={13} className="text-accent" />}
-      {label}
-    </Link>
-  );
-}
-
 function PassPicker({
   passes,
   value,

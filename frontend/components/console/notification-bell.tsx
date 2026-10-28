@@ -15,7 +15,7 @@ const ICONS: Record<TxKind, (p: { size?: number }) => React.ReactNode> = {
   payment: (p) => <IconReceipt {...p} />,
 };
 
-const where = (n: AppNotification) => (n.network === "solana" ? "Mainnet" : n.network === "solana-devnet" ? "Devnet" : "");
+const where = (n: AppNotification) => (n.network === "solana" ? "Mainnet" : n.network === "solana-devnet" ? "Testnet" : "");
 
 export function NotificationBell() {
   const { items, unread, seenAt, markAllRead, clear } = useNotifications();

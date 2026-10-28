@@ -12,6 +12,7 @@
   --color-primary-tint: #f4f4f8;
   --color-border: #eeedf3;
   --color-border-strong: #dcdde6;
+  position: relative;
   container-type: inline-size;
   width: 100%;
   max-width: 920px;
