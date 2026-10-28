@@ -17,7 +17,7 @@ export type Network = Cluster | "sandbox";
 /** The three places to work, in the order a new person meets them. */
 export const NETWORKS: { id: Network; label: string; hint: string }[] = [
   { id: "sandbox", label: "Demo", hint: "Simulated USDC: no wallet needed and nothing real moves" },
-  { id: "solana-devnet", label: "Devnet", hint: "Free test USDC on Solana's test network, paid from your own wallet" },
+  { id: "solana-devnet", label: "Devnet", hint: "Free test USDC on Solana's test network, paid from Algebra's test wallet: nothing real moves" },
   { id: "solana", label: "Mainnet", hint: "Real USDC on Solana mainnet" },
 ];
 
