@@ -38,3 +38,8 @@ Thumbs.db
 
 # Pitch deck and talk script: kept locally, not in the repository
 /docs/pitch/
+
+# Terraform working files (provider binaries, local state)
+.terraform/
+*.tfstate
+*.tfstate.*
