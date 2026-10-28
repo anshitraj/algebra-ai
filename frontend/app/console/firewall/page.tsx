@@ -58,8 +58,8 @@ export default function FirewallPage() {
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader
-        title="Spend firewall"
-        description="Each agent holds a Spend Pass: a budget and your rules, enforced before every payment. Choose when it must ask you, or pause every agent at once."
+        title="Spend Passes"
+        description="Each agent holds a pass: a limit and your rules, checked before every payment. Switch one off, or stop every agent at once."
         actions={
           !creating && !issued ? (
             <Button onClick={() => setCreating(true)}>
@@ -97,8 +97,8 @@ export default function FirewallPage() {
       )}
 
       <section className="mt-8">
-        <h2 className="text-sm font-medium text-foreground">Your passes</h2>
-        <p className="mt-1 text-sm text-muted">Open a pass to see its rules. Algebra checks them before every payment.</p>
+        <h2 className="text-sm font-medium text-foreground">Your agents</h2>
+        <p className="mt-1 text-sm text-muted">Open a folder to read its rules; a paper inside opens that rule.</p>
         <div className="mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {!passes && !error && <Skeleton className="col-span-full h-80" />}
           {passes?.length === 0 && !creating && !issued && (
