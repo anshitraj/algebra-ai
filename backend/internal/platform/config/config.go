@@ -140,6 +140,9 @@ type Config struct {
 	// TestMoney bounds what the shared devnet payer can be made to spend
 	// (TEST_MONEY_*), now that a person's payments don't come from a vault.
 	TestMoney TestMoneyConfig
+	// Vault is the owner's own wallet (docs/WALLET.md): the EVM nodes its
+	// balances and withdrawals use, and whether mainnet deposits are shown.
+	Vault VaultConfig
 
 	// Results is how long the answer to a paid call is kept, so asking again
 	// returns it (RESULT_RETENTION, RESULT_MAX_BYTES; see results.go).
@@ -539,6 +542,7 @@ func FromEnv() (*Config, error) {
 	if err := loadTestMoney(&cfg.TestMoney); err != nil {
 		return nil, err
 	}
+	loadVault(&cfg.Vault)
 	if err := loadJupiter(&cfg.Jupiter); err != nil {
 		return nil, err
 	}
@@ -990,6 +994,35 @@ func checkMainnetExecution(execution bool, required map[string]bool) error {
 		return errors.New("config: MAINNET_EXECUTION=on pays with real money; set SPEND_PASS_REQUIRED=mainnet as well, so that every mainnet payment comes from an on-chain Spend Pass")
 	}
 	return nil
+}
+
+// VaultConfig configures the owner's vault. Each EVM chain's node is
+// <CHAIN>_RPC_URL (BASE_SEPOLIA_RPC_URL, ARC_TESTNET_RPC_URL, BASE_RPC_URL,
+// ARC_RPC_URL), defaulting to the chain's public node; "off" leaves the chain
+// out. MainnetDeposits (VAULT_MAINNET_DEPOSITS=on) shows mainnet deposit
+// addresses; it stays off until the design has been independently reviewed.
+type VaultConfig struct {
+	EVMRPC          map[string]string // by network: base, base-sepolia, arc, arc-testnet
+	MainnetDeposits bool
+}
+
+func loadVault(c *VaultConfig) {
+	c.EVMRPC = map[string]string{}
+	for network, def := range map[string][2]string{
+		"base-sepolia": {"BASE_SEPOLIA_RPC_URL", "https://sepolia.base.org"},
+		"arc-testnet":  {"ARC_TESTNET_RPC_URL", "https://rpc.testnet.arc.network"},
+		"base":         {"BASE_RPC_URL", "https://mainnet.base.org"},
+		"arc":          {"ARC_RPC_URL", "https://rpc.mainnet.arc.io"},
+	} {
+		url := strings.TrimSpace(os.Getenv(def[0]))
+		if url == "" {
+			url = def[1]
+		}
+		if !strings.EqualFold(url, "off") {
+			c.EVMRPC[network] = url
+		}
+	}
+	c.MainnetDeposits = strings.EqualFold(strings.TrimSpace(os.Getenv("VAULT_MAINNET_DEPOSITS")), "on")
 }
 
 // loadTestMoney reads TEST_MONEY_*: the test-money guard's daily counts.

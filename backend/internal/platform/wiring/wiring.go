@@ -37,6 +37,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/platform/bankoffers"
 	"github.com/project-algebra/algebra/internal/platform/config"
+	"github.com/project-algebra/algebra/internal/platform/evm"
 	"github.com/project-algebra/algebra/internal/platform/gcpkms"
 	"github.com/project-algebra/algebra/internal/platform/identity"
 	"github.com/project-algebra/algebra/internal/platform/payersigner"
@@ -159,6 +160,9 @@ type Bundle struct {
 	// TestCredits is every account's Testnet money; nil when no devnet rail
 	// runs.
 	TestCredits *app.TestCredits
+	// OwnerVaults is the owner's own wallet: addresses, balances, withdrawals
+	// the browser signed (docs/WALLET.md).
+	OwnerVaults *app.OwnerVaultService
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
 	// MCPLegacyTools: see config.Config.MCPLegacyTools.
@@ -622,6 +626,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	}
 
 	walletRPCs := map[string]app.WalletRPC{}
+	vaultSolana := map[string]app.VaultSolanaRPC{}
 	for _, c := range []struct{ cluster, network string }{{"devnet", chain.SolanaDevnet}, {"mainnet", chain.Solana}} {
 		url := defaultSolanaRPC[c.cluster]
 		for _, sc := range cfg.SolanaRails {
@@ -633,7 +638,15 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 				url = sc.RPCURL
 			}
 		}
-		walletRPCs[c.network] = solana.NewRPC(url, nil)
+		rpc := solana.NewRPC(url, nil)
+		walletRPCs[c.network], vaultSolana[c.network] = rpc, rpc
+	}
+	vaultEVM := map[string]app.VaultEVMRPC{}
+	for network, url := range cfg.Vault.EVMRPC {
+		vaultEVM[network] = evm.NewRPC(url)
+	}
+	if cfg.Vault.MainnetDeposits {
+		log.Printf("wiring: VAULT_MAINNET_DEPOSITS is on: mainnet deposit addresses are shown")
 	}
 
 	return &Bundle{
@@ -641,6 +654,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		WalletBalances: app.NewWalletBalanceService(accountSvc, walletRPCs),
 		DevnetFaucet:   buildDevnetFaucet(ctx, cfg, accountSvc, limiter, postgres.NewFaucetRepo(db)),
 		TestCredits:    credits,
+		OwnerVaults:    app.NewOwnerVaultService(postgres.NewOwnerVaultRepo(db), vaultSolana, vaultEVM, cfg.Vault.MainnetDeposits, limiter),
 		DB:             db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
 		Users: userSvc, Intents: intentSvc, Discovery: discoverySvc, Quotes: quoteSvc,
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
