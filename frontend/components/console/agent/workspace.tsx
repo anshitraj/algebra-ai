@@ -677,7 +677,7 @@ function TurnView({
   return (
     <div className="space-y-4">
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className="flex justify-end">
-        <p className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[0.95rem] leading-relaxed whitespace-pre-wrap text-primary-tint">
+        <p className="min-w-0 max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[0.95rem] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] text-primary-tint">
           {turn.user}
         </p>
       </motion.div>
@@ -901,7 +901,7 @@ function EmptyState({
               transition={{ duration: 0.45, delay: 0.1 + i * 0.05, ease: EASE }}
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.98 }}
-              className="rounded-2xl border border-border-strong bg-surface px-4 py-3.5 text-left text-[0.925rem] leading-snug text-foreground transition-[border-color,box-shadow] hover:border-primary/50 hover:shadow-[0_10px_24px_-18px_rgba(11,16,32,0.5)]"
+              className="min-w-0 rounded-2xl border border-border-strong bg-surface px-4 py-3.5 text-left text-[0.925rem] leading-snug [overflow-wrap:anywhere] text-foreground transition-[border-color,box-shadow] hover:border-primary/50 hover:shadow-[0_10px_24px_-18px_rgba(11,16,32,0.5)]"
             >
               {s}
             </motion.button>
