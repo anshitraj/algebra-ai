@@ -266,6 +266,38 @@ export function getTestCredits() {
   return apiFetch<TestCredits>("/api/v1/me/credits");
 }
 
+// --- the owner's vault (docs/WALLET.md): public addresses, balances, signed transactions only ---
+
+export type VaultRecord = { solana_address: string; evm_address: string; created_at: string; updated_at: string };
+export type VaultChainInfo = { id: string; name: string; kind: "solana" | "evm"; test: boolean; chain_id?: number; usdc: string; native_symbol: string; native_decimals: number; deposits: boolean; available: boolean };
+export type VaultBalance = { chain: string; address: string; usdc_minor: string; native_minor: string; native_symbol: string; ok: boolean };
+export type WithdrawParams = {
+  chain: string;
+  blockhash?: string;
+  recipient_has_token_account?: boolean;
+  evm?: { chain_id: number; nonce: number; max_priority_fee_per_gas: number; max_fee_per_gas: number; gas_limit: number };
+};
+
+export function getVault() {
+  return apiFetch<{ vault: VaultRecord | null; chains: VaultChainInfo[] }>("/api/v1/me/vault");
+}
+
+export function registerVault(proof: { solana_address: string; evm_address: string; message: string; solana_signature: string; evm_signature: string }) {
+  return apiFetch<{ vault: VaultRecord }>("/api/v1/me/vault", { method: "POST", body: proof });
+}
+
+export function getVaultBalances(network: "testnet" | "mainnet", force = false) {
+  return apiFetch<{ balances: VaultBalance[] }>(`/api/v1/me/vault/balances?network=${network}${force ? "&force=1" : ""}`);
+}
+
+export function prepareWithdraw(req: { chain: string; to: string; amount_minor: string }) {
+  return apiFetch<WithdrawParams>("/api/v1/me/vault/withdraw/prepare", { method: "POST", body: req });
+}
+
+export function broadcastVault(req: { chain: string; raw: string }) {
+  return apiFetch<{ hash: string }>("/api/v1/me/vault/broadcast", { method: "POST", body: req });
+}
+
 // --- economic intents ---
 
 export function listMyEconomicIntents(limit = 50) {

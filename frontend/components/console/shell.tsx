@@ -47,6 +47,7 @@ const PRIMARY: NavItem[] = [
 
 const CONTROLS: NavItem[] = [
   { href: "/console/firewall", label: "Spend Passes", icon: <IconShield /> },
+  { href: "/console/vault", label: "Vault", icon: <IconWallet /> },
 ];
 
 const DEVELOPERS: NavItem[] = [
@@ -223,7 +224,7 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
       <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 pb-4" aria-label="Console">
         {chat ? <>
           <div className="flex flex-col gap-1">
-            {[...PRIMARY.slice(0, 3), CONTROLS[0], { ...PRIMARY[5], label: "Activity" }, { href: "/console/settings", label: "Settings", icon: <IconSettings /> }].map(renderItem)}
+            {[PRIMARY[0], CONTROLS[1], ...PRIMARY.slice(1, 3), CONTROLS[0], { ...PRIMARY[5], label: "Activity" }, { href: "/console/settings", label: "Settings", icon: <IconSettings /> }].map(renderItem)}
           </div>
           <details className="console-more-tools"><summary>More tools <IconChevronDown size={13} /></summary><div>{[PRIMARY[3], PRIMARY[4], ...DEVELOPERS].map(renderItem)}</div></details>
           <SidebarBalance />
