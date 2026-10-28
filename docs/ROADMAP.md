@@ -48,10 +48,10 @@ and **Activity** (what was bought, what it cost, what came back). Everything els
 
 | # | What | State |
 |---|---|---|
-| 1 | Working endpoints: import Base and Arc listings too (shown, paid once a rail exists), health per endpoint, price and payee checks | in progress |
-| 2 | Recovery and refunds: unknown outcome blocks new payments and reconciles (built); credits come back when a paid call delivered nothing usable | in progress |
-| 3 | Console: chat is the default page, Testnet/Mainnet switch, Solana/Base/Arc marks, Spend Pass folders (on/off, limit bar, delete), answer cards per kind of request | in progress |
-| 4 | Browser wallet: generate, encrypt, recover, import, export, withdraw; EVM + Solana signer | next |
+| 1 | Working endpoints: import Base and Arc listings too (shown, paid once a rail exists), health per endpoint, price and payee checks | Base/Arc import built; health and checks already existed |
+| 2 | Recovery and refunds: unknown outcome blocks new payments and reconciles (built); credits come back when a paid call delivered nothing usable | built |
+| 3 | Console: chat is the default page, Testnet/Mainnet switch, Solana/Base/Arc marks, Spend Pass folders (on/off, limit bar, delete), answer cards per kind of request | built |
+| 4 | Browser wallet: generate, encrypt, recover, import, export, withdraw; EVM + Solana signer (docs/WALLET.md) | built on Testnet; Solana withdrawal proven on devnet, EVM withdrawal built and checked offline only |
 | 5 | Capped on-chain permissions on Solana and Base; Base x402 rail (EIP-3009); Circle Gateway deposits | next |
 | 6 | Job Pass: task budget, expiry, sub-agents share the parent budget, unknown recipients need approval, duplicate detection | next |
 | 7 | Multi-select and smart routing by cost per accepted result (failures and retries counted), purchase memory (reuse a fresh, reusable result instead of paying twice; catch loops) | next |
