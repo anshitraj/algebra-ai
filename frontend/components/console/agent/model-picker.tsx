@@ -51,16 +51,16 @@ export function ModelPicker({
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative min-w-0 max-w-full">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm text-muted transition-colors hover:bg-primary-tint hover:text-foreground"
+        className="inline-flex h-11 max-w-full items-center gap-1.5 rounded-lg px-2.5 text-sm text-muted transition-colors hover:bg-primary-tint hover:text-foreground"
       >
-        {modelLabel(providers, value)}
-        <IconChevronDown size={15} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="min-w-0 max-w-[180px] truncate" title={modelLabel(providers, value)}>{modelLabel(providers, value)}</span>
+        <IconChevronDown size={15} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       <AnimatePresence>
         {open && (
@@ -71,7 +71,7 @@ export function ModelPicker({
             transition={{ duration: 0.15 }}
             role="listbox"
             aria-label="Model"
-            className="absolute bottom-full left-0 z-30 mb-2 max-h-[min(420px,60vh)] w-72 overflow-y-auto rounded-xl border border-border bg-surface p-1.5 shadow-[0_18px_44px_-18px_rgba(11,16,32,0.4)]"
+            className="absolute bottom-full left-0 z-30 mb-2 max-h-[min(420px,60dvh)] w-[min(288px,calc(100vw-64px))] overflow-y-auto rounded-xl border border-border bg-surface p-1.5 shadow-[0_18px_44px_-18px_rgba(11,16,32,0.4)]"
           >
             <Option selected={value === null} onClick={() => pick(null)} label="Auto" hint="Best available model" />
             {providers?.map((p) => {
