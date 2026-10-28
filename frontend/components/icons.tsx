@@ -213,6 +213,53 @@ export const IconExternal = (p: IconProps) => (
     <path d="M13.5 4.5h6v6M19.5 4.5L11 13M17.5 14v4a1.5 1.5 0 01-1.5 1.5H6A1.5 1.5 0 014.5 18V8A1.5 1.5 0 016 6.5h4" />
   </Svg>
 );
+export const IconCopy = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="8.5" y="8.5" width="11" height="11" rx="2" />
+    <path d="M15.5 8.5V6.5a2 2 0 00-2-2h-7a2 2 0 00-2 2v7a2 2 0 002 2h2" />
+  </Svg>
+);
+export const IconSliders = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4.5 7h8M16.5 7h3M4.5 17h3M11.5 17h8" />
+    <circle cx="14.5" cy="7" r="2" />
+    <circle cx="9.5" cy="17" r="2" />
+  </Svg>
+);
+export const IconBook = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 6.5c-1.8-1.3-4.3-2-7.5-2v13c3.2 0 5.7.7 7.5 2 1.8-1.3 4.3-2 7.5-2v-13c-3.2 0-5.7.7-7.5 2z" />
+    <path d="M12 6.5v13" />
+  </Svg>
+);
+export const IconUsers = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="9.5" cy="8.5" r="3.5" />
+    <path d="M3.5 19.5c.6-3.2 3-5 6-5s5.4 1.8 6 5M15.5 5.2a3.5 3.5 0 010 6.6M17.8 14.8c1.5.7 2.5 2.4 2.7 4.7" />
+  </Svg>
+);
+export const IconBolt = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M13 3.5L5.5 13.5h6l-1 7 7.5-10h-6z" />
+  </Svg>
+);
+export const IconInfo = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 11v5M12 8h.01" />
+  </Svg>
+);
+export const IconShieldOutline = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z" />
+  </Svg>
+);
+export const IconBadgeCheck = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3l2.2 1.6 2.7-.1.8 2.6 2.2 1.6-.9 2.6.9 2.6-2.2 1.6-.8 2.6-2.7-.1L12 21l-2.2-1.6-2.7.1-.8-2.6-2.2-1.6.9-2.6-.9-2.6 2.2-1.6.8-2.6 2.7.1z" />
+    <path d="M8.8 12l2.2 2.2 4.2-4.3" />
+  </Svg>
+);
 export function Spinner({ size = 16, className = "" }: { size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={`animate-spin ${className}`} aria-hidden="true">

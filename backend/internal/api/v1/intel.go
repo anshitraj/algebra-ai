@@ -11,6 +11,7 @@ import (
 
 	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/intel"
+	"github.com/project-algebra/algebra/providers/catalog"
 )
 
 // --- Provider Intelligence: the endpoint registry ---
@@ -113,7 +114,43 @@ func (a *API) listIntelEndpoints(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"endpoints": viewsOf(eps), "total": total})
+	writeJSON(w, http.StatusOK, map[string]any{"endpoints": viewsOf(eps), "total": total, "providers": a.providerFaces(r.Context(), eps)})
+}
+
+// intelProvider is how its catalog presents an endpoint's provider: name, a
+// line about it, its own site and its logo. Third-party text, shown as text.
+type intelProvider struct {
+	FQN         string `json:"fqn"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Website     string `json:"website,omitempty"`
+	LogoURL     string `json:"logo_url,omitempty"`
+}
+
+// providerFaces finds the listed endpoints' providers in the catalogs, by
+// provider ID. Best effort: a catalog that can't be read in time leaves its
+// providers out, and the registry still answers.
+func (a *API) providerFaces(ctx context.Context, eps []intel.Endpoint) map[string]intelProvider {
+	out := map[string]intelProvider{}
+	if a.b.Directory == nil || len(eps) == 0 {
+		return out
+	}
+	want := make(map[string]bool, len(eps))
+	for _, e := range eps {
+		want[e.ProviderID] = true
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	l, err := a.b.Directory.List(ctx, catalog.Filter{})
+	if err != nil {
+		return out
+	}
+	for _, p := range l.Providers {
+		if want[p.ID] {
+			out[p.ID] = intelProvider{FQN: p.FQN, Name: p.Name, Description: p.Description, Website: p.Website, LogoURL: p.LogoURL}
+		}
+	}
+	return out
 }
 
 func (a *API) getIntelEndpoint(w http.ResponseWriter, r *http.Request) {

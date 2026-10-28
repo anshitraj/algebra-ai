@@ -27,6 +27,7 @@ import type {
   IntelChange,
   IntelEndpoint,
   IntelEndpointDetail,
+  IntelProviderFace,
   IntelQuery,
   IntelStatus,
   IssuedKey,
@@ -400,7 +401,7 @@ export function getIntelStatus() {
 export function listIntelEndpoints(q: IntelQuery = {}) {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") qs.set(k, String(v));
-  return apiFetch<{ endpoints: IntelEndpoint[]; total: number }>(`/api/v1/intel/endpoints?${qs}`);
+  return apiFetch<{ endpoints: IntelEndpoint[]; total: number; providers?: Record<string, IntelProviderFace> }>(`/api/v1/intel/endpoints?${qs}`);
 }
 
 export function getIntelEndpoint(id: string) {
