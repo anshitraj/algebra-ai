@@ -19,7 +19,7 @@ export function RequestPanel({ request, groups, pass, network, session, rail, ca
   callsKey: number;
   onEdit: () => void;
   onChangePass: () => void;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }) {
   const [walletOpen, setWalletOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);

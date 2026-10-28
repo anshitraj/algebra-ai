@@ -30,7 +30,6 @@ import {
 } from "@/components/icons";
 import { ConsoleDataProvider, useConsoleData } from "./console-data";
 import { NetworkProvider, useNetwork } from "@/lib/network";
-import { formatUSDC } from "@/lib/money";
 import { NotificationsProvider } from "@/lib/notifications";
 import { NetworkSwitch } from "./network-switch";
 import { NotificationBell } from "./notification-bell";
@@ -226,8 +225,8 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
           <div className="flex flex-col gap-1">
             {[...PRIMARY.slice(0, 3), CONTROLS[0], { ...PRIMARY[5], label: "Activity" }, { href: "/console/settings", label: "Settings", icon: <IconSettings /> }].map(renderItem)}
           </div>
-          <details className="console-more-tools"><summary>More tools <IconChevronDown size={13} /></summary><div>{[PRIMARY[3], PRIMARY[4], CONTROLS[1], ...DEVELOPERS].map(renderItem)}</div></details>
-          <SidebarBalance user={user} />
+          <details className="console-more-tools"><summary>More tools <IconChevronDown size={13} /></summary><div>{[PRIMARY[3], PRIMARY[4], ...DEVELOPERS].map(renderItem)}</div></details>
+          <SidebarBalance />
         </> : <>
         <div className="flex flex-col gap-0.5">{PRIMARY.map(renderItem)}</div>
         <div>
@@ -246,11 +245,11 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
   );
 }
 
-function SidebarBalance({ user }: { user: User }) {
-  const { wallets, practice } = useNetwork();
-  const mine = user.wallets?.find((w) => w.chain === "solana" && w.kind === "embedded") ?? user.wallets?.find((w) => w.chain === "solana");
-  const held = mine ? wallets?.wallets.find((w) => w.address === mine.address) : undefined;
-  return <div className="console-chat-balance"><div><span>{practice ? "Demo workspace" : "Your wallet balance"}</span><IconWallet size={14} /></div><strong>{practice ? "Play USDC" : held?.ok ? formatUSDC(held.usdc_minor) : "—"}</strong></div>;
+function SidebarBalance() {
+  const { network, practice } = useNetwork();
+  // Accounts hold no wallet since sign-in moved to emailed codes: say what payments are made in, not a balance.
+  const what = practice ? "Play USDC" : network === "solana" ? "Mainnet USDC" : "Devnet test USDC";
+  return <Link href="/console/firewall" className="console-chat-balance"><div><span>{practice ? "Demo workspace" : "Paying with"}</span><IconWallet size={14} /></div><strong>{what}</strong></Link>;
 }
 
 function Avatar({ user, size = 32 }: { user: User; size?: number }) {
