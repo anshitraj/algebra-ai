@@ -2,11 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { QuickstartFlow } from "@/components/console/quickstart-flow";
+import dynamic from "next/dynamic";
 import { Logo } from "@/components/logo";
 import { ProviderLogo } from "@/components/provider-logo";
 import { IconArrowRight, IconBan, IconCheck, IconChevronDown, IconClock, IconGauge, IconGrid, IconList, IconPlus, IconReceipt, IconSearch, IconShield, IconStop, IconStore, IconX } from "@/components/icons";
 import { FEATURED_PROVIDERS } from "@/lib/paysh";
+
+const QuickstartFlow = dynamic(
+  () => import("@/components/console/quickstart-flow").then((module) => module.QuickstartFlow),
+  { loading: () => <p className="p-6 text-sm text-muted" role="status">Preparing your quickstart…</p> },
+);
 
 type View = "Quickstart" | "Overview" | "Providers" | "Spend passes" | "Activity";
 type Execution = { id: string; capability: string; provider: string; host: string; amount: number; state: "Delivered" | "Blocked"; time: string };

@@ -119,6 +119,7 @@ export interface SceneBallHalfProps {
   lift?: number;
   advanced?: Partial<typeof ADVANCED_DEFAULTS>;
   paused?: boolean;
+  onReady?: () => void;
   className?: string;
   style?: CSSProperties;
 }
@@ -139,6 +140,7 @@ export default function SceneBallHalf({
   lift = 100,
   advanced,
   paused = false,
+  onReady,
   className,
   style,
 }: SceneBallHalfProps) {
@@ -156,9 +158,11 @@ export default function SceneBallHalf({
   });
   const ptrRef = useRef({ x: 0, y: 0, over: 0, down: 0 });
   const invalidateRef = useRef<(() => void) | null>(null);
+  const readyRef = useRef(onReady);
   const [contextVersion, setContextVersion] = useState(0);
 
   useEffect(() => {
+    readyRef.current = onReady;
     propsRef.current = {
       speed,
       size,
@@ -170,7 +174,7 @@ export default function SceneBallHalf({
       advanced: { ...ADVANCED_DEFAULTS, ...advanced },
     };
     invalidateRef.current?.();
-  }, [speed, size, accent, background, radius, lift, paused, advanced]);
+  }, [speed, size, accent, background, radius, lift, paused, advanced, onReady]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -261,7 +265,7 @@ export default function SceneBallHalf({
         stop();
         return;
       }
-      if (now - lastDraw < 1000 / 30) {
+      if (now - lastDraw < 1000 / 24) {
         raf = requestAnimationFrame(frame);
         return;
       }
@@ -277,7 +281,7 @@ export default function SceneBallHalf({
       const requestedQuality = Math.max(0.2, Math.min(1, adv.quality / 100));
       const q = Math.min(
         requestedQuality,
-        Math.sqrt(180_000 / (cssW * cssH)) / dpr,
+        Math.sqrt(90_000 / (cssW * cssH)) / dpr,
       );
       const W = Math.max(1, Math.round(cssW * dpr * q));
       const H = Math.max(1, Math.round(cssH * dpr * q));
@@ -429,7 +433,10 @@ export default function SceneBallHalf({
       gl!.uniform3f(U.uPtr, ptrQ[0], ptrQ[1], ptrS);
       gl!.uniform3f(U.uFx, adv.grain / 100, adv.vignette / 100, clock);
       gl!.drawArrays(gl!.TRIANGLES, 0, 3);
-      if (root!.dataset.renderer !== "webgl") root!.dataset.renderer = "webgl";
+      if (root!.dataset.renderer !== "webgl") {
+        root!.dataset.renderer = "webgl";
+        readyRef.current?.();
+      }
       if (canRun()) {
         running(true);
         raf = requestAnimationFrame(frame);
