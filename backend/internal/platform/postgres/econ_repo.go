@@ -376,6 +376,26 @@ func (r *EconRepo) PassSpend(ctx context.Context, passID string, since time.Time
 
 var _ app.PassEconomicSpend = (*EconRepo)(nil)
 
+// TestCreditSpend implements app.TestCreditSpend: the account's holds on the
+// rails that may still become payments, plus what its delivered payments
+// there cost. An intent the provider was paid for but didn't fulfil is left
+// out, which is how its credits come back.
+func (r *EconRepo) TestCreditSpend(ctx context.Context, userID string, rails []string) (int64, error) {
+	var total int64
+	err := r.db.Pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(CASE WHEN r.state = 'COMMITTED' THEN LEAST(r.hold_minor, i.committed_minor) ELSE r.hold_minor END), 0)
+		FROM economic_reservations r JOIN economic_intents i ON i.id = r.intent_id
+		WHERE i.principal_id = $1 AND r.rail = ANY($2)
+		  AND (r.state IN ('RESERVED', 'EXECUTING', 'UNKNOWN', 'RECONCILING')
+		       OR (r.state = 'COMMITTED' AND i.fulfillment <> 'NOT_FULFILLED'))`, userID, rails).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("postgres: summing test credit use: %w", err)
+	}
+	return total, nil
+}
+
+var _ app.TestCreditSpend = (*EconRepo)(nil)
+
 func (u *econUnit) AppendEvent(e app.EconEvent) error {
 	if err := app.ValidateEvent(e); err != nil {
 		return err

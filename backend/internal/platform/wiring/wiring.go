@@ -156,6 +156,9 @@ type Bundle struct {
 	// DevnetFaucet gives a signed-in person devnet SOL and USDC; nil when no
 	// funded faucet wallet is configured.
 	DevnetFaucet *app.DevnetFaucet
+	// TestCredits is every account's Testnet money; nil when no devnet rail
+	// runs.
+	TestCredits *app.TestCredits
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
 	// MCPLegacyTools: see config.Config.MCPLegacyTools.
@@ -597,6 +600,10 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	if guard := buildTestMoneyGuard(cfg, solanaRails, passRepo, limiter); guard != nil {
 		funders = append(funders, guard)
 	}
+	credits := buildTestCredits(cfg, solanaRails, passRepo, econRepo)
+	if credits != nil {
+		funders = append(funders, credits)
+	}
 	if len(funders) > 0 {
 		econSvc.SetFunder(funders)
 	}
@@ -633,6 +640,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Mainnet:        mainnet,
 		WalletBalances: app.NewWalletBalanceService(accountSvc, walletRPCs),
 		DevnetFaucet:   buildDevnetFaucet(ctx, cfg, accountSvc, limiter, postgres.NewFaucetRepo(db)),
+		TestCredits:    credits,
 		DB:             db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
 		Users: userSvc, Intents: intentSvc, Discovery: discoverySvc, Quotes: quoteSvc,
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
@@ -914,6 +922,23 @@ func buildTestMoneyGuard(cfg *config.Config, rails []*solanax402.Rail, passes ap
 	}
 	log.Printf("wiring: test-money guard on %v: each account up to %d payments a day, everyone up to %d, counted %s", names, cfg.TestMoney.PerAccountPerDay, cfg.TestMoney.PerDay, counted)
 	return app.NewTestMoneyGuard(names, passes, limiter, cfg.TestMoney.PerAccountPerDay, cfg.TestMoney.PerDay)
+}
+
+// buildTestCredits gives every account its Testnet credits on the devnet
+// rails (see app.TestCredits). Nil where no devnet rail runs, or when off.
+func buildTestCredits(cfg *config.Config, rails []*solanax402.Rail, passes app.PassOwners, spend app.TestCreditSpend) *app.TestCredits {
+	var names []string
+	for _, r := range rails {
+		if r.Network() == chain.SolanaDevnet {
+			names = append(names, r.Name())
+		}
+	}
+	if len(names) == 0 || cfg.TestMoney.CreditsOff {
+		return nil
+	}
+	log.Printf("wiring: Testnet credits on %v: each account starts with %s USDC and %s SOL", names,
+		chain.FormatUnits(cfg.TestMoney.CreditsUSDCMinor, chain.USDCDecimals), chain.FormatUnits(cfg.TestMoney.CreditsSOLLamports, 9))
+	return app.NewTestCredits(names, chain.SolanaDevnet, passes, spend, cfg.TestMoney.CreditsUSDCMinor, cfg.TestMoney.CreditsSOLLamports)
 }
 
 // buildOnchainPasses turns on on-chain Spend Passes (ONCHAIN_PASSES=on) for

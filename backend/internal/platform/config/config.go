@@ -236,6 +236,12 @@ type TestMoneyConfig struct {
 	// and for everyone (TEST_MONEY_PER_ACCOUNT_PER_DAY, TEST_MONEY_PER_DAY).
 	PerAccountPerDay int
 	PerDay           int
+	// Testnet credits every account starts with (TEST_CREDITS_USDC, default
+	// 10; TEST_CREDITS_SOL, default 5). TEST_CREDITS=off turns them off, and
+	// then only the daily counts bound an account.
+	CreditsOff         bool
+	CreditsUSDCMinor   int64
+	CreditsSOLLamports int64
 }
 
 // OnchainPassConfig configures on-chain Spend Passes (a vault per pass, kept
@@ -1004,6 +1010,19 @@ func loadTestMoney(c *TestMoneyConfig) error {
 		return errors.New("config: TEST_MONEY_PER_DAY must be between 1 and 1000000")
 	}
 	c.PerAccountPerDay, c.PerDay = int(perAccount), int(perDay)
+	c.CreditsOff = strings.EqualFold(strings.TrimSpace(os.Getenv("TEST_CREDITS")), "off")
+	usdc, err := getInt64("TEST_CREDITS_USDC", 10)
+	if err != nil {
+		return err
+	}
+	sol, err := getInt64("TEST_CREDITS_SOL", 5)
+	if err != nil {
+		return err
+	}
+	if usdc < 0 || usdc > 1_000 || sol < 0 || sol > 1_000 {
+		return errors.New("config: TEST_CREDITS_USDC and TEST_CREDITS_SOL must be between 0 and 1000")
+	}
+	c.CreditsUSDCMinor, c.CreditsSOLLamports = usdc*1_000_000, sol*1_000_000_000
 	return nil
 }
 
