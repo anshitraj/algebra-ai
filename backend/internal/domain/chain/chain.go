@@ -63,6 +63,17 @@ func IsTestNetwork(network string) bool {
 	return false
 }
 
+// Payable reports whether Algebra has a payment rail for a network today.
+// Catalogs list endpoints on Base and Arc too; those are shown and tracked,
+// but never offered to the router until a rail pays there.
+func Payable(network string) bool {
+	switch NormalizeNetwork(network) {
+	case Solana, SolanaDevnet, Sandbox:
+		return true
+	}
+	return false
+}
+
 // NormalizeAsset upper-cases a token symbol ("usdc" becomes "USDC").
 func NormalizeAsset(raw string) string {
 	return strings.ToUpper(strings.TrimSpace(raw))

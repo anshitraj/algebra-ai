@@ -28,6 +28,9 @@ func Candidates(d *Detail, source routing.DiscoverySource, extra func(*routing.C
 			pays = []Payment{{Network: chain.Solana, PriceMinor: e.PriceMinor}}
 		}
 		for _, pay := range pays {
+			if !chain.Payable(pay.Network) {
+				continue // listed on a chain Algebra has no rail for yet (Base, Arc)
+			}
 			c := routing.Candidate{
 				Capability: e.Capability, Provider: d.ID, Name: d.Name, ExecutionType: routing.ExecX402,
 				Endpoint: e.URL, Method: e.Method, PriceMinor: pay.PriceMinor, Asset: Currency, Network: pay.Network,

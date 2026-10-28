@@ -7,10 +7,13 @@
 // discovery/resources). All speak the same discovery format, with small
 // differences a Profile captures.
 //
-// Algebra keeps what it can pay: endpoints that accept Circle's real USDC on
-// Solana, mainnet or devnet, as plain x402 (not Circle Gateway batching and
-// not behind a browser sign-in). It groups them by provider and records, for
-// each endpoint, the networks it can be paid on and the price on each.
+// Algebra keeps endpoints that accept Circle's real USDC as plain x402 (not
+// Circle Gateway batching and not behind a browser sign-in) on the networks a
+// profile reads: Solana (mainnet, devnet) everywhere, and Base and Arc where
+// the directory lists them. It groups them by provider and records, for each
+// endpoint, the networks it can be paid on and the price on each. Whether
+// Algebra can pay a network today is decided later (chain.Payable): a Base or
+// Arc listing is shown and tracked before a rail for it exists.
 //
 // The rules every catalog follows apply (providers/catalog): fetched through
 // the SSRF-safe client with a body limit, every field validated and bounded,
@@ -38,10 +41,14 @@ import (
 	"github.com/project-algebra/algebra/providers/catalog"
 )
 
-// The Solana clusters, as discovery directories write them.
+// The networks, as discovery directories write them.
 const (
-	caipMainnet = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
-	caipDevnet  = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
+	caipMainnet     = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
+	caipDevnet      = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
+	caipBase        = "eip155:8453"
+	caipBaseSepolia = "eip155:84532"
+	caipArc         = "eip155:5042"
+	caipArcTestnet  = "eip155:5042002"
 
 	maxItems      = 6000
 	maxPerProv    = 600
@@ -59,8 +66,8 @@ type Profile struct {
 	// PageURL is where a person browses the directory; empty uses each
 	// provider's own website.
 	PageURL string
-	// Networks maps each Solana cluster to the network values to ask the
-	// directory for (some list x402 v1 names and CAIP-2 IDs separately).
+	// Networks maps each network read (canonical name) to the values to ask
+	// the directory for (some list x402 v1 names and CAIP-2 IDs separately).
 	Networks map[string][]string
 	// Query is added to every request.
 	Query url.Values
@@ -94,8 +101,12 @@ func Circle(discoveryURL string) Profile {
 	}
 	return Profile{
 		Name: "circle", Prefix: "circle:", CapabilityPrefix: "circle.", URL: discoveryURL,
-		PageURL:  "https://agents.circle.com/services",
-		Networks: map[string][]string{chain.Solana: {caipMainnet}, chain.SolanaDevnet: {caipDevnet}},
+		PageURL: "https://agents.circle.com/services",
+		Networks: map[string][]string{
+			chain.Solana: {caipMainnet}, chain.SolanaDevnet: {caipDevnet},
+			chain.Base: {caipBase}, chain.BaseSepolia: {caipBaseSepolia},
+			chain.Arc: {caipArc}, chain.ArcTestnet: {caipArcTestnet},
+		},
 		Query:    url.Values{"supportsVanillax402": {"true"}, "siwx": {"false"}},
 		PageSize: 200, Source: routing.SourceCircle,
 	}
@@ -109,7 +120,10 @@ func PayAI(discoveryURL string) Profile {
 	}
 	return Profile{
 		Name: "payai", Prefix: "payai:", CapabilityPrefix: "payai.", URL: discoveryURL,
-		Networks: map[string][]string{chain.Solana: {caipMainnet, "solana"}, chain.SolanaDevnet: {caipDevnet, "solana-devnet"}},
+		Networks: map[string][]string{
+			chain.Solana: {caipMainnet, "solana"}, chain.SolanaDevnet: {caipDevnet, "solana-devnet"},
+			chain.Base: {caipBase, "base"}, chain.BaseSepolia: {caipBaseSepolia, "base-sepolia"},
+		},
 		PageSize: 1000, Source: routing.SourceX402,
 	}
 }
@@ -298,8 +312,7 @@ func (c *Client) fetch(ctx context.Context) (*snapshot, error) {
 		return c.fetchUnfiltered(ctx)
 	}
 	var items []netItem
-	clusters := []string{chain.Solana, chain.SolanaDevnet}
-	for _, cluster := range clusters {
+	for _, cluster := range readOrder {
 		for _, value := range c.cfg.Profile.Networks[cluster] {
 			for offset := 0; len(items) < maxItems; offset += c.cfg.Profile.PageSize {
 				page, total, err := c.page(ctx, value, offset)
@@ -318,10 +331,22 @@ func (c *Client) fetch(ctx context.Context) (*snapshot, error) {
 	return parse(c.cfg.Profile, items, c.cfg.Now())
 }
 
+// readOrder is the order networks are read and preferred in: Solana first
+// (Algebra pays there today), then Base, then Arc. An endpoint's headline terms
+// are those of the first network in this order it can be paid on.
+var readOrder = []string{chain.Solana, chain.SolanaDevnet, chain.Base, chain.BaseSepolia, chain.Arc, chain.ArcTestnet}
+
+func networkRank(n string) int {
+	if i := slices.Index(readOrder, n); i >= 0 {
+		return i
+	}
+	return len(readOrder)
+}
+
 // fetchUnfiltered reads a directory that lists every chain together: the
-// first MaxPages pages, keeping each entry under the Solana clusters it can be
-// paid on. A page that fails after the first leaves what was read: the list is
-// ordered by use, so the head is the part worth having.
+// first MaxPages pages, keeping each entry under the profile's networks it can
+// be paid on. A page that fails after the first leaves what was read: the list
+// is ordered by use, so the head is the part worth having.
 func (c *Client) fetchUnfiltered(ctx context.Context) (*snapshot, error) {
 	var items []netItem
 	size := c.cfg.Profile.PageSize
@@ -334,7 +359,7 @@ func (c *Client) fetchUnfiltered(ctx context.Context) (*snapshot, error) {
 			break
 		}
 		for _, raw := range raws {
-			for _, cluster := range solanaClusters(raw) {
+			for _, cluster := range listedNetworks(c.cfg.Profile, raw) {
 				items = append(items, netItem{network: cluster, raw: raw})
 			}
 		}
@@ -345,9 +370,9 @@ func (c *Client) fetchUnfiltered(ctx context.Context) (*snapshot, error) {
 	return parse(c.cfg.Profile, items, c.cfg.Now())
 }
 
-// solanaClusters are the Solana clusters an entry has some payment option on,
-// before it is looked at any closer.
-func solanaClusters(raw json.RawMessage) []string {
+// listedNetworks are the profile's networks an entry has some payment option
+// on, before it is looked at any closer.
+func listedNetworks(p Profile, raw json.RawMessage) []string {
 	var probe struct {
 		Accepts []struct {
 			Network string `json:"network"`
@@ -358,7 +383,8 @@ func solanaClusters(raw json.RawMessage) []string {
 	}
 	var out []string
 	for _, a := range probe.Accepts {
-		if n := chain.NormalizeNetwork(a.Network); (n == chain.Solana || n == chain.SolanaDevnet) && !slices.Contains(out, n) {
+		n := chain.NormalizeNetwork(a.Network)
+		if _, read := p.Networks[n]; read && !slices.Contains(out, n) {
 			out = append(out, n)
 		}
 	}
@@ -575,9 +601,9 @@ type endpointRec struct {
 
 // parse turns directory entries into providers and their endpoints. Each
 // entry is decoded and checked on its own; one that can't be paid in USDC on
-// the Solana cluster it was listed under, or doesn't validate, is dropped
-// without affecting the rest. The same endpoint listed for mainnet and devnet
-// becomes one endpoint payable on both.
+// the network it was listed under, or doesn't validate, is dropped without
+// affecting the rest. The same endpoint listed on several networks becomes one
+// endpoint payable on each.
 func parse(p Profile, items []netItem, now time.Time) (*snapshot, error) {
 	recs := map[string]*endpointRec{}
 	var order []string
@@ -672,7 +698,7 @@ func parse(p Profile, items []netItem, now time.Time) (*snapshot, error) {
 		}
 	}
 	if len(items) > 0 && len(recs) == 0 {
-		return nil, fmt.Errorf("bazaar: %s's directory has entries but none payable in USDC on Solana that this version understands", p.Name)
+		return nil, fmt.Errorf("bazaar: %s's directory has entries but none payable in USDC on a network this version reads", p.Name)
 	}
 	return group(p, recs, order, now), nil
 }
@@ -687,7 +713,7 @@ func group(p Profile, recs map[string]*endpointRec, order []string, now time.Tim
 	for _, key := range order {
 		r := recs[key]
 		ep := r.ep
-		slices.SortFunc(ep.Payments, func(a, b catalog.Payment) int { return strings.Compare(a.Network, b.Network) }) // "solana" first
+		slices.SortFunc(ep.Payments, func(a, b catalog.Payment) int { return cmp.Compare(networkRank(a.Network), networkRank(b.Network)) }) // Solana first
 		head := ep.Payments[0]
 		ep.Network, ep.PriceMinor, ep.PayTo, ep.Free = head.Network, head.PriceMinor, head.PayTo, head.PriceMinor == 0
 		ep.Pricing = chain.FormatUnits(head.PriceMinor, chain.USDCDecimals) + " USDC"
