@@ -25,6 +25,7 @@ import { ThinkingLine } from "./live-activity";
 import { RichText } from "./rich-text";
 import { PassPanel, RecentCallsPanel } from "./side-panels";
 import { Timeline, type Step } from "./timeline";
+import composerStyles from "./composer.module.css";
 
 type Turn = {
   id: string;
@@ -159,6 +160,13 @@ export function AgentWorkspace() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [input]);
 
   useEffect(() => {
     fetch("/api/agent/providers")
@@ -534,13 +542,13 @@ export function AgentWorkspace() {
           </div>
         </div>
 
-        <div className="shrink-0 px-5 pb-5">
+        <div className={composerStyles.dock}>
           <form
             onSubmit={(e) => {
               e.preventDefault();
               send(input);
             }}
-            className="console-inverse mx-auto w-full max-w-[720px] rounded-2xl border border-border-strong bg-surface shadow-[0_10px_30px_-18px_rgba(11,16,32,0.35)] transition-[border-color,box-shadow] focus-within:border-primary/70 focus-within:shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-primary)_10%,transparent),0_10px_30px_-18px_rgba(11,16,32,0.35)]"
+            className={composerStyles.composer}
           >
             <label htmlFor="agent-input" className="sr-only">
               Message the agent
@@ -549,12 +557,7 @@ export function AgentWorkspace() {
               id="agent-input"
               ref={inputRef}
               value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                const el = e.target;
-                el.style.height = "auto";
-                el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-              }}
+              onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
@@ -569,13 +572,15 @@ export function AgentWorkspace() {
                   ? "Describe a task and a maximum spend…"
                   : "Connect an AI model to start"
               }
-              className="block max-h-[200px] w-full resize-none bg-transparent px-4 pt-3.5 text-[0.95rem] leading-relaxed text-foreground placeholder:text-muted/80 focus:outline-none disabled:cursor-not-allowed"
+              className={composerStyles.input}
             />
-            <div className="flex flex-wrap items-center gap-2 px-2.5 pt-1 pb-2.5">
-              <ModelPicker providers={providers} value={choice} onChange={pickModel} lockedProvider={lockedProvider} />
-              <PassPicker passes={fitting} vaults={vaults} value={pass ? passId : ""} onChange={pickPass} disabled={running} sandbox={network === "sandbox"} />
-              {pass && <AskBeforePaying />}
-              <span className="hidden text-xs text-muted/80 xl:ml-auto xl:inline">
+            <div className={composerStyles.toolbar}>
+              <div className={composerStyles.controls}>
+                <ModelPicker providers={providers} value={choice} onChange={pickModel} lockedProvider={lockedProvider} />
+                <PassPicker passes={fitting} vaults={vaults} value={pass ? passId : ""} onChange={pickPass} disabled={running} sandbox={network === "sandbox"} />
+                {pass && <AskBeforePaying />}
+              </div>
+              <span className={composerStyles.hint}>
                 <kbd className="font-mono">Enter</kbd> to send
               </span>
               {running ? (
@@ -583,7 +588,7 @@ export function AgentWorkspace() {
                   type="button"
                   onClick={() => abortRef.current?.abort()}
                   aria-label="Stop"
-                  className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-foreground text-background transition-transform active:scale-95 xl:ml-0"
+                  className={composerStyles.action}
                 >
                   <IconStop size={16} />
                 </button>
@@ -592,14 +597,14 @@ export function AgentWorkspace() {
                   type="submit"
                   disabled={!input.trim() || !anyProvider}
                   aria-label="Send"
-                  className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-tint transition-[transform,opacity] active:scale-95 disabled:opacity-35 xl:ml-0"
+                  className={composerStyles.action}
                 >
                   <IconArrowUp size={17} strokeWidth={2} />
                 </button>
               )}
             </div>
           </form>
-          <p className="mx-auto mt-2 max-w-[720px] text-center text-xs text-muted/80">
+          <p className={composerStyles.note}>
             {network === "sandbox" ? "Simulated USDC in the sandbox" : `USDC on Solana ${networkLabel(network).toLowerCase()}`} · You choose and approve every payment · Spend Pass checked on every request
           </p>
         </div>
@@ -717,7 +722,7 @@ function AskBeforePaying() {
   return (
     <span
       title="Every payment waits for you: the agent shows the options as cards, and nothing is paid until you pick one and press Pay. The agent can't pay on its own."
-      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-foreground"
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-foreground"
     >
       <IconLock size={13} className="text-primary" /> Asks before paying
     </span>
@@ -744,13 +749,13 @@ function PassPicker({
   if (passes === null) return null;
   if (passes.length === 0) {
     return (
-      <Link href="/console/passes" className="inline-flex h-8 shrink-0 items-center rounded-lg px-2.5 text-xs font-medium text-primary hover:bg-primary-tint">
+      <Link href="/console/passes" className="inline-flex min-h-11 items-center rounded-lg px-2.5 text-xs font-medium text-primary hover:bg-primary-tint">
         Create a USDC pass to pay
       </Link>
     );
   }
   return (
-    <label className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-lg px-2 text-xs text-muted hover:bg-primary-tint/60">
+    <label className={composerStyles.pass}>
       <IconShield size={14} className="shrink-0 text-primary" />
       <span className="sr-only">Spend Pass</span>
       <select

@@ -79,11 +79,6 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string) {
   if (!shader) throw new Error("Shader creation failed");
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const log = gl.getShaderInfoLog(shader);
-    gl.deleteShader(shader);
-    throw new Error(log || "Shader compilation failed");
-  }
   return shader;
 }
 
@@ -98,8 +93,7 @@ function createProgram(gl: WebGL2RenderingContext) {
     gl.attachShader(program, vertex);
     gl.attachShader(program, fragment);
     gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-      throw new Error(gl.getProgramInfoLog(program) || "Shader linking failed");
+    // Status and uniform queries wait until parallel compilation completes below.
     return program;
   } catch (error) {
     if (program) gl.deleteProgram(program);
@@ -176,6 +170,8 @@ export default function SceneBallHalf({
     const root = rootRef.current;
     const canvas = canvasRef.current;
     if (!root || !canvas) return;
+    root.dataset.renderer = "loading";
+    delete root.dataset.ready;
     const gl = canvas.getContext("webgl2", {
       antialias: false,
       premultipliedAlpha: false,
@@ -187,6 +183,13 @@ export default function SceneBallHalf({
       root.dataset.renderer = "fallback";
       return;
     }
+    const parallel = gl.getExtension("KHR_parallel_shader_compile");
+    if (!parallel) {
+      // Keep the still illustration on drivers that cannot compile off-thread.
+      root.dataset.renderer = "fallback";
+      return;
+    }
+    const completionStatus = parallel.COMPLETION_STATUS_KHR;
     let program: WebGLProgram;
     try {
       program = createProgram(gl);
@@ -195,9 +198,7 @@ export default function SceneBallHalf({
       return;
     }
 
-    const U = Object.fromEntries(
-      UNIFORMS.map((name) => [name, gl.getUniformLocation(program, name)]),
-    ) as Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null>;
+    let U: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null>;
     const buffer = gl.createBuffer();
     const vao = gl.createVertexArray();
     if (!buffer || !vao) {
@@ -214,15 +215,13 @@ export default function SceneBallHalf({
       new Float32Array([-1, -1, 3, -1, -1, 3]),
       gl.STATIC_DRAW,
     );
-    const position = gl.getAttribLocation(program, "aPos");
-    gl.enableVertexAttribArray(position);
-    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
-
     let cssW = root.clientWidth || 1;
     let cssH = root.clientHeight || 1;
     let inView = false;
     let lost = false;
     let disposed = false;
+    let ready = false;
+    let compileRaf = 0;
     let raf = 0;
     let last = -1;
     let lastDraw = -Infinity;
@@ -231,7 +230,7 @@ export default function SceneBallHalf({
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     const eased = { over: 0, down: 0, px: 0, py: 0 };
     const canDraw = () =>
-      !disposed && !lost && inView && document.visibilityState === "visible";
+      ready && !disposed && !lost && inView && document.visibilityState === "visible";
     const canRun = () =>
       canDraw() &&
       !media.matches &&
@@ -261,11 +260,16 @@ export default function SceneBallHalf({
         stop();
         return;
       }
-      if (now - lastDraw < 1000 / 30) {
+      const interval = 1000 / 30;
+      const elapsed = now - lastDraw;
+      if (elapsed + 0.5 < interval) {
         raf = requestAnimationFrame(frame);
         return;
       }
-      lastDraw = now;
+      // Carry fractional frame time so 60 Hz displays don't drop to 20 fps.
+      lastDraw = Number.isFinite(elapsed)
+        ? now - (Math.max(0, elapsed - interval) % interval)
+        : now;
       const dt =
         last < 0 || !canRun() ? 0 : Math.min((now - last) / 1000, 1 / 20);
       last = now;
@@ -464,8 +468,39 @@ export default function SceneBallHalf({
     canvas.addEventListener("webglcontextlost", onLost);
     canvas.addEventListener("webglcontextrestored", onRestore);
 
+    // LINK_STATUS blocks the UI until the driver finishes compiling this large
+    // shader. COMPLETION_STATUS_KHR can be polled without waiting on the GPU.
+    const compileStarted = performance.now();
+    function finishCompilation() {
+      compileRaf = 0;
+      if (disposed || lost) return;
+      if (!gl!.getProgramParameter(program, completionStatus)) {
+        if (performance.now() - compileStarted < 10_000) {
+          compileRaf = requestAnimationFrame(finishCompilation);
+        } else root!.dataset.renderer = "fallback";
+        return;
+      }
+      if (!gl!.getProgramParameter(program, gl!.LINK_STATUS)) {
+        root!.dataset.renderer = "fallback";
+        return;
+      }
+      U = Object.fromEntries(
+        UNIFORMS.map((name) => [name, gl!.getUniformLocation(program, name)]),
+      ) as typeof U;
+      gl!.bindVertexArray(vao);
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, buffer);
+      const position = gl!.getAttribLocation(program, "aPos");
+      gl!.enableVertexAttribArray(position);
+      gl!.vertexAttribPointer(position, 2, gl!.FLOAT, false, 0, 0);
+      ready = true;
+      root!.dataset.ready = "true";
+      invalidate();
+    }
+    compileRaf = requestAnimationFrame(finishCompilation);
+
     return () => {
       disposed = true;
+      cancelAnimationFrame(compileRaf);
       stop();
       invalidateRef.current = null;
       resizeObserver.disconnect();
