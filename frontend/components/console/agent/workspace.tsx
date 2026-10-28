@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import type { AgentEvent, AskedQuestion, Choice, OptionGroup, ReceiptInfo } from "@/lib/agent/events";
 import { chatKey } from "@/lib/agent/chat-store";
@@ -22,16 +22,18 @@ import { ApprovalCard, type ApprovalOutcome } from "./approval-card";
 import { ModelPicker, type ModelChoice, type ProviderEntry } from "./model-picker";
 import { answerText, QuestionCard } from "./question-card";
 import { OptionsBoard } from "./options-card";
-import { ReceiptCard } from "./receipt-card";
+import { DeliveryPanel } from "./delivery-panel";
 import { ThinkingLine } from "./live-activity";
 import { RichText } from "./rich-text";
-import { PassPanel, RecentCallsPanel } from "./side-panels";
+import { RequestPanel } from "./request-panel";
 import { Timeline, type Step } from "./timeline";
 import composerStyles from "./composer.module.css";
 
 type Turn = {
   id: string;
   user: string;
+  /** Original request shown when a provider selection starts the paid turn. */
+  displayUser?: string;
   steps: Step[];
   notes: string[];
   approvals: { intentId: string; provider?: string; askedFirst?: boolean; decision?: Simulation; resolved?: ApprovalOutcome }[];
@@ -159,6 +161,7 @@ function whyItDidNotStart(status: number) {
 }
 
 export function AgentWorkspace() {
+  const router = useRouter();
   const { user } = useSession();
   const { refresh: refreshConsole } = useConsoleData();
   const { network, demo, practice, ready, rails, refreshRails } = useNetwork();
@@ -174,7 +177,6 @@ export function AgentWorkspace() {
   const [running, setRunning] = useState(false);
   const [session, setSession] = useState<SessionTotals>({ spent: 0, calls: 0, steps: 0 });
   const [callsKey, setCallsKey] = useState(0);
-  const [inspector, setInspector] = useState<"pass" | "activity">("pass");
   const [passes, setPasses] = useState<SpendPass[] | null>(null);
   // What each pass has locked in its Solana vault on the chosen network; a pass with none isn't a key.
   const [vaults, setVaults] = useState<Record<string, number>>({});
@@ -190,8 +192,13 @@ export function AgentWorkspace() {
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    const resize = () => {
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
   }, [input]);
 
   useEffect(() => {
@@ -302,7 +309,11 @@ export function AgentWorkspace() {
   // Keep the newest content in view unless the user scrolled up to read.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && stickRef.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (!el || !stickRef.current) return;
+    const latest = turns.at(-1);
+    const completed = latest?.receipts?.length && latest.status !== "running" ? el.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(latest.id)}"]`) : null;
+    const top = completed ? el.scrollTop + completed.getBoundingClientRect().top - el.getBoundingClientRect().top : el.scrollHeight;
+    el.scrollTo({ top, behavior: "smooth" });
   }, [turns]);
 
   const anyProvider = providers?.some((p) => p.available) ?? false;
@@ -312,11 +323,11 @@ export function AgentWorkspace() {
   }, []);
 
   const send = useCallback(
-    async (raw: string, choices?: Choice[]) => {
+    async (raw: string, choices?: Choice[], displayUser?: string) => {
       const text = raw.trim();
       if (!text || running) return;
       const id = uid();
-      setTurns((ts) => [...ts, { id, user: text, steps: [], notes: [], approvals: [], status: "running", live: true }]);
+      setTurns((ts) => [...ts, { id, user: text, displayUser, steps: [], notes: [], approvals: [], status: "running", live: true }]);
       setInput("");
       setRunning(true);
       stickRef.current = true;
@@ -466,7 +477,8 @@ export function AgentWorkspace() {
     if (running || choices.length === 0) return;
     const groups = [...new Set(choices.map((c) => c.group))];
     updateTurn(turnId, (t) => ({ ...t, paidGroups: [...(t.paidGroups ?? []), ...groups] }));
-    void send(text, choices);
+    const original = turns.find((t) => t.id === turnId);
+    void send(text, choices, original?.displayUser ?? original?.user);
   }
 
   function onAnswered(turnId: string, picks: string[]) {
@@ -540,7 +552,8 @@ export function AgentWorkspace() {
     }
   }
 
-  const title = turns[0]?.user ?? "New chat";
+  const requestTurn = [...turns].reverse().find((t) => t.options?.length) ?? turns.at(-1);
+  const title = requestTurn?.displayUser ?? requestTurn?.user ?? "New chat";
   // Only the passes that can pay on this network are offered.
   const fitting = passes === null ? null : passes.filter((p) => passFits(p, network, demo));
   const pass = fitting === null ? undefined : (fitting.find((p) => p.id === passId) ?? null);
@@ -560,11 +573,19 @@ export function AgentWorkspace() {
     if (!none) setPassId(firstFitting);
   }, [firstFitting, passId, pass]);
 
+  const requestDetails = (
+    <RequestPanel request={requestTurn ? title : undefined} groups={requestTurn?.options ?? []} pass={pass} rail={rails === null ? undefined : (rail ?? { network, configured: false })} network={network} session={session} callsKey={callsKey}
+      onEdit={() => { setInput(title); inputRef.current?.focus(); }}
+      onChangePass={() => { const picker = document.getElementById("agent-pass"); if (picker) picker.focus(); else router.push("/console/passes"); }}>
+      {pass && <AskBeforePayingToggle asks={!autoPay} onChange={(asks) => changeAutoPay(!asks)} />}
+    </RequestPanel>
+  );
+
   return (
-    <div className="agent-workspace grid h-full lg:grid-cols-[minmax(0,1fr)_304px]">
+    <div className="agent-workspace grid h-full lg:grid-cols-[minmax(0,1fr)_280px]">
       <section className="flex min-h-0 min-w-0 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border px-5">
-          <h1 className="min-w-0 flex-1 truncate text-[0.95rem] font-medium text-foreground">{title}</h1>
+        <header className="agent-chat-header flex shrink-0 items-center gap-4 px-5">
+          <h1 className="min-w-0 flex-1 truncate text-xs text-muted">{turns.length ? "Agent chat" : "New chat"}</h1>
           <div className="hidden items-center gap-4 text-xs text-muted sm:flex">
             <span>
               Paid <span className="font-mono text-primary tabular-nums">{formatUSDC(session.spent)}</span>
@@ -585,15 +606,17 @@ export function AgentWorkspace() {
           )}
         </header>
 
+        <details className="agent-mobile-details"><summary>Request & spending details</summary>{requestDetails}</details>
+
         <div
           ref={scrollRef}
           onScroll={(e) => {
             const el = e.currentTarget;
             stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
           }}
-          className="min-h-0 flex-1 overflow-y-auto"
+          className="agent-scroll min-h-0 flex-1 overflow-y-auto"
         >
-          <div className="mx-auto w-full max-w-[720px] px-5 py-8">
+          <div className="agent-conversation mx-auto w-full max-w-[960px] px-5 py-5">
             {turns.length === 0 ? (
               <EmptyState
                 name={firstName(user)}
@@ -658,7 +681,7 @@ export function AgentWorkspace() {
                   send(input);
                 }
               }}
-              rows={2}
+              rows={1}
               maxLength={4000}
               disabled={!anyProvider && providers !== null}
               placeholder={
@@ -684,7 +707,7 @@ export function AgentWorkspace() {
                 ) : (
                   <PassPicker passes={fitting} vaults={vaults} value={pass ? passId : ""} onChange={pickPass} disabled={running} sandbox={network === "sandbox"} />
                 )}
-                {pass && <AskBeforePayingToggle asks={!autoPay} onChange={(asks) => changeAutoPay(!asks)} />}
+                {pass && <span className="composer-payment-mode"><IconLock size={12} />{autoPay ? "Pays within my pass" : "Asks before paying"}</span>}
               </div>
               <span className={composerStyles.hint}>
                 <kbd className="font-mono">Enter</kbd> to send
@@ -716,9 +739,8 @@ export function AgentWorkspace() {
         </div>
       </section>
 
-      <aside className="agent-inspector hidden min-h-0 flex-col border-l border-border lg:flex">
-        <div className="agent-inspector-tabs" aria-label="Agent details"><button onClick={() => setInspector("pass")} aria-pressed={inspector === "pass"}>Spend pass</button><button onClick={() => setInspector("activity")} aria-pressed={inspector === "activity"}>Recent calls</button></div>
-        <div className="min-h-0 flex-1">{inspector === "pass" ? <PassPanel pass={pass} rail={rails === null ? undefined : (rail ?? { network, configured: false })} network={network} session={session} /> : <RecentCallsPanel refreshKey={callsKey} />}</div>
+      <aside className="agent-inspector hidden min-h-0 flex-col overflow-y-auto lg:flex" aria-label="Request details">
+        {requestDetails}
       </aside>
     </div>
   );
@@ -746,11 +768,14 @@ function TurnView({
   canAnswer: boolean;
 }) {
   const running = turn.status === "running";
+  const delivered = (turn.receipts?.length ?? 0) > 0;
+  const { user } = useSession();
   return (
-    <div className="space-y-4">
-      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className="flex justify-end">
-        <p className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[0.95rem] leading-relaxed whitespace-pre-wrap text-primary-tint">
-          {turn.user}
+    <div className="space-y-4" data-turn-id={turn.id}>
+      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className={delivered ? "agent-delivered-request" : "flex justify-end"}>
+        {delivered && <span className="agent-user-avatar" aria-hidden="true">{firstName(user).slice(0, 1) || "Y"}</span>}
+        <p className="agent-user-message max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
+          {turn.displayUser ?? turn.user}
         </p>
       </motion.div>
 
@@ -762,7 +787,7 @@ function TurnView({
         </div>
       )}
 
-      <Timeline steps={turn.steps} running={running} defaultOpen={latest} onAsk={canAnswer && turn.status === "done" ? onAsk : undefined} />
+      {!delivered && <Timeline key={turn.options?.length ? "offers" : "steps"} steps={turn.steps} running={running} defaultOpen={latest && !turn.options?.length} onAsk={canAnswer && turn.status === "done" ? onAsk : undefined} />}
 
       {running && turn.steps.length === 0 && !turn.questions && (
         <ThinkingLine lines={["Reading your request", "Checking your Spend Pass", "Planning which API to use"]} />
@@ -778,6 +803,8 @@ function TurnView({
       )}
 
       {turn.options && turn.options.length > 0 && (
+        <div className="agent-offers">
+          <div className="agent-answer-heading"><span><Logo size={17} /></span><div><p>I found {turn.options[0].compared.length > 3 ? "3" : turn.options[0].compared.length} option{turn.options[0].compared.length === 1 ? "" : "s"} for {turn.options.length > 1 ? "each task" : "your request"}.</p><small>Compare the offers below and choose what works for you.</small></div></div>
         <OptionsBoard
           groups={turn.options}
           paid={turn.paidGroups}
@@ -787,11 +814,10 @@ function TurnView({
           passId={pass?.id}
           onPay={(choices, text) => onPay(turn.id, choices, text)}
         />
+        </div>
       )}
 
-      {turn.receipts?.map((r) => (
-        <ReceiptCard key={r.intentId} receipt={r} />
-      ))}
+      {delivered && <DeliveryPanel receipts={turn.receipts!} steps={turn.steps} running={running} />}
 
       {turn.approvals.map((a) => (
         <ApprovalCard
@@ -812,7 +838,7 @@ function TurnView({
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, ease: EASE }}
-            className="text-[0.975rem] leading-relaxed text-foreground"
+            className={`${delivered ? "agent-delivered-answer" : "text-[0.975rem]"} leading-relaxed text-foreground`}
           >
             <RichText text={turn.reply} />
           </motion.div>
@@ -886,6 +912,7 @@ function PassPicker({
       <IconShield size={14} className="shrink-0 text-primary" />
       <span className="sr-only">Spend Pass</span>
       <select
+        id="agent-pass"
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}

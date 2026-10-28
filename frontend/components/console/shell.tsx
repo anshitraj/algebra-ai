@@ -26,10 +26,12 @@ import {
   IconStore,
   IconPlug,
   IconX,
+  IconWallet,
   Spinner,
 } from "@/components/icons";
 import { ConsoleDataProvider, useConsoleData } from "./console-data";
-import { NetworkProvider } from "@/lib/network";
+import { NetworkProvider, useNetwork } from "@/lib/network";
+import { formatUSDC } from "@/lib/money";
 import { NotificationsProvider } from "@/lib/notifications";
 import { NetworkSwitch } from "./network-switch";
 import { NotificationBell } from "./notification-bell";
@@ -96,8 +98,8 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
   }, [pathname]);
 
   return (
-    <div className="console-frame flex h-dvh overflow-hidden print:block print:h-auto print:overflow-visible">
-      <aside className="console-sidebar console-inverse hidden shrink-0 flex-col border-r border-border md:flex print:hidden">
+    <div className={`console-frame ${fullBleed ? "console-chat-frame" : ""} flex h-dvh overflow-hidden print:block print:h-auto print:overflow-visible`}>
+      <aside className={`console-sidebar ${fullBleed ? "" : "console-inverse"} hidden shrink-0 flex-col border-r border-border md:flex print:hidden`}>
         <SidebarContents user={user} pathname={pathname} />
       </aside>
 
@@ -112,7 +114,7 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
               onClick={() => setDrawer(false)}
             />
             <motion.aside
-              className="console-inverse fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-border bg-background shadow-2xl md:hidden"
+              className={`${fullBleed ? "console-chat-frame" : "console-inverse"} fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-border bg-background shadow-2xl md:hidden`}
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
@@ -186,6 +188,7 @@ function MobileApprovalsPill() {
 
 function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
   const { awaitingApproval: pending } = useConsoleData();
+  const chat = pathname === "/console/agent";
 
   const renderItem = (item: NavItem) => {
     const active = isActive(pathname, item.href);
@@ -223,6 +226,13 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
         <span className="font-display text-[1.4rem] font-semibold tracking-[-0.06em]">algebra</span>
       </Link>
       <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 pb-4" aria-label="Console">
+        {chat ? <>
+          <div className="flex flex-col gap-1">
+            {[...PRIMARY.slice(0, 3), CONTROLS[0], { ...PRIMARY[5], label: "Activity" }, { href: "/console/settings", label: "Settings", icon: <IconSettings /> }].map(renderItem)}
+          </div>
+          <details className="console-more-tools"><summary>More tools <IconChevronDown size={13} /></summary><div>{[PRIMARY[3], PRIMARY[4], CONTROLS[1], ...DEVELOPERS].map(renderItem)}</div></details>
+          <SidebarBalance user={user} />
+        </> : <>
         <div className="flex flex-col gap-0.5">{PRIMARY.map(renderItem)}</div>
         <div>
           <p className="px-3 pb-1.5 text-xs font-medium text-muted/80">Your agents</p>
@@ -233,10 +243,18 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
           <div className="flex flex-col gap-0.5">{DEVELOPERS.map(renderItem)}</div>
         </div>
         <div className="mx-1 mt-auto rounded-lg border border-border px-3.5 py-4"><IconShield size={20} className="text-foreground" /><p className="mt-3 text-xs font-medium text-foreground">Your limits. Every request.</p><p className="mt-1.5 text-[0.6875rem] leading-relaxed text-muted">USDC on Solana. Keys stay with Algebra. Authority stays with you.</p><Link href="/console/firewall" className="mt-3 inline-flex items-center gap-2 text-[0.6875rem] font-medium text-foreground">Review your firewall <IconArrowRight size={12} /></Link></div>
+        </>}
       </nav>
       <UserMenu user={user} />
     </>
   );
+}
+
+function SidebarBalance({ user }: { user: User }) {
+  const { wallets, practice } = useNetwork();
+  const mine = user.wallets?.find((w) => w.chain === "solana" && w.kind === "embedded") ?? user.wallets?.find((w) => w.chain === "solana");
+  const held = mine ? wallets?.wallets.find((w) => w.address === mine.address) : undefined;
+  return <div className="console-chat-balance"><div><span>{practice ? "Demo workspace" : "Your wallet balance"}</span><IconWallet size={14} /></div><strong>{practice ? "Play USDC" : held?.ok ? formatUSDC(held.usdc_minor) : "—"}</strong></div>;
 }
 
 function Avatar({ user, size = 32 }: { user: User; size?: number }) {

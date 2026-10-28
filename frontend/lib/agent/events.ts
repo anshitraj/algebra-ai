@@ -124,6 +124,11 @@ export type ReceiptInfo = {
   pageUrl: string;
   test?: boolean;
   at: string;
+  /** The delivered provider response, kept as data for the result cards. */
+  result?: unknown;
+  work?: string;
+  stepId?: string;
+  elapsedMs?: number;
 };
 
 export type EmitFn = (e: AgentEvent) => void;
