@@ -53,9 +53,10 @@ test("risk reports, search, text, image and record arrays use their own views", 
   assert.equal(resultViews({ audio_url: "https://example.com/audio.mp3" })[0].kind, "file");
   assert.equal(resultViews({ document_url: "https://example.com/report.pdf" })[0].title, "Document result");
   assert.equal(resultViews({ data: [{ url: "https://example.com/generated.png" }] }, "image.generate")[0].kind, "image");
-  const [table] = resultViews({ balances: [{ token: "SOL", amount: "0" }, { token: "USDC", amount: "1" }] });
-  assert.equal(table.kind, "table");
-  assert.equal(table.count, 2);
+  // A list of token amounts is a balances card (it used to be a plain table).
+  const [balances] = resultViews({ balances: [{ token: "SOL", amount: "0" }, { token: "USDC", amount: "1" }] });
+  assert.equal(balances.kind, "balances");
+  assert.equal(balances.items.length, 2);
 });
 
 test("provider links reject executable protocols", () => {
@@ -83,4 +84,74 @@ test("direct payloads and explicit step IDs take precedence over a legacy trace"
   const steps = [{id:"older", detail:{rows:[{label:"Intent",value:"same"}],response:'old'}},{id:"latest", detail:{response:'new'}}];
   assert.equal(responseForReceipt({intentId:"same",stepId:"latest"}, steps), 'new');
   assert.equal(responseForReceipt({intentId:"same",result:null}, steps), null);
+});
+
+test("a calendar answer becomes a schedule, sorted, with all-day and timed events", () => {
+  const [view] = resultViews({ calendar: "Work", events: [
+    { summary: "Standup", start: { dateTime: "2026-11-02T09:30:00Z" }, end: { dateTime: "2026-11-02T09:45:00Z" }, location: "Zoom" },
+    { title: "Offsite", start: "2026-11-01", end: "2026-11-02" },
+  ] });
+  assert.equal(view.kind, "events");
+  assert.equal(view.title, "Work");
+  assert.deepEqual(view.items.map((e) => e.title), ["Offsite", "Standup"]);
+  assert.equal(view.items[1].location, "Zoom");
+});
+
+test("news results with a date stay search results, not events", () => {
+  const [view] = resultViews({ query: "solana", results: [{ title: "Solana news", url: "https://news.example/a", date: "2026-10-20" }] });
+  assert.equal(view.kind, "search");
+});
+
+test("places keep rating, reviews and a maps link from coordinates", () => {
+  const [view] = resultViews({ results: [
+    { name: "Blue Tokai", formatted_address: "Lodhi Colony, Delhi", rating: 4.6, user_ratings_total: 812, geometry: { location: { lat: 28.59, lng: 77.22 } }, types: ["cafe"] },
+  ] });
+  assert.equal(view.kind, "places");
+  assert.equal(view.items[0].rating, 4.6);
+  assert.equal(view.items[0].reviews, 812);
+  assert.match(view.items[0].url, /google\.com\/maps.*28\.59%2C77\.22/);
+});
+
+test("an IP lookup is one place", () => {
+  const [view] = resultViews({ ip: "8.8.8.8", city: "Mountain View", region: "California", country: "US", latitude: 37.4, longitude: -122.08 });
+  assert.equal(view.kind, "places");
+  assert.equal(view.items[0].name, "Mountain View, California, US");
+});
+
+test("flights, an inbox and balances each get their own card", () => {
+  assert.equal(resultViews({ flights: [{ origin: "DEL", destination: "BOM", airline: "IndiGo", flight_number: "6E 201", price: 4200, currency: "INR", departure_time: "2026-11-03T04:40:00Z" }] })[0].kind, "flights");
+  const [inbox] = resultViews({ messages: [{ from: { name: "Circle", email: "hi@circle.com" }, subject: "Your USDC arrived", date: "2026-10-28T10:00:00Z", unread: true }] });
+  assert.equal(inbox.kind, "messages");
+  assert.equal(inbox.items[0].from, "Circle");
+  const [bal] = resultViews({ balances: [{ symbol: "SOL", ui_amount: 1.5, usd_value: 150 }, { symbol: "USDC", ui_amount: 12 }] });
+  assert.equal(bal.kind, "balances");
+  assert.equal(bal.items[0].usd, 150);
+});
+
+test("a time series draws a chart; [[ts, value]] pairs too", () => {
+  const [rows] = resultViews([{ date: "2026-10-01", close: 1 }, { date: "2026-10-02", close: 2 }, { date: "2026-10-03", close: 3 }]);
+  assert.equal(rows.kind, "series");
+  assert.equal(rows.points.length, 3);
+  const [pairs] = resultViews({ prices: [[1761955200000, 150], [1762041600000, 152], [1762128000000, 149]] });
+  assert.equal(pairs.kind, "series");
+});
+
+test("a translation reads Google's shape and plain shapes", () => {
+  const [g] = resultViews({ data: { translations: [{ translatedText: "Bonjour", detectedSourceLanguage: "en" }] } });
+  assert.equal(g.kind, "translation");
+  assert.equal(g.text, "Bonjour");
+  assert.equal(resultViews({ translated_text: "Hola", target_lang: "es" })[0].kind, "translation");
+});
+
+test("ordinary records are still a table", () => {
+  const [view] = resultViews([{ id: 1, name: "a", score: 3 }, { id: 2, name: "b", score: 4 }]);
+  assert.equal(view.kind, "table");
+});
+
+test("an IP lookup without coordinates is still a place, with its timezone", () => {
+  const [view] = resultViews({ ip: "8.8.8.8", city: "Austin", country: "US", timezone: "America/Chicago" });
+  assert.equal(view.kind, "places");
+  assert.equal(view.items[0].name, "Austin, US");
+  assert.equal(view.items[0].timezone, "America/Chicago");
+  assert.match(view.items[0].url, /query=Austin%2C%20US/);
 });

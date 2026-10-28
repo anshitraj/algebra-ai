@@ -287,3 +287,31 @@ export function GitHubMark({ size = 18 }: { size?: number }) {
     </svg>
   );
 }
+export const IconCalendar = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
+  </Svg>
+);
+export const IconPin = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" />
+    <circle cx="12" cy="10" r="2.3" />
+  </Svg>
+);
+export const IconPlane = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M10.5 13.5 3 11l1.5-1.5 7.5.5 4.5-4.5a2.1 2.1 0 0 1 3 3L15 13l.5 7.5L14 22l-2.5-7.5" />
+  </Svg>
+);
+export const IconLanguages = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 5h9M8.5 3v2M6 5c.6 3 2.6 5.6 5.5 7M11 5c-.8 3.4-3.2 6.2-6.5 7.5M12.5 21l4-9 4 9M14 17.5h5" />
+  </Svg>
+);
+export const IconChart = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 4v16h16" />
+    <path d="m7.5 14.5 3.5-4 3 2.5 5-6" />
+  </Svg>
+);

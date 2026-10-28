@@ -5,6 +5,7 @@ import type { ReceiptInfo } from "@/lib/agent/events";
 import { decodeResult, fieldLabel, fieldValue, record, resultViews, type ResultView } from "@/lib/agent/result-view";
 import { IconCheck, IconExternal, IconReceipt, IconSearch, IconShield, IconWallet } from "@/components/icons";
 import { SolanaMark } from "@/components/chain-logos";
+import { BalancesCard, EventsCard, FlightsCard, MessagesCard, PlacesCard, SeriesCard, TranslationCard } from "./result-shapes";
 import styles from "./delivery.module.css";
 
 function WeatherArt({ conditions }: { conditions?: string }) {
@@ -57,6 +58,13 @@ function ResultCard({ view, receipt }: { view: ResultView; receipt: ReceiptInfo 
   if (view.kind === "file") return <article className={`${styles.resultCard} ${styles.wide}`} aria-label={view.title}><header><span className={styles.resultIcon}><IconReceipt size={19} /></span><h3>{view.title}</h3><a href={view.url} target="_blank" rel="noopener noreferrer">Open file <IconExternal size={12} /></a></header><p className={styles.textResult}>{view.name || new URL(view.url).pathname.split("/").pop() || "Returned file"}</p><p className={styles.source}>{new URL(view.url).hostname}</p></article>;
   if (view.kind === "text") return <article className={`${styles.resultCard} ${styles.wide}`} aria-label="Text result"><header><IconReceipt size={17} /><h3>{view.title}</h3></header><p className={styles.textResult}>{view.text}</p></article>;
   if (view.kind === "table") return <article className={`${styles.resultCard} ${styles.wide}`} aria-label="Data result"><header><IconReceipt size={17} /><h3>Data result</h3><span className={styles.count}>{view.count} records</span></header><div className={styles.tableScroll}><table><thead><tr>{view.columns.map((column) => <th key={column}>{fieldLabel(column)}</th>)}</tr></thead><tbody>{view.rows.map((row, i) => <tr key={i}>{view.columns.map((column) => <td key={column}>{fieldValue(row[column])}</td>)}</tr>)}</tbody></table></div>{view.count > view.rows.length && <p className={styles.source}>Showing {view.rows.length} of {view.count} records. Full output is in Response details.</p>}</article>;
+  if (view.kind === "events") return <EventsCard title={view.title} items={view.items} />;
+  if (view.kind === "places") return <PlacesCard items={view.items} />;
+  if (view.kind === "flights") return <FlightsCard items={view.items} />;
+  if (view.kind === "messages") return <MessagesCard items={view.items} />;
+  if (view.kind === "balances") return <BalancesCard items={view.items} totalUsd={view.totalUsd} />;
+  if (view.kind === "series") return <SeriesCard label={view.label} points={view.points} />;
+  if (view.kind === "translation") return <TranslationCard text={view.text} from={view.from} to={view.to} />;
   return <article className={`${styles.resultCard} ${styles.wide}`} aria-label="API result"><header><span className={styles.resultIcon}><IconCheck size={19} /></span><h3>{view.title}</h3></header><Fields fields={view.fields} /></article>;
 }
 
