@@ -55,9 +55,14 @@ Money is integer minor units (micro-USDC), never floats. `backend/internal/domai
    the intent's reliability or quality floor, a live price more than 5% above its own listing (`price_above_listing`) or an outlier.
 4. **Ranking.** `routing.Rank` is pure and stable (ties keep the order the caller gave). Real money is always ranked before test money,
    and an observed provider that delivers less than half the time after any other.
-   - `CHEAPEST`: the lowest total cost first; the live quote, fees included.
+   - `CHEAPEST`: the lowest **cost per accepted answer** first (`routing/accepted.go`): the live quote, fees included, times
+     (p + w) / p, where p is how often the provider's answers are accepted and w how often it is paid and brings nothing usable.
+     Failures before payment add attempts, not money. A 0.0008 provider paid for nothing half the time costs about 0.0015 per
+     answer and ranks below a 0.001 provider that delivers 95% of the time. Both rates come from Algebra's own calls, smoothed
+     towards the source's prior like reliability. Each offer and each plan carry the figure (`cost_per_accepted_minor`, and
+     `routing.expected` for the plan with its fallbacks counted).
    - `FASTEST`: the shortest expected time to a result first, from Algebra's own measurement of the provider when it has one.
-   - `AUTO`: a weighted score: cost 0.30, reliability 0.25, quality 0.15, latency 0.12, trust 0.10, price honesty 0.08. A provider with no
+   - `AUTO`: a weighted score: cost (per accepted answer) 0.30, reliability 0.25, quality 0.15, latency 0.12, trust 0.10, price honesty 0.08. A provider with no
      record is scored on a prior from its source (native 0.90, listed 0.70, unverified 0.40) that fades as real calls come in
      (it counts for three calls; after five, the record outweighs it).
    The best few (`MaxPlanSteps`) become the plan. The response says who was priced, each score by component and why the rest were left out.
@@ -125,6 +130,17 @@ When an outcome is paid for, the provider's answer is sealed (AES-256-GCM under 
 Asking again for a committed outcome then returns it with `replayed: true`: nothing runs, nothing is paid, and the receipt is the same. A request can say
 `store_result: false` to have its answer not kept, and a repeat is then refused as already committed. The kept answer is returned only after the asking agent's
 own pass is checked again and it matches the committed reservation and the result hash the coordinator holds. Erasing an account deletes its kept answers.
+
+### Purchase memory: the same thing is not bought twice while it is fresh
+
+A new request (another `window`) for the same work with the same input, by the same person, in the same project and on the same networks, is
+answered with the earlier answer while it is fresh (`internal/app/purchase_memory.go`): `reused` names the purchase and its age, nothing is paid and no
+intent is created. Fresh is the request's own `max_age_seconds`, else the work's default (`routing.FreshFor`): token price 60 s, balances 30 s,
+news 10 min, token or wallet risk, search, scrape and weather 30 min, translation and lookups a day; a model's completion and an endpoint with no class
+are never reused. The asking agent's pass must allow the provider that answered, and the request's provider list must include it. `fresh: true` (REST,
+MCP, and "Buy a fresh one" in the chat) pays for a new answer. The dry run says when an answer would be reused (`reuse`).
+
+Buying the same work with the same input five times in ten minutes looks like a loop: the next purchase waits for the person (`REPEAT_PURCHASE`).
 
 ## Discovery: the catalogs (`backend/providers/catalog`, `backend/providers/paysh`, `backend/providers/bazaar`)
 
