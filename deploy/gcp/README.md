@@ -52,6 +52,25 @@ Get-Clipboard | gcloud secrets versions add algebra-resend-api-key --project alg
 3. `deploy/gcp/deploy.sh --setup`: builds the current commit, uploads it through the tunnel, checks
    its hashes, installs, starts, and waits for `/readyz`.
 
+## Cutover from Railway (in this order)
+
+The web app and the API are deployed separately, and the web app that comes with this code signs people in
+with an emailed code, which the old Railway API does not know. Merging it while `ALGEBRA_API_URL` still
+names Railway breaks sign-in on the live site, so the API has to be reachable first.
+
+1. Add the Resend key and the tunnel token (see above), then on the VM `sudo systemctl restart algebra-api cloudflared`.
+   `systemctl is-active cloudflared` says `active`.
+2. Cloudflare: the tunnel's public hostname `api.usealgebra.xyz` → `http://127.0.0.1:8080`, DNS for the hostname
+   (the domain's nameservers at Cloudflare, or a CNAME for `api` alone). Leave Bot Fight Mode off for it and add
+   one rate-limit rule on `/api/v1/auth/`.
+3. `curl -s https://api.usealgebra.xyz/readyz` answers `{"postgres":"ok","redis":"ok"}`. Then
+   `deploy/gcp/monitoring.sh uptime` makes the uptime check.
+4. Vercel, production environment: `ALGEBRA_API_URL=https://api.usealgebra.xyz` and `ALGEBRA_EDGE_SECRET` equal to
+   the value of `algebra-edge-secret`. Then merge the pull request (the Ignored Build Step builds a main commit
+   that touches `frontend/`), or `vercel redeploy --target production`.
+5. On www.usealgebra.xyz: ask for a code, sign in, make a pass, run "Test this pass" and one chat request.
+6. Only then stop the Railway API and rotate every secret that ever lived there.
+
 ## Everyday
 
 | Task | How |
