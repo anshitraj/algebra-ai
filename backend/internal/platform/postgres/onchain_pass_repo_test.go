@@ -46,7 +46,7 @@ func TestOnchainPassRepoBindingsAndPulls(t *testing.T) {
 	if err := repo.InsertOnchainPull(ctx, p); !errors.Is(err, shared.ErrConflict) {
 		t.Fatalf("a second pull for one attempt: %v", err)
 	}
-	open, err := repo.OpenOnchainPulls(ctx, 1000)
+	open, err := repo.OpenOnchainPulls(ctx, app.PullSourcePass, 1000)
 	if err != nil || !containsPull(open, p.ReservationID) {
 		t.Fatalf("open pulls: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestOnchainPassRepoBindingsAndPulls(t *testing.T) {
 	if err := repo.UpdateOnchainPull(ctx, p, app.PullRefunding); err != nil {
 		t.Fatal(err)
 	}
-	if open, _ := repo.OpenOnchainPulls(ctx, 1000); containsPull(open, p.ReservationID) {
+	if open, _ := repo.OpenOnchainPulls(ctx, app.PullSourcePass, 1000); containsPull(open, p.ReservationID) {
 		t.Fatal("a refunded pull is still open")
 	}
 	if list, err := repo.OnchainPullsForPass(ctx, passID, 10); err != nil || len(list) != 1 {

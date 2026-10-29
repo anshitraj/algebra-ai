@@ -101,6 +101,14 @@ func main() {
 					logger.Info("on-chain pass reconcile", "changed", n)
 				}
 			}
+			// Pulls from owners' vaults, through their allowances: the same.
+			if bundle.VaultAllowances != nil {
+				if n, err := bundle.VaultAllowances.Reconcile(ctx); err != nil {
+					logger.Warn("vault allowance reconcile", "error", err)
+				} else if n > 0 {
+					logger.Info("vault allowance reconcile", "changed", n)
+				}
+			}
 		}
 	}()
 

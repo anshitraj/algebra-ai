@@ -132,3 +132,78 @@ func (a *API) vaultBroadcast(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"hash": hash})
 }
+
+// allowanceOwner is vaultOwner where agent allowances run.
+func (a *API) allowanceOwner(w http.ResponseWriter, r *http.Request) (string, bool) {
+	userID, ok := a.vaultOwner(w, r)
+	if !ok {
+		return "", false
+	}
+	if a.b.VaultAllowances == nil {
+		writeJSON(w, http.StatusNotImplemented, errorBody{Error: "agents can't spend from vaults on this server"})
+		return "", false
+	}
+	return userID, true
+}
+
+// vaultAllowances: GET /api/v1/me/vault/allowances. What agents may spend
+// from the vault on each network: the owner's choice and what the chain says
+// is left of it.
+func (a *API) vaultAllowances(w http.ResponseWriter, r *http.Request) {
+	userID, ok := a.allowanceOwner(w, r)
+	if !ok {
+		return
+	}
+	out, err := a.b.VaultAllowances.Allowances(r.Context(), userID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"allowances": out})
+}
+
+// vaultAllowancePrepare: POST /api/v1/me/vault/allowance/prepare {network}.
+// What the browser needs to build an approve or a revoke itself.
+func (a *API) vaultAllowancePrepare(w http.ResponseWriter, r *http.Request) {
+	userID, ok := a.allowanceOwner(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Network string `json:"network"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	p, err := a.b.VaultAllowances.Prepare(r.Context(), userID, req.Network)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+// vaultAllowanceSubmit: POST /api/v1/me/vault/allowance {network,
+// transaction}. An approve or revoke the vault signed; Algebra checks it,
+// pays its fee and sends it.
+func (a *API) vaultAllowanceSubmit(w http.ResponseWriter, r *http.Request) {
+	userID, ok := a.allowanceOwner(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Network     string `json:"network"`
+		Transaction string `json:"transaction"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	out, err := a.b.VaultAllowances.Submit(r.Context(), userID, req.Network, req.Transaction)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}

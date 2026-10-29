@@ -163,6 +163,9 @@ type Bundle struct {
 	// OwnerVaults is the owner's own wallet: addresses, balances, withdrawals
 	// the browser signed (docs/WALLET.md).
 	OwnerVaults *app.OwnerVaultService
+	// VaultAllowances lets agents spend from the owner's vault through the
+	// capped allowance it gave the payer; nil where no Solana rail runs.
+	VaultAllowances *app.VaultAllowanceService
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
 	// MCPLegacyTools: see config.Config.MCPLegacyTools.
@@ -593,13 +596,28 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		db.Close()
 		return nil, fmt.Errorf("wiring: %w", err)
 	}
-	// Who funds a payment, in order: a person's vault when their pass has one,
-	// and otherwise the shared devnet wallet, inside the test-money guard.
+	allowances, err := buildVaultAllowances(cfg, solanaRails, db, passRepo, econRepo, signers, limiter)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("wiring: %w", err)
+	}
+	onchainPasses.SetAllowances(allowances)
+	// Who funds a payment, in order: the pass's on-chain vault when it has
+	// one; the owner's own vault, through its allowance, when the owner chose
+	// that; and otherwise the shared devnet wallet, inside the test-money
+	// guard and the account's Testnet credits.
 	var funders app.FunderChain
 	if onchainPasses != nil {
 		funders = append(funders, onchainPasses)
 		execSvc.SetVaults(onchainPasses)
 		intentReceiptSvc.SetFunding(onchainPasses)
+	}
+	if allowances != nil {
+		funders = append(funders, allowances)
+		if onchainPasses == nil {
+			execSvc.SetVaults(allowances)
+			intentReceiptSvc.SetFunding(allowances)
+		}
 	}
 	if guard := buildTestMoneyGuard(cfg, solanaRails, passRepo, limiter); guard != nil {
 		funders = append(funders, guard)
@@ -650,12 +668,13 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	}
 
 	return &Bundle{
-		Mainnet:        mainnet,
-		WalletBalances: app.NewWalletBalanceService(accountSvc, walletRPCs),
-		DevnetFaucet:   buildDevnetFaucet(ctx, cfg, accountSvc, limiter, postgres.NewFaucetRepo(db)),
-		TestCredits:    credits,
-		OwnerVaults:    app.NewOwnerVaultService(postgres.NewOwnerVaultRepo(db), vaultSolana, vaultEVM, cfg.Vault.MainnetDeposits, limiter),
-		DB:             db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
+		Mainnet:         mainnet,
+		WalletBalances:  app.NewWalletBalanceService(accountSvc, walletRPCs),
+		DevnetFaucet:    buildDevnetFaucet(ctx, cfg, accountSvc, limiter, postgres.NewFaucetRepo(db)),
+		TestCredits:     credits,
+		VaultAllowances: allowances,
+		OwnerVaults:     app.NewOwnerVaultService(postgres.NewOwnerVaultRepo(db), vaultSolana, vaultEVM, cfg.Vault.MainnetDeposits, limiter),
+		DB:              db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
 		Users: userSvc, Intents: intentSvc, Discovery: discoverySvc, Quotes: quoteSvc,
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
@@ -953,6 +972,49 @@ func buildTestCredits(cfg *config.Config, rails []*solanax402.Rail, passes app.P
 	log.Printf("wiring: Testnet credits on %v: each account starts with %s USDC and %s SOL", names,
 		chain.FormatUnits(cfg.TestMoney.CreditsUSDCMinor, chain.USDCDecimals), chain.FormatUnits(cfg.TestMoney.CreditsSOLLamports, 9))
 	return app.NewTestCredits(names, chain.SolanaDevnet, passes, spend, cfg.TestMoney.CreditsUSDCMinor, cfg.TestMoney.CreditsSOLLamports)
+}
+
+// buildVaultAllowances lets agents spend from owners' vaults on every Solana
+// rail that runs: the rail's payer is the delegate of each allowance and pays
+// the fee of approves and revokes. On mainnet only once mainnet deposits are
+// on (VAULT_MAINNET_DEPOSITS), which waits for an independent review.
+func buildVaultAllowances(cfg *config.Config, rails []*solanax402.Rail, db *postgres.DB, passes app.PassOwners, reservations app.ReservationReader, signers map[string]*payersigner.Signer, limiter app.RateLimiter) (*app.VaultAllowanceService, error) {
+	var nets []*app.OnchainNetwork
+	for _, rail := range rails {
+		cluster := "mainnet"
+		if rail.Network() == chain.SolanaDevnet {
+			cluster = "devnet"
+		}
+		if cluster == "mainnet" && !cfg.Vault.MainnetDeposits {
+			continue
+		}
+		var sc *config.SolanaConfig
+		for i := range cfg.SolanaRails {
+			c := strings.ToLower(cfg.SolanaRails[i].Cluster)
+			if c == cluster || (cluster == "mainnet" && c == "mainnet-beta") {
+				sc = &cfg.SolanaRails[i]
+			}
+		}
+		sig := signers[cluster]
+		if sc == nil || sig == nil {
+			continue
+		}
+		if sig.Key.PublicKey() != rail.Address() {
+			return nil, fmt.Errorf("vault allowances: the %s wallet doesn't match its rail", cluster)
+		}
+		mint, _ := chain.AssetAddress(rail.Network(), "USDC")
+		nets = append(nets, &app.OnchainNetwork{
+			Network: rail.Network(), Cluster: cluster, RailName: rail.Name(), RPC: solana.NewRPC(solanaRPCURL(*sc), nil),
+			Payer: sig.Key, Mint: solana.MustPublicKey(mint), Rail: rail,
+			PriorityMicroLamports: cfg.OnchainPasses.PriorityMicroLamports, SignerMode: string(sig.Mode),
+		})
+		log.Printf("wiring: vault allowances on %s: delegate %s", cluster, sig.Key.PublicKey())
+	}
+	if len(nets) == 0 {
+		return nil, nil
+	}
+	return app.NewVaultAllowanceService(postgres.NewVaultAllowanceRepo(db), postgres.NewOwnerVaultRepo(db), passes,
+		postgres.NewOnchainPassRepo(db), reservations, nets, cfg.Vault.AllowanceMaxMinor, limiter), nil
 }
 
 // buildOnchainPasses turns on on-chain Spend Passes (ONCHAIN_PASSES=on) for

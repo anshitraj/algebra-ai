@@ -379,7 +379,8 @@ var _ app.PassEconomicSpend = (*EconRepo)(nil)
 // TestCreditSpend implements app.TestCreditSpend: the account's holds on the
 // rails that may still become payments, plus what its delivered payments
 // there cost. An intent the provider was paid for but didn't fulfil is left
-// out, which is how its credits come back.
+// out, which is how its credits come back. So is a payment a vault funded
+// (a pull that wasn't void): that was the person's own money, not credits.
 func (r *EconRepo) TestCreditSpend(ctx context.Context, userID string, rails []string) (int64, error) {
 	var total int64
 	err := r.db.Pool.QueryRow(ctx, `
@@ -387,7 +388,8 @@ func (r *EconRepo) TestCreditSpend(ctx context.Context, userID string, rails []s
 		FROM economic_reservations r JOIN economic_intents i ON i.id = r.intent_id
 		WHERE i.principal_id = $1 AND r.rail = ANY($2)
 		  AND (r.state IN ('RESERVED', 'EXECUTING', 'UNKNOWN', 'RECONCILING')
-		       OR (r.state = 'COMMITTED' AND i.fulfillment <> 'NOT_FULFILLED'))`, userID, rails).Scan(&total)
+		       OR (r.state = 'COMMITTED' AND i.fulfillment <> 'NOT_FULFILLED'))
+		  AND NOT EXISTS (SELECT 1 FROM onchain_pulls p WHERE p.reservation_id = r.id AND p.state <> 'VOID')`, userID, rails).Scan(&total)
 	if err != nil {
 		return 0, fmt.Errorf("postgres: summing test credit use: %w", err)
 	}

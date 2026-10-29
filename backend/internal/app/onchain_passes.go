@@ -65,9 +65,19 @@ const (
 	PullRefunded  = "REFUNDED"
 )
 
+// Where a pull's money came from.
+const (
+	// PullSourcePass: an on-chain Spend Pass's vault (the program pulls).
+	PullSourcePass = "spend_pass"
+	// PullSourceVault: the owner's own vault, through the capped allowance
+	// it gave Algebra's payer (VaultAllowanceService).
+	PullSourceVault = "owner_vault"
+)
+
 // OnchainPull is one pull for one paid attempt, and what became of it.
 type OnchainPull struct {
 	ReservationID    string    `json:"reservation_id"`
+	Source           string    `json:"source"`
 	IntentID         string    `json:"intent_id"`
 	PassID           string    `json:"pass_id"`
 	Network          string    `json:"network"`
@@ -96,7 +106,8 @@ type OnchainPassStore interface {
 	// UpdateOnchainPull saves p only if it is still in state from
 	// (shared.ErrConflict otherwise), so two processes never both act on it.
 	UpdateOnchainPull(ctx context.Context, p *OnchainPull, from string) error
-	OpenOnchainPulls(ctx context.Context, limit int) ([]OnchainPull, error)
+	// OpenOnchainPulls lists the pulls from source not yet settled.
+	OpenOnchainPulls(ctx context.Context, source string, limit int) ([]OnchainPull, error)
 	OnchainPullsForPass(ctx context.Context, passID string, limit int) ([]OnchainPull, error)
 }
 
@@ -214,8 +225,14 @@ type OnchainPassService struct {
 	// RecoverAfter is how long after an attempt's deadline a payment channel the
 	// provider never settled is closed by the payer to get the escrow back.
 	RecoverAfter time.Duration
-	log          *slog.Logger
-	now          func() time.Time
+	// source is the kind of pull this service makes and settles.
+	source string
+	// allowances, when set, funds passes with no on-chain pass from their
+	// owner's vault, where the owner chose that: such a pass needs none even
+	// where one is Required.
+	allowances *VaultAllowanceService
+	log        *slog.Logger
+	now        func() time.Time
 }
 
 // DefaultRecoverAfter: a provider that is going to settle does so within
@@ -226,12 +243,20 @@ const DefaultRecoverAfter = 10 * time.Minute
 func NewOnchainPassService(store OnchainPassStore, passes *SpendPassService, wallets UserWalletStore, reservations ReservationReader, nets []*OnchainNetwork) *OnchainPassService {
 	s := &OnchainPassService{store: store, passes: passes, wallets: wallets, reservations: reservations,
 		nets: map[string]*OnchainNetwork{}, byRail: map[string]*OnchainNetwork{}, AnyOwnerOn: map[string]bool{},
-		RecoverAfter: DefaultRecoverAfter, log: slog.Default(), now: time.Now}
+		RecoverAfter: DefaultRecoverAfter, source: PullSourcePass, log: slog.Default(), now: time.Now}
 	for _, n := range nets {
 		s.nets[n.Network] = n
 		s.byRail[n.RailName] = n
 	}
 	return s
+}
+
+// SetAllowances lets passes with no on-chain pass be funded from their
+// owner's vault (VaultAllowanceService), even where a pass is Required.
+func (s *OnchainPassService) SetAllowances(a *VaultAllowanceService) {
+	if s != nil {
+		s.allowances = a
+	}
 }
 
 // PassNumber is the number an on-chain pass for passID must be made with.
@@ -749,6 +774,9 @@ type VaultState struct {
 
 	pass *spendpass.State
 	now  int64
+	// shortCode is the code for an amount above FundedMinor, when it isn't
+	// ONCHAIN_PASS_UNFUNDED (the owner's vault: its allowance, or its USDC).
+	shortCode string
 }
 
 // For returns the ONCHAIN_PASS_* code a payment of amountMinor would be
@@ -770,6 +798,9 @@ func (v VaultState) For(amountMinor int64) string {
 		}
 	}
 	if v.Funded && v.FundedMinor < amountMinor {
+		if v.shortCode != "" {
+			return v.shortCode
+		}
 		return DenyOnchainUnfunded
 	}
 	return ""
@@ -792,6 +823,9 @@ func (s *OnchainPassService) VaultStatus(ctx context.Context, passID, network st
 	b, err := s.store.OnchainBinding(ctx, passID)
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
+		if s.allowances.Covers(ctx, passID, n.Network) {
+			return s.allowances.VaultStatus(ctx, passID, n.Network)
+		}
 		if n.Required {
 			out.Code = DenyOnchainRequired
 		}
@@ -854,7 +888,7 @@ func (s *OnchainPassService) Funding(ctx context.Context, passID, rail string) (
 	b, err := s.store.OnchainBinding(ctx, passID)
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
-		if n.Required {
+		if n.Required && !s.allowances.Covers(ctx, passID, n.Network) {
 			return false, &AuthorityDenied{ReasonCodes: []string{DenyOnchainRequired}}
 		}
 		return false, nil
@@ -878,10 +912,10 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 	b, err := s.store.OnchainBinding(ctx, passID)
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
-		if n.Required {
+		if n.Required && !s.allowances.Covers(ctx, passID, n.Network) {
 			return nil, &AuthorityDenied{ReasonCodes: []string{DenyOnchainRequired}}
 		}
-		return nil, nil
+		return nil, nil // the owner's vault funds it, or the payer pays as before
 	case err != nil:
 		return nil, err
 	}
@@ -921,14 +955,21 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 	if err != nil {
 		return nil, err
 	}
-	signed, err := spendpass.Sign(ctx, n.RPC, n.Payer, nil, n.PriorityMicroLamports, ix)
+	p := &OnchainPull{ReservationID: rv.ID, IntentID: rv.IntentID, PassID: passID, Network: n.Network, PassAddress: b.Address,
+		OwnerWallet: b.OwnerWallet, AmountMinor: amountMinor}
+	return s.pull(ctx, n, p, ix)
+}
+
+// pull signs the pull's instructions with the payer, records the pull, sends
+// it and waits for it, and returns it once it is confirmed. A refusal by the
+// pass's program is an *AuthorityDenied.
+func (s *OnchainPassService) pull(ctx context.Context, n *OnchainNetwork, p *OnchainPull, ixs ...solana.Instruction) (*OnchainPull, error) {
+	signed, err := spendpass.Sign(ctx, n.RPC, n.Payer, nil, n.PriorityMicroLamports, ixs...)
 	if err != nil {
 		return nil, err
 	}
 	now := s.now().UTC()
-	p := &OnchainPull{ReservationID: rv.ID, IntentID: rv.IntentID, PassID: passID, Network: n.Network, PassAddress: b.Address,
-		OwnerWallet: b.OwnerWallet, AmountMinor: amountMinor, PullSignature: signed.Signature, PullValidUntil: signed.LastValidBlockHeight,
-		State: PullSending, CreatedAt: now, UpdatedAt: now}
+	p.Source, p.PullSignature, p.PullValidUntil, p.State, p.CreatedAt, p.UpdatedAt = s.source, signed.Signature, signed.LastValidBlockHeight, PullSending, now, now
 	// Recorded before it is sent: whatever happens next, the pull is known.
 	if err := s.store.InsertOnchainPull(ctx, p); err != nil {
 		return nil, err
@@ -951,7 +992,7 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 	}
 	p.UpdatedAt = s.now().UTC()
 	if err := s.store.UpdateOnchainPull(ctx, p, PullSending); err != nil {
-		s.log.Error("onchain pass: recording a pull failed", "reservation_id", rv.ID, "signature", p.PullSignature, "state", p.State, "err", err)
+		s.log.Error("onchain pass: recording a pull failed", "reservation_id", p.ReservationID, "signature", p.PullSignature, "state", p.State, "err", err)
 	}
 	if p.State == PullVoid {
 		if d := denyFor(sendErr); d != nil {
@@ -959,7 +1000,7 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 		}
 		return nil, fmt.Errorf("the on-chain pull didn't land; nothing was paid: %w", sendErr)
 	}
-	s.log.Info("onchain pass: pulled", "pass", b.Address, "amount_minor", amountMinor, "signature", p.PullSignature, "reservation_id", rv.ID)
+	s.log.Info("onchain pass: pulled", "source", p.Source, "from", p.PassAddress, "amount_minor", p.AmountMinor, "signature", p.PullSignature, "reservation_id", p.ReservationID)
 	return p, nil
 }
 
@@ -974,7 +1015,7 @@ func refusedInPreflight(err error) bool {
 // is settled from the chain, and once an attempt has ended, whatever it
 // didn't spend goes back to the pass. It returns how many pulls changed.
 func (s *OnchainPassService) Reconcile(ctx context.Context) (int, error) {
-	open, err := s.store.OpenOnchainPulls(ctx, 50)
+	open, err := s.store.OpenOnchainPulls(ctx, s.source, 50)
 	if err != nil {
 		return 0, err
 	}

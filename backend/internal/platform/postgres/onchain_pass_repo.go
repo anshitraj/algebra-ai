@@ -61,13 +61,13 @@ func (r *OnchainPassRepo) DeleteOnchainBinding(ctx context.Context, passID strin
 	return nil
 }
 
-const pullCols = `reservation_id, intent_id, pass_id, network, pass_address, owner_wallet, amount_minor, pull_signature, pull_valid_until,
+const pullCols = `reservation_id, source, intent_id, pass_id, network, pass_address, owner_wallet, amount_minor, pull_signature, pull_valid_until,
 	state, used_minor, refund_minor, COALESCE(refund_signature, ''), COALESCE(refund_valid_until, 0), detail, created_at, updated_at`
 
 func scanPull(row pgx.Row) (app.OnchainPull, error) {
 	var p app.OnchainPull
 	var pullValid, refundValid int64
-	err := row.Scan(&p.ReservationID, &p.IntentID, &p.PassID, &p.Network, &p.PassAddress, &p.OwnerWallet, &p.AmountMinor, &p.PullSignature, &pullValid,
+	err := row.Scan(&p.ReservationID, &p.Source, &p.IntentID, &p.PassID, &p.Network, &p.PassAddress, &p.OwnerWallet, &p.AmountMinor, &p.PullSignature, &pullValid,
 		&p.State, &p.UsedMinor, &p.RefundMinor, &p.RefundSignature, &refundValid, &p.Detail, &p.CreatedAt, &p.UpdatedAt)
 	p.PullValidUntil, p.RefundValidUntil = uint64(pullValid), uint64(refundValid)
 	p.CreatedAt, p.UpdatedAt = p.CreatedAt.UTC(), p.UpdatedAt.UTC()
@@ -88,10 +88,10 @@ func (r *OnchainPassRepo) OnchainPull(ctx context.Context, reservationID string)
 func (r *OnchainPassRepo) InsertOnchainPull(ctx context.Context, p *app.OnchainPull) error {
 	_, err := r.db.Pool.Exec(ctx, `
 		INSERT INTO onchain_pulls (reservation_id, intent_id, pass_id, network, pass_address, owner_wallet, amount_minor,
-		    pull_signature, pull_valid_until, state, detail, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		    pull_signature, pull_valid_until, state, detail, created_at, updated_at, source)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE(NULLIF($14, ''), 'spend_pass'))`,
 		p.ReservationID, p.IntentID, p.PassID, p.Network, p.PassAddress, p.OwnerWallet, p.AmountMinor,
-		p.PullSignature, int64(p.PullValidUntil), p.State, p.Detail, p.CreatedAt.UTC(), p.UpdatedAt.UTC())
+		p.PullSignature, int64(p.PullValidUntil), p.State, p.Detail, p.CreatedAt.UTC(), p.UpdatedAt.UTC(), p.Source)
 	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: this attempt already has a pull", shared.ErrConflict)
 	}
@@ -122,9 +122,9 @@ func (r *OnchainPassRepo) UpdateOnchainPull(ctx context.Context, p *app.OnchainP
 	return nil
 }
 
-func (r *OnchainPassRepo) OpenOnchainPulls(ctx context.Context, limit int) ([]app.OnchainPull, error) {
-	return r.pulls(ctx, `SELECT `+pullCols+` FROM onchain_pulls WHERE state IN ('SENDING', 'PULLED', 'REFUNDING')
-		ORDER BY updated_at LIMIT $1`, limit)
+func (r *OnchainPassRepo) OpenOnchainPulls(ctx context.Context, source string, limit int) ([]app.OnchainPull, error) {
+	return r.pulls(ctx, `SELECT `+pullCols+` FROM onchain_pulls WHERE state IN ('SENDING', 'PULLED', 'REFUNDING') AND source = $2
+		ORDER BY updated_at LIMIT $1`, limit, source)
 }
 
 func (r *OnchainPassRepo) OnchainPullsForPass(ctx context.Context, passID string, limit int) ([]app.OnchainPull, error) {

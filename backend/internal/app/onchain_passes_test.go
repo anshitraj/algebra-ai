@@ -61,7 +61,7 @@ func (m *memOnchainStore) UpdateOnchainPull(_ context.Context, p *OnchainPull, f
 	m.pulls[p.ReservationID] = &c
 	return nil
 }
-func (m *memOnchainStore) OpenOnchainPulls(context.Context, int) ([]OnchainPull, error) {
+func (m *memOnchainStore) OpenOnchainPulls(context.Context, string, int) ([]OnchainPull, error) {
 	return nil, nil
 }
 func (m *memOnchainStore) OnchainPullsForPass(context.Context, string, int) ([]OnchainPull, error) {

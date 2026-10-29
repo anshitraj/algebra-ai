@@ -112,8 +112,12 @@ func (s *IntentReceiptService) Sign(ctx context.Context, v *IntentView) (jws, id
 	// moved the money, so the person can check it on chain.
 	if s.funding != nil {
 		if p, err := s.funding.PullFor(ctx, r.ID); err == nil && p.State != PullVoid {
+			source := "spend_pass_vault"
+			if p.Source == PullSourceVault {
+				source = "owner_vault_allowance"
+			}
 			c.Settlement.Funding = &receipt.FundingRef{
-				Source: "spend_pass_vault", Vault: p.PassAddress, Owner: p.OwnerWallet, PullSignature: p.PullSignature,
+				Source: source, Vault: p.PassAddress, Owner: p.OwnerWallet, PullSignature: p.PullSignature,
 				Pulled: receipt.Money{MinorUnits: p.AmountMinor, Currency: v.Currency},
 			}
 		}

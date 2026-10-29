@@ -542,7 +542,9 @@ func FromEnv() (*Config, error) {
 	if err := loadTestMoney(&cfg.TestMoney); err != nil {
 		return nil, err
 	}
-	loadVault(&cfg.Vault)
+	if err := loadVault(&cfg.Vault); err != nil {
+		return nil, err
+	}
 	if err := loadJupiter(&cfg.Jupiter); err != nil {
 		return nil, err
 	}
@@ -1000,13 +1002,17 @@ func checkMainnetExecution(execution bool, required map[string]bool) error {
 // <CHAIN>_RPC_URL (BASE_SEPOLIA_RPC_URL, ARC_TESTNET_RPC_URL, BASE_RPC_URL,
 // ARC_RPC_URL), defaulting to the chain's public node; "off" leaves the chain
 // out. MainnetDeposits (VAULT_MAINNET_DEPOSITS=on) shows mainnet deposit
-// addresses; it stays off until the design has been independently reviewed.
+// addresses, and lets agents spend from a mainnet vault through an allowance;
+// it stays off until the design has been independently reviewed.
+// AllowanceMaxMinor (VAULT_ALLOWANCE_MAX_USDC, whole USDC, default 1000) is the
+// largest agent allowance accepted, a ceiling against a typo.
 type VaultConfig struct {
-	EVMRPC          map[string]string // by network: base, base-sepolia, arc, arc-testnet
-	MainnetDeposits bool
+	EVMRPC            map[string]string // by network: base, base-sepolia, arc, arc-testnet
+	MainnetDeposits   bool
+	AllowanceMaxMinor int64
 }
 
-func loadVault(c *VaultConfig) {
+func loadVault(c *VaultConfig) error {
 	c.EVMRPC = map[string]string{}
 	for network, def := range map[string][2]string{
 		"base-sepolia": {"BASE_SEPOLIA_RPC_URL", "https://sepolia.base.org"},
@@ -1023,6 +1029,15 @@ func loadVault(c *VaultConfig) {
 		}
 	}
 	c.MainnetDeposits = strings.EqualFold(strings.TrimSpace(os.Getenv("VAULT_MAINNET_DEPOSITS")), "on")
+	max, err := getInt64("VAULT_ALLOWANCE_MAX_USDC", 1000)
+	if err != nil {
+		return err
+	}
+	if max < 1 || max > 1_000_000 {
+		return errors.New("config: VAULT_ALLOWANCE_MAX_USDC must be between 1 and 1000000")
+	}
+	c.AllowanceMaxMinor = max * 1_000_000
+	return nil
 }
 
 // loadTestMoney reads TEST_MONEY_*: the test-money guard's daily counts.

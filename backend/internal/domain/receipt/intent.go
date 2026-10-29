@@ -130,7 +130,9 @@ type SettlementRef struct {
 // Anything the payment did not spend went back to the vault; that is on chain
 // too, and changes after this receipt is signed, so it is not claimed here.
 type FundingRef struct {
-	// Source is "spend_pass_vault".
+	// Source is "spend_pass_vault" (an on-chain Spend Pass's vault), or
+	// "owner_vault_allowance" (the owner's own vault, through the capped
+	// allowance it gave the payer; Vault is then its USDC account).
 	Source string `json:"source"`
 	// Vault is the on-chain pass's address; Owner is the wallet that owns it,
 	// the person's own.
