@@ -251,6 +251,11 @@ export function replayJob(id: string) {
   return apiFetch<ReplayReport>(`/api/v1/me/jobs/${encodeURIComponent(id)}/replay`, { method: "POST" });
 }
 
+/** "Test this pass": the pass's rules against sellers that misbehave, on paper. Nothing is paid. */
+export function replayPass(id: string) {
+  return apiFetch<ReplayReport>(`/api/v1/me/passes/${encodeURIComponent(id)}/replay`, { method: "POST" });
+}
+
 /** Stops a job and every job beneath it; what they didn't use goes back to the Spend Pass. */
 export function revokeJob(id: string) {
   return apiFetch<JobPass>(`/api/v1/me/jobs/${encodeURIComponent(id)}/revoke`, { method: "POST" });

@@ -159,6 +159,7 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/me/jobs/{id}/replay", api.replayMyJob)
 	mux.HandleFunc("POST /api/v1/jobs/{id}/value", api.setJobValue)
 	mux.HandleFunc("GET /api/v1/me/passes/{id}/pnl", api.myPassPnL)
+	mux.HandleFunc("POST /api/v1/me/passes/{id}/replay", api.replayMyPass)
 	// Web tools run with the person's own API keys (TinyFish, Exa, Firecrawl, Tavily).
 	mux.HandleFunc("GET /api/v1/me/tool-keys", api.listToolKeys)
 	mux.HandleFunc("PUT /api/v1/me/tool-keys/{vendor}", api.saveToolKey)

@@ -127,6 +127,61 @@ const OUTCOME: Record<string, string> = {
   stops: "Stops, nothing paid",
 };
 
+const seller = (id: string) => id.replace(/^[a-z]+:/, "");
+
+/** What a replay found: the verdict, then each purchase's scenarios. */
+function ReplayResult({ report }: { report: ReplayReport }) {
+  const total = report.safe + report.unsafe;
+  return (
+    <>
+      {total === 0 ? (
+        <p className={styles.note}>Nothing to test yet: no seller lists a price for the kinds of work agents usually buy on this pass&apos;s networks.</p>
+      ) : (
+        <p className={styles.verdict} data-tone={report.unsafe === 0 ? "good" : "bad"}>
+          {report.unsafe === 0 ? <IconCheck size={13} /> : <IconBan size={13} />}
+          {report.unsafe === 0
+            ? `${report.safe} of ${report.safe} scenarios safe: ${u(report.protected_minor)} USDC asked by misbehaving sellers, none of it paid.`
+            : `${report.unsafe} of ${total} scenarios would pay a misbehaving seller.`}
+        </p>
+      )}
+      {report.purchases.map((p) => (
+        <div key={p.intent_id ?? p.capability} className={styles.purchase}>
+          <small>
+            {report.preset
+              ? `${p.title ?? p.capability} · usually ${u(p.paid_minor)} USDC from ${seller(p.provider)}`
+              : `${p.capability} · paid ${u(p.paid_minor)} to ${seller(p.provider)}`}
+          </small>
+          <ul>
+            {p.findings.map((f) => (
+              <li key={f.scenario} data-safe={f.safe || undefined}>
+                <span className={styles.mark} aria-hidden="true">
+                  {f.safe ? <IconCheck size={11} /> : <IconBan size={11} />}
+                </span>
+                <span>
+                  <strong>{f.title}</strong>
+                  <small>
+                    {OUTCOME[f.outcome] ?? f.outcome}: {f.detail}
+                  </small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {report.skipped?.map((s) => (
+        <p key={s.capability} className={styles.note}>
+          Not tested: {s.title}, {s.reason}.
+        </p>
+      ))}
+      <p className={styles.note}>
+        {report.preset
+          ? "On paper only: nothing was contacted or paid. This pass's rules and Algebra's guards decided each one, asking with the most the pass allows for one purchase."
+          : "On paper only: nothing was contacted or paid. The task's own Spend Pass rules and Algebra's guards decided each one."}
+      </p>
+    </>
+  );
+}
+
 /** Replay: the task's purchases run again on paper against sellers that misbehave. */
 export function ReplayPanel({ jobId, paid }: { jobId: string; paid: boolean }) {
   const [report, setReport] = useState<ReplayReport | null>(null);
@@ -153,39 +208,56 @@ export function ReplayPanel({ jobId, paid }: { jobId: string; paid: boolean }) {
           {busy ? <Spinner size={11} /> : null} Replay under chaos
         </button>
       ) : (
-        <>
-          <p className={styles.verdict} data-tone={report.unsafe === 0 ? "good" : "bad"}>
-            {report.unsafe === 0 ? <IconCheck size={13} /> : <IconBan size={13} />}
-            {report.unsafe === 0
-              ? `${report.safe} of ${report.safe} scenarios safe: ${u(report.protected_minor)} USDC asked by misbehaving sellers, none of it paid.`
-              : `${report.unsafe} of ${report.safe + report.unsafe} scenarios would pay a misbehaving seller.`}
-          </p>
-          {report.purchases.map((p) => (
-            <div key={p.intent_id} className={styles.purchase}>
-              <small>
-                {p.capability} · paid {u(p.paid_minor)} to {p.provider.replace(/^[a-z]+:/, "")}
-              </small>
-              <ul>
-                {p.findings.map((f) => (
-                  <li key={f.scenario} data-safe={f.safe || undefined}>
-                    <span className={styles.mark} aria-hidden="true">
-                      {f.safe ? <IconCheck size={11} /> : <IconBan size={11} />}
-                    </span>
-                    <span>
-                      <strong>{f.title}</strong>
-                      <small>
-                        {OUTCOME[f.outcome] ?? f.outcome}: {f.detail}
-                      </small>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-          <p className={styles.note}>On paper only: nothing was contacted or paid. The task&apos;s own Spend Pass rules and Algebra&apos;s guards decided each one.</p>
-        </>
+        <ReplayResult report={report} />
       )}
       {error && <p className={styles.error}>{error}</p>}
     </div>
+  );
+}
+
+/**
+ * "Test this pass": the pass's own rules and Algebra's guards against sellers
+ * that overcharge, lie, appear from nowhere or go down, before an agent meets
+ * one. It works on a pass with no task yet. Nothing is contacted or paid.
+ */
+export function PassTestPanel({ passId, off }: { passId: string; off: boolean }) {
+  const [report, setReport] = useState<ReplayReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    try {
+      setReport(await api.replayPass(passId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't test it");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className={styles.passTest} aria-label="Test this pass">
+      <div className={styles.passTestHead}>
+        <div>
+          <h4>Test this pass</h4>
+          <p>See what it does when a seller overcharges, lies about its price or goes down. On paper: nothing is paid.</p>
+        </div>
+        <button type="button" className={styles.run} onClick={run} disabled={busy || off} title={off ? "Turn the pass on to test it" : undefined}>
+          {busy ? <Spinner size={11} /> : null} {report ? "Test again" : "Run the test"}
+        </button>
+      </div>
+      {error && (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
+      {report && (
+        <div className={styles.replay} aria-live="polite">
+          <ReplayResult report={report} />
+        </div>
+      )}
+    </section>
   );
 }

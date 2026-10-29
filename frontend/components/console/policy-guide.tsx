@@ -19,6 +19,7 @@ import { Button } from "./ui";
 import GlassFolder, { hashString } from "@/components/ui/glass-folder-cards";
 import styles from "./policy-guide.module.css";
 import { PassTasks } from "./pass-tasks";
+import { PassTestPanel } from "./task-pnl";
 
 const USDC = 1_000_000;
 const toMinor = (v: string) => Math.round(Number(v) * USDC);
@@ -339,6 +340,7 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
           </div>
         ) : null}
         {expanded && !open && <PassTasks passId={pass.id} heldMinor={aside} onChanged={onSaved} />}
+        {expanded && !open && <PassTestPanel passId={pass.id} off={frozen} />}
         {!open ? null : (
           <Guide
             pass={pass}

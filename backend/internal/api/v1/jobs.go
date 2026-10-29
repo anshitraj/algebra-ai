@@ -400,6 +400,36 @@ func (a *API) replayMyJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
+// replayMyPass: POST /api/v1/me/passes/{id}/replay. A Spend Pass that has no
+// task yet is tested on the kinds of work agents usually buy, against sellers
+// that misbehave, under the pass's own limits. Nothing is contacted or paid.
+func (a *API) replayMyPass(w http.ResponseWriter, r *http.Request) {
+	sess, ok := a.requireSession(w, r)
+	if !ok || !a.executionEnabled(w) {
+		return
+	}
+	if a.b.SpendPasses == nil {
+		writeJSON(w, http.StatusNotImplemented, errorBody{Error: "Spend Passes are not enabled on this server"})
+		return
+	}
+	p, err := a.b.SpendPasses.OwnedActive(r.Context(), sess.UserID, r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	rep, err := a.b.Execution.ReplayPreset(ctx, p, func(ctx context.Context, capability string) []routing.Candidate {
+		cands, _ := a.b.Candidates.ResolveFor(ctx, sess.UserID, capability, nil, nil)
+		return cands
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
+}
+
 func (a *API) myJob(w http.ResponseWriter, r *http.Request, do func(id string) (*app.JobView, error)) {
 	sess, ok := a.requireSession(w, r)
 	if !ok || !a.jobPasses(w) {

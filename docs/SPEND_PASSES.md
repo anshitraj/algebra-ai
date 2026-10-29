@@ -126,6 +126,25 @@ The adversaries are never contacted (their answers are written into the dry run)
 from their listings, so nothing leaves Algebra and nothing is paid. Each finding says whether it was caught, waited for
 the person, was ranked below a better offer, or would have been paid, with the rule that decided.
 
+### Test this pass: the same scenarios before an agent has any task
+
+`ExecutionService.ReplayPreset`, `POST /api/v1/me/passes/{id}/replay`, "Test this pass" in an open pass card. A pass with no
+task has nothing to replay, so three kinds of work agents usually buy stand in for a task's purchases: `token.price`,
+`solana.token-risk` and `web.search`. For each:
+
+- the sellers are the ones the router would see now, kept to the networks the pass can pay on (a Testnet pass: the Testnet
+  networks whose rail is ready; a demo account: the sandbox) and to what is priced in USDC;
+- the cheapest one that lists a price stands in for "the seller the agent paid", and its price is the usual price the
+  scenarios scale from (overcharge is four times it, the web lure half of it);
+- the ask has the widest budget the pass lets one purchase have (its per-purchase limit, else its whole budget), so a pass
+  that holds against it holds against a smaller ask, and a missing limit shows as `would_pay`;
+- a kind of work nobody sells on those networks is listed in `skipped` with the reason instead of being tested.
+
+It says so instead of returning a report where everything was refused for one reason: a pass that shops (INR), a frozen,
+revoked or expired pass, and a Mainnet pass while Mainnet payments are off are refused with what to do. Same pass, same
+sellers, same report: a tie in price goes to the first seller by name. `TestReplayPreset_*`,
+`TestReplayPresetOverHTTP_APassIsTestedWithoutPayingAnyone`.
+
 ## Web tools with your own API key
 
 `backend/providers/keyed`, `internal/app/tool_keys.go`, "Web tools" in Account. A person saves their own key for a vendor and

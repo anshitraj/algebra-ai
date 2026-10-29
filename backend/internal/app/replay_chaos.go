@@ -2,13 +2,17 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/econ"
 	"github.com/project-algebra/algebra/internal/domain/routing"
+	"github.com/project-algebra/algebra/internal/domain/spendpass"
+	"github.com/project-algebra/algebra/internal/domain/tenancy"
 )
 
 // Replay: a finished task's purchases run again, on paper, against sellers
@@ -21,6 +25,10 @@ import (
 // leaves Algebra and nothing is paid. What comes back is what the pass's rules
 // and Algebra's guards would have done: caught it, held it for the person,
 // ranked it below a better offer, or paid it.
+//
+// An agent that hasn't done a task yet has nothing to replay, so its Spend Pass
+// is tested on stand-ins (ReplayPreset): the kinds of work agents usually buy,
+// each at the cheapest price a seller lists for it, under the pass's own limits.
 
 // Replay scenarios.
 const (
@@ -56,23 +64,41 @@ type ReplayFinding struct {
 	Detail      string `json:"detail"`
 }
 
-// ReplayPurchase is one paid purchase of the task and what each scenario did.
+// ReplayPurchase is one paid purchase of the task (or, in a preset run, one
+// kind of work at the price it usually costs) and what each scenario did.
 type ReplayPurchase struct {
-	IntentID   string          `json:"intent_id"`
-	Capability string          `json:"capability"`
-	Provider   string          `json:"provider"`
-	PaidMinor  int64           `json:"paid_minor"`
-	Findings   []ReplayFinding `json:"findings"`
+	// IntentID is empty in a preset run: nothing was bought.
+	IntentID   string `json:"intent_id,omitempty"`
+	Capability string `json:"capability"`
+	// Title is the kind of work in words ("Token price"), for a preset run.
+	Title     string          `json:"title,omitempty"`
+	Provider  string          `json:"provider"`
+	PaidMinor int64           `json:"paid_minor"`
+	Findings  []ReplayFinding `json:"findings"`
 }
 
-// ReplayReport is a task replayed under chaos.
+// ReplaySkip is a kind of work a preset run had no seller for.
+type ReplaySkip struct {
+	Capability string `json:"capability"`
+	Title      string `json:"title"`
+	Reason     string `json:"reason"`
+}
+
+// ReplayReport is a task, or a Spend Pass with no task yet, replayed under chaos.
 type ReplayReport struct {
-	JobID     string           `json:"job_pass_id"`
-	Label     string           `json:"label"`
-	RanAt     time.Time        `json:"ran_at"`
+	// JobID is the task replayed; PassID the Spend Pass a preset run tested.
+	JobID  string    `json:"job_pass_id,omitempty"`
+	PassID string    `json:"spend_pass_id,omitempty"`
+	Label  string    `json:"label"`
+	RanAt  time.Time `json:"ran_at"`
+	// Preset: no task's purchases were replayed; the kinds of work in
+	// Purchases stood in for them.
+	Preset    bool             `json:"preset,omitempty"`
 	Purchases []ReplayPurchase `json:"purchases"`
-	Safe      int              `json:"safe"`
-	Unsafe    int              `json:"unsafe"`
+	// Skipped are the kinds of work a preset run found nobody to buy from.
+	Skipped []ReplaySkip `json:"skipped,omitempty"`
+	Safe    int          `json:"safe"`
+	Unsafe  int          `json:"unsafe"`
 	// AtRiskMinor is what every adversary together asked; ProtectedMinor the
 	// part of it Algebra would not have paid.
 	AtRiskMinor    int64 `json:"at_risk_minor"`
@@ -113,25 +139,160 @@ func (s *ExecutionService) Replay(ctx context.Context, job *JobView, agentID str
 		if err != nil {
 			return nil, err
 		}
-		p := ReplayPurchase{IntentID: a.IntentID, Capability: view.Capability, Provider: a.ProviderID, PaidMinor: a.HoldMinor}
-		base := source(ctx, view.Capability)
-		for _, sc := range []string{ChaosOvercharge, ChaosHoneypot, ChaosWebLure, ChaosStranger, ChaosSellerDown, ChaosLoop} {
-			f, err := s.chaos(ctx, agentID, view, a, base, sc)
-			if err != nil {
-				return nil, err
-			}
-			p.Findings = append(p.Findings, f)
-			out.AtRiskMinor += f.AtRiskMinor
-			if f.Safe {
-				out.Safe++
-				out.ProtectedMinor += f.AtRiskMinor
-			} else {
-				out.Unsafe++
-			}
+		p, err := s.replayPurchase(ctx, agentID, view, a, source(ctx, view.Capability), out)
+		if err != nil {
+			return nil, err
 		}
 		out.Purchases = append(out.Purchases, p)
 	}
 	return out, nil
+}
+
+var replayScenarios = []string{ChaosOvercharge, ChaosHoneypot, ChaosWebLure, ChaosStranger, ChaosSellerDown, ChaosLoop}
+
+// replayPurchase runs every scenario against one purchase and counts what they
+// found into out's totals.
+func (s *ExecutionService) replayPurchase(ctx context.Context, agentID string, view *IntentView, paid JobAttempt, base []routing.Candidate, out *ReplayReport) (ReplayPurchase, error) {
+	p := ReplayPurchase{IntentID: paid.IntentID, Capability: view.Capability, Provider: paid.ProviderID, PaidMinor: paid.HoldMinor}
+	for _, sc := range replayScenarios {
+		f, err := s.chaos(ctx, agentID, view, paid, base, sc)
+		if err != nil {
+			return p, err
+		}
+		if out.Preset && sc == ChaosSellerDown {
+			f.Title = "The seller the agent pays is down"
+		}
+		p.Findings = append(p.Findings, f)
+		out.AtRiskMinor += f.AtRiskMinor
+		if f.Safe {
+			out.Safe++
+			out.ProtectedMinor += f.AtRiskMinor
+		} else {
+			out.Unsafe++
+		}
+	}
+	return p, nil
+}
+
+// replayPresets are the kinds of work a Spend Pass is tested on while its agent
+// has no task: the cheap lookups agents buy most.
+var replayPresets = []string{"token.price", "solana.token-risk", "web.search"}
+
+// ReplayPreset tests a Spend Pass with no task behind it. Each preset kind of
+// work is put through the same scenarios as a task's purchase, as if the agent
+// had just paid the cheapest seller that lists a price for it, asking with the
+// widest budget the pass allows one purchase: a pass that holds against that
+// holds against a smaller ask. Nothing is contacted or paid.
+func (s *ExecutionService) ReplayPreset(ctx context.Context, p *spendpass.Pass, source CandidateSource) (*ReplayReport, error) {
+	switch {
+	case p.Currency != "USDC":
+		return nil, fmt.Errorf("%w: only a pass that pays for APIs and data (USDC) can be tested, not one that shops", ErrInvalidRequest)
+	case !p.Active(s.now()):
+		return nil, fmt.Errorf("%w: this pass is revoked or expired", ErrInvalidRequest)
+	case p.FrozenAt != nil:
+		return nil, fmt.Errorf("%w: this pass is frozen, so it refuses everything: unfreeze it to test it", ErrInvalidRequest)
+	}
+	networks, err := s.presetNetworks(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	out := &ReplayReport{PassID: p.ID, Label: p.Label, Preset: true, RanAt: s.now().UTC(), Purchases: []ReplayPurchase{}}
+	budget := presetBudgetMinor(p)
+	for _, id := range replayPresets {
+		class, ok := routing.ClassByID(id)
+		if !ok {
+			continue
+		}
+		base := payableOn(source(ctx, id), networks)
+		ref, ok := cheapestListed(base, p.Currency)
+		if !ok {
+			out.Skipped = append(out.Skipped, ReplaySkip{
+				Capability: id, Title: class.Title,
+				Reason: "no seller for it lists a price on this pass's networks (" + strings.Join(networks, ", ") + ")",
+			})
+			continue
+		}
+		view := &IntentView{Intent: econ.Intent{
+			Capability: id, Input: class.Sample, Currency: p.Currency, BudgetMaxMinor: budget,
+			Constraints: econ.Constraints{AllowedNetworks: networks},
+		}}
+		paid := JobAttempt{Capability: id, ProviderID: ref.Provider, HoldMinor: ref.PriceMinor, Network: ref.Network}
+		rp, err := s.replayPurchase(ctx, p.AgentID, view, paid, base, out)
+		if err != nil {
+			return nil, err
+		}
+		rp.Title = class.Title
+		out.Purchases = append(out.Purchases, rp)
+	}
+	return out, nil
+}
+
+// presetNetworks are the networks the pass would let an intent pay on, found
+// the way a real request finds them. Mainnet payments being off is said, not
+// tested: every scenario would only be refused for that.
+func (s *ExecutionService) presetNetworks(ctx context.Context, p *spendpass.Pass) ([]string, error) {
+	var spec econ.Spec
+	err := s.econ.restrictDemo(ctx, p.UserID, &spec)
+	if err == nil {
+		err = s.econ.restrictEnvironment(p, &spec)
+	}
+	var denied *AuthorityDenied
+	switch {
+	case errors.As(err, &denied) && slices.Contains(denied.ReasonCodes, DenyMainnetDisabled):
+		return nil, fmt.Errorf("%w: Mainnet payments are off, so there is nothing to test yet: test a Testnet pass", ErrInvalidRequest)
+	case err != nil:
+		return nil, err
+	}
+	if n := spec.Constraints.AllowedNetworks; len(n) > 0 {
+		return n, nil
+	}
+	// A pass made before projects existed has no environment: test it on Testnet.
+	return tenancy.EnvDevnet.Networks(), nil
+}
+
+// presetBudgetMinor is the widest budget the pass lets one purchase have: its
+// per-purchase limit, else its whole budget.
+func presetBudgetMinor(p *spendpass.Pass) int64 {
+	switch {
+	case p.MaxPerPurchaseMinorUnits != nil && *p.MaxPerPurchaseMinorUnits > 0:
+		return *p.MaxPerPurchaseMinorUnits
+	case p.BudgetMinorUnits > 0:
+		return p.BudgetMinorUnits
+	}
+	return 1_000_000
+}
+
+// payableOn keeps the candidates a pass could actually pay: on one of its
+// networks, over a rail that is ready.
+func payableOn(base []routing.Candidate, networks []string) []routing.Candidate {
+	out := make([]routing.Candidate, 0, len(base))
+	for _, c := range base {
+		n, err := c.Normalize()
+		if err != nil {
+			continue
+		}
+		if slices.Contains(networks, n.Network) && chain.Payable(n.Network) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// cheapestListed is the seller with the lowest listed price in currency: the
+// one a preset run pretends the agent paid. A tie goes to the first by name, so
+// two runs pick the same.
+func cheapestListed(base []routing.Candidate, currency string) (routing.Candidate, bool) {
+	var best routing.Candidate
+	found := false
+	for _, c := range base {
+		if c.PriceMinor <= 0 || !strings.EqualFold(c.Asset, currency) {
+			continue
+		}
+		if !found || c.PriceMinor < best.PriceMinor || (c.PriceMinor == best.PriceMinor && c.Provider < best.Provider) {
+			best, found = c, true
+		}
+	}
+	return best, found
 }
 
 var chaosTitles = map[string]string{

@@ -144,18 +144,29 @@ export type AgentPnL = {
   profit_minor: number;
 };
 
-/** A task replayed on paper against sellers that misbehave (POST /api/v1/me/jobs/{id}/replay). */
+/**
+ * A task, or a Spend Pass with no task yet, replayed on paper against sellers
+ * that misbehave (POST /api/v1/me/jobs/{id}/replay, POST /api/v1/me/passes/{id}/replay).
+ * A pass test (`preset`) has no task or intents: the kinds of work agents
+ * usually buy stand in for them.
+ */
 export type ReplayReport = {
-  job_pass_id: string;
+  job_pass_id?: string;
+  spend_pass_id?: string;
   label: string;
   ran_at: string;
+  preset?: boolean;
   purchases: {
-    intent_id: string;
+    intent_id?: string;
     capability: string;
+    /** The kind of work in words ("Token price"), in a pass test. */
+    title?: string;
     provider: string;
     paid_minor: number;
     findings: { scenario: string; title: string; outcome: string; safe: boolean; at_risk_minor: number; detail: string }[];
   }[];
+  /** Kinds of work a pass test had no seller for. */
+  skipped?: { capability: string; title: string; reason: string }[];
   safe: number;
   unsafe: number;
   at_risk_minor: number;

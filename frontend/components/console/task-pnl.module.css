@@ -117,6 +117,42 @@
   padding-top: 8px;
   border-top: 1px dashed var(--color-border-strong);
 }
+/* "Test this pass": a section of a pass's details, set like its recent tasks. */
+.passTest {
+  display: grid;
+  gap: 10px;
+  margin: 4px 20px 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+.passTestHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+}
+.passTestHead > div {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 2px;
+  min-width: 0;
+}
+.passTestHead h4 {
+  color: var(--color-foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+.passTestHead p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.run:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .run {
   justify-self: start;
 }

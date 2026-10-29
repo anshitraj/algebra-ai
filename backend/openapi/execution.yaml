@@ -198,6 +198,50 @@ components:
         tolerance_pct: { type: number, description: How far apart two numbers may be and still agree, for this kind of work. }
         summary: { type: string }
         values_are_untrusted_provider_data: { type: boolean }
+    ReplayReport:
+      type: object
+      description: >
+        A Spend Pass (or a finished task) put through six misbehaving-seller scenarios on paper. Nothing is contacted or paid.
+      properties:
+        spend_pass_id: { type: string, description: The pass tested (a pass test). }
+        job_pass_id: { type: string, description: The task replayed (a task replay). }
+        label: { type: string }
+        ran_at: { type: string, format: date-time }
+        preset: { type: boolean, description: "True for a pass test: the kinds of work agents usually buy stood in for a task's purchases." }
+        purchases:
+          type: array
+          items:
+            type: object
+            properties:
+              intent_id: { type: string, description: Empty in a pass test, where nothing was bought. }
+              capability: { type: string }
+              title: { type: string, description: "The kind of work in words, in a pass test." }
+              provider: { type: string, description: "The seller paid, or in a pass test the cheapest that lists a price." }
+              paid_minor: { type: integer, format: int64 }
+              findings:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    scenario: { type: string, enum: [overcharge, honeypot, web_lure, stranger, seller_down, loop] }
+                    title: { type: string }
+                    outcome: { type: string, enum: [caught, held, outranked, would_pay, falls_back, stops] }
+                    safe: { type: boolean, description: Every outcome but would_pay. }
+                    at_risk_minor: { type: integer, format: int64 }
+                    detail: { type: string }
+        skipped:
+          type: array
+          description: Kinds of work a pass test had no seller for on the pass's networks.
+          items:
+            type: object
+            properties:
+              capability: { type: string }
+              title: { type: string }
+              reason: { type: string }
+        safe: { type: integer }
+        unsafe: { type: integer }
+        at_risk_minor: { type: integer, format: int64, description: What every adversary together asked. }
+        protected_minor: { type: integer, format: int64, description: The part of it that would not have been paid. }
     Simulation:
       type: object
       properties:
@@ -583,6 +627,30 @@ paths:
                 frozen: { type: boolean }
       responses:
         "200": { description: The pass. }
+  /me/passes/{id}/replay:
+    post:
+      tags: [Spend Passes]
+      operationId: testPass
+      summary: Test a pass against sellers that misbehave
+      description: >
+        "Test this pass". The kinds of work agents usually buy (token price, token risk, web search) are put through six
+        scenarios under this pass's own limits, each at the cheapest price a seller lists for it, asking with the widest budget
+        the pass allows one purchase: a seller that lists the usual price then asks four times as much, one that asks 25 USDC,
+        an endpoint found on the open web, a seller never paid before, the cheapest seller being down, and the same thing
+        asked again and again. The adversaries are never contacted and nothing is paid. Refused for a pass that shops (INR),
+        is frozen, revoked or expired, or is on Mainnet while Mainnet payments are off.
+      security: [{ session: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: What each scenario did.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReplayReport" }
+        "400": { description: The pass can't be tested, and why. }
+        "403": { description: The pass is revoked or expired. }
+        "404": { description: Not the person's pass. }
   /me/passes/{id}/controls:
     put:
       tags: [Spend Passes]
