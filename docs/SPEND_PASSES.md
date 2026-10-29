@@ -155,6 +155,12 @@ that vendor's tools become one more seller their agents can route to, priced and
 `GET /api/v1/me/tool-keys` lists the vendors and which keys are saved; `PUT /api/v1/me/tool-keys/{vendor}` with `{"key": "…"}`
 saves or replaces; `DELETE` removes.
 
+**Checked live.** `providers/keyed/live_test.go` runs the real adapters against the real vendors, only when a key is in the
+test process's environment (`KEYED_LIVE_TINYFISH_KEY`, `_EXA_`, `_FIRECRAWL_`, `_TAVILY_`; an Agent run costs credits and
+also needs `KEYED_LIVE_AGENT=1`): `KEYED_LIVE_TINYFISH_KEY=… go test ./providers/keyed -run Live -v -count=1`. TinyFish
+Search (10 results) and Fetch (a page as markdown) passed against the live API on 2026-10-29. The Agent, Exa, Firecrawl and
+Tavily adapters are so far tested against fake vendors only.
+
 ## Connecting an agent
 
 - **MCP** at `/mcp`: send the token as an HTTP header, so it never passes through the model: see [MCP.md](MCP.md). `algebra_spend_pass` reads the pass; `algebra_execute` spends under it.
