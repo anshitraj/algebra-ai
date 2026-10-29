@@ -69,7 +69,8 @@ type EconUnit interface {
 	// time, to one provider or (provider "") to any: the velocity limit.
 	PassAttemptsSince(passID, provider string, since time.Time) (int, error)
 	// ProviderPaid reports whether the principal has ever committed money to
-	// the provider: the new-provider gate.
+	// the provider: the new-provider gate. A call that cost nothing (a free
+	// keyed tool) is not money, so it does not make a provider known.
 	ProviderPaid(principalID, provider string) (bool, error)
 	AppendEvent(e EconEvent) error
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/project-algebra/algebra/internal/domain/account"
@@ -211,6 +212,7 @@ type billedRunner struct {
 	listed  int64
 	charged int64
 	fail    bool
+	ran     *atomic.Int32 // counts the calls made, when set
 }
 
 func (billedRunner) Type() routing.ExecutionType { return routing.ExecHTTPAPI }
@@ -221,6 +223,9 @@ func (b billedRunner) Quote(_ context.Context, _ routing.Candidate, _ json.RawMe
 	return routing.Quote{Cost: routing.Cost{ProviderMinor: b.listed}, Asset: "USDC", Network: chain.Keyed, PayTo: "acme", Semantics: econ.SemanticsMeteredCapture}, nil
 }
 func (b billedRunner) Run(ctx context.Context, call StepCall) StepObservation {
+	if b.ran != nil {
+		b.ran.Add(1)
+	}
 	if _, err := call.Pay(ctx, PaymentRequest{}); err != nil {
 		return StepObservation{Class: routing.FailPayment, Message: err.Error()}
 	}
@@ -292,6 +297,52 @@ func TestKeyed_AFreeCallCommitsNothingNotTheWholeCeiling(t *testing.T) {
 	}
 	if res.Report.Intent.CommittedMinor != 0 {
 		t.Errorf("committed %d, the intent's ceiling was 50000", res.Report.Intent.CommittedMinor)
+	}
+}
+
+// A free keyed call moves no money, so it does not make its vendor a known
+// provider: the first call that costs more than a never-paid provider may take
+// still waits for the person, however many free ones came before it. Once a
+// call has cost something, the vendor is known and the same call goes through.
+func TestKeyed_FreeCallsDoNotMakeAVendorKnown(t *testing.T) {
+	ctx := context.Background()
+	rig := keyedRig(t, billedRunner{listed: 1, charged: 0})
+	if res, err := doKeyed(t, rig, "free"); err != nil || !res.Report.Delivered {
+		t.Fatalf("a free call: %+v %v", res, err)
+	}
+
+	// The same vendor now quotes 0.30, above the 0.05 a provider never paid may take.
+	var ran atomic.Int32
+	rig.exec.RegisterRunner(billedRunner{listed: 300_000, charged: 60_000, ran: &ran})
+	costly := func(window string) (*DoResult, error) {
+		spec := doSpec(window)
+		spec.BudgetMaxMinor = 400_000
+		spec.Constraints.AllowedNetworks = []string{chain.SolanaDevnet}
+		c := keyedCand()
+		c.PriceMinor = 300_000
+		return rig.exec.Do(ctx, DoRequest{AgentID: "agent_1", Spec: spec, Candidates: []routing.Candidate{c}})
+	}
+	_, err := costly("costly-1")
+	var rej *ReservationRejected
+	if !errors.As(err, &rej) || rej.Reason != RejectApproval || rej.State != econ.StateAwaitingApproval {
+		t.Fatalf("free calls do not make a vendor known: the first one that costs waits for the person: %v", err)
+	}
+	if ran.Load() != 0 {
+		t.Fatal("nothing may be called before the person says yes")
+	}
+
+	// A call that costs something within the cap is allowed, and pays.
+	rig.exec.RegisterRunner(billedRunner{listed: 20_000, charged: 7_000, ran: &ran})
+	if res, err := doKeyed(t, rig, "paid"); err != nil || !res.Report.Delivered || res.Report.Intent.CommittedMinor != 7_000 {
+		t.Fatalf("a call within the cap: %+v %v", res, err)
+	}
+
+	// The vendor has now been paid, so the costly call goes straight through.
+	ran.Store(0)
+	rig.exec.RegisterRunner(billedRunner{listed: 300_000, charged: 60_000, ran: &ran})
+	res, err := costly("costly-2")
+	if err != nil || !res.Report.Delivered || res.Report.Intent.CommittedMinor != 60_000 || ran.Load() != 1 {
+		t.Fatalf("a vendor that has been paid is known: %v %+v", err, res)
 	}
 }
 

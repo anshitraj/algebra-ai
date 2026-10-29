@@ -163,6 +163,17 @@ passed against the live API on 2026-10-29. TinyFish's answer to an Agent run rep
 the charge is the steps at the pay-as-you-go step price: a plan with cheaper credits is billed less than Algebra records.
 The Exa, Firecrawl and Tavily adapters are so far tested against fake vendors only.
 
+`internal/platform/postgres/keyed_live_test.go` runs the whole path (router, coordinator, `keyed` rail and runner, Postgres)
+against the real TinyFish, with the key only in the test process's environment and nothing saved: Search and Fetch settle
+at 0 and count as accepted answers in the agent's P&L; an Agent run is refused as over budget under a 0.30 ceiling and, with
+a higher one, waits for the person. It never runs an Agent task (the test's HTTP client refuses that host), because one
+costs credits.
+
+A free call moves no money, so it does not make a vendor a known provider: the new-provider gate counts only commitments
+with a hold above zero. The first call that costs more than a never-paid provider may take (0.05 by default) is held for a
+yes however many free ones came before it, and an agent needs a ceiling of at least 0.30 USDC to ask for an Agent run,
+which is quoted at about twenty steps.
+
 ## Connecting an agent
 
 - **MCP** at `/mcp`: send the token as an HTTP header, so it never passes through the model: see [MCP.md](MCP.md). `algebra_spend_pass` reads the pass; `algebra_execute` spends under it.

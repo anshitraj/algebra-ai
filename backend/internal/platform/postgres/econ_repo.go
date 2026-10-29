@@ -352,7 +352,7 @@ func (u *econUnit) ProviderPaid(principalID, provider string) (bool, error) {
 	var paid bool
 	err := u.tx.QueryRow(u.ctx, `
 		SELECT EXISTS (SELECT 1 FROM economic_reservations r JOIN economic_intents i ON i.id = r.intent_id
-		               WHERE r.provider_id = $2 AND r.state = 'COMMITTED' AND i.principal_id = $1)`, principalID, provider).Scan(&paid)
+		               WHERE r.provider_id = $2 AND r.state = 'COMMITTED' AND r.hold_minor > 0 AND i.principal_id = $1)`, principalID, provider).Scan(&paid)
 	if err != nil {
 		return false, fmt.Errorf("postgres: checking whether a provider was paid: %w", err)
 	}

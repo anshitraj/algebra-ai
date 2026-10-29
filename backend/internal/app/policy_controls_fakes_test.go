@@ -35,7 +35,7 @@ func (u *memUnit) PassAttemptsSince(passID, provider string, since time.Time) (i
 
 func (u *memUnit) ProviderPaid(principalID, provider string) (bool, error) {
 	for _, x := range u.allReservations() {
-		if x.ProviderID != provider || x.State != econ.ReservationCommitted {
+		if x.ProviderID != provider || x.State != econ.ReservationCommitted || x.HoldMinor <= 0 {
 			continue
 		}
 		in := u.m.intents[x.IntentID]
@@ -122,7 +122,7 @@ func (m *memEconStore) ProviderPaidBy(_ context.Context, principalID, provider s
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, x := range m.rsv {
-		if in := m.intents[x.IntentID]; in != nil && x.ProviderID == provider && x.State == econ.ReservationCommitted && in.PrincipalID == principalID {
+		if in := m.intents[x.IntentID]; in != nil && x.ProviderID == provider && x.State == econ.ReservationCommitted && x.HoldMinor > 0 && in.PrincipalID == principalID {
 			return true, nil
 		}
 	}
