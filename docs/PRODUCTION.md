@@ -99,6 +99,9 @@ GRIEVANCE_OFFICER_NAME=Full name
 GRIEVANCE_OFFICER_EMAIL=grievance@yourdomain.com
 ```
 
+`SUPPORT_EMAIL` is also the contact in `https://<your site>/.well-known/security.txt` (RFC 9116, `frontend/lib/security-txt.ts`): where someone who finds a
+vulnerability writes. Leave it unset and that URL answers 404 instead of naming nobody; use a mailbox that is read.
+
 `APP_ENV=production` refuses to start, listing every problem at once, if `PUBLIC_WEB_URL` isn't https, `ALGEBRA_DEV_AUTH` is on, the mock store is enabled (set `ENABLED_MERCHANTS=none`),
 `RESEND_API_KEY` or `REDIS_ADDR` is missing, `DATABASE_URL` disables TLS, or a CORS origin isn't https. A Solana RPC node on the wrong cluster stops startup; one that is merely unreachable leaves
 its rail out, loudly. Redis being unreachable at boot is fatal in production.

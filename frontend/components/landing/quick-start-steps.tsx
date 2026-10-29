@@ -18,13 +18,13 @@ export function QuickStartSteps() {
         <li className={styles.step}>
           <div className={styles.annotation}><span>Step 1</span><StepArrow /></div>
           <article className={styles.card}>
-            <h3>Fund your Solana vault.</h3>
+            <h3>Open your vault.</h3>
             <div className={`${styles.illustration} ${styles.funding}`} aria-hidden="true">
               <div className={styles.wallet}><IconWallet size={19} /><span>Your wallet</span><span className={styles.walletLine} /></div>
-              <div className={styles.depositLine}><span />↓<small>DEPOSIT USDC</small></div>
-              <div className={styles.vault}><div><SolanaMark size={23} /><span>Solana vault</span><IconLock size={15} /></div><strong>USDC</strong><small>Funded by you. Bounded by your pass.</small><div className={styles.vaultDial}><span /><i /></div></div>
+              <div className={styles.depositLine}><span />↓<small>SET A LIMIT</small></div>
+              <div className={styles.vault}><div><SolanaMark size={23} /><span>Capped limit</span><IconLock size={15} /></div><strong>USDC</strong><small>Stays in your wallet. Bounded by your pass.</small><div className={styles.vaultDial}><span /><i /></div></div>
             </div>
-            <p>Deposit USDC from your wallet into your pass&rsquo;s vault. The Solana program checks the limits before funds can move.</p>
+            <p>Your vault is your own wallet, made in your browser: Algebra never holds your keys. Give a pass a capped USDC limit and the Solana program checks it before any funds can move. Testnet starts with free test credits.</p>
           </article>
         </li>
         <li className={styles.step}>
@@ -56,7 +56,7 @@ export function QuickStartSteps() {
           </article>
         </li>
       </ol>
-      <p className={styles.note}>Illustrative setup · amounts shown are examples · on-chain vaults are available on Solana devnet.</p>
+      <p className={styles.note}>Illustrative setup · amounts shown are examples · on-chain limits run on Solana devnet today; Mainnet opens after an independent security review.</p>
     </section>
   );
 }

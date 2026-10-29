@@ -12,7 +12,7 @@ const stations = [
   { id: "provider", name: "API providers", detail: "Choose a capability, not a vendor integration. Algebra finds an eligible provider such as Birdeye for token intelligence, Exa for search, or Quicknode for RPC." },
   { id: "settlement", name: "USDC payment", detail: "Algebra authorizes the payment within your limits and settles in USDC on Solana. Your agent never receives the signing key." },
   { id: "receipt", name: "signed receipt", detail: "Your agent receives the result and a signed receipt. Trace the route, policy decision and settlement, then verify the proof independently." },
-  { id: "vault", name: "Solana vault", detail: "You fund the Spend Pass’s USDC vault from your own wallet. The Solana program checks the pass limits before releasing the exact amount a payment needs. You can freeze the pass or withdraw the remaining funds." },
+  { id: "vault", name: "Your vault", detail: "Your vault is your own wallet: Algebra never holds your keys. You give the Spend Pass a capped USDC limit, and the Solana program checks it before releasing the exact amount a payment needs. Until then the funds stay in your wallet, and you can freeze the pass or stop the limit at any time." },
 ] as const;
 type StationId = typeof stations[number]["id"];
 
@@ -74,7 +74,7 @@ export function ExecutionMachine() {
         <div className={styles.diagramViewport} ref={viewport}>
           <svg viewBox="0 40 1120 615" className={styles.diagram} role="img" aria-label="Algebra execution diagram">
             <title>Algebra execution diagram</title>
-            <desc>You fund a Solana USDC vault from your wallet. Agents connect through REST or MCP. Algebra routes requests, checks the Spend Pass, and the program checks the vault’s limits before releasing funds for payment. A result and signed receipt return to your agent. Select a stage using the buttons below.</desc>
+            <desc>You give the Spend Pass a capped USDC limit from your own wallet. Agents connect through REST or MCP. Algebra routes requests, checks the Spend Pass, and the program checks the vault’s limits before releasing funds for payment. A result and signed receipt return to your agent. Select a stage using the buttons below.</desc>
             <defs>
               <linearGradient id={plateId} x1="0" y1="0" x2=".8" y2="1"><stop stopColor="#353c32" /><stop offset="1" stopColor="#20251f" /></linearGradient>
               <linearGradient id={solanaId}><stop stopColor="#98dbc0" /><stop offset="1" stopColor="#b6abe3" /></linearGradient>
@@ -96,9 +96,9 @@ export function ExecutionMachine() {
             <text x="744" y="377" className={styles.wireLabel}>LIMITED USDC PULL</text>
 
             <Module id="vault" x={481} y={78} width={182} height={124} selected={selected === "vault"} onSelect={() => focusStation("vault")}>
-              <text x="16" y="24" className={styles.number}>FUNDING / ON-CHAIN</text>
+              <text x="16" y="24" className={styles.number}>YOUR LIMIT / ON-CHAIN</text>
               <g className={styles.vaultIcon}><rect x="17" y="38" width="44" height="47" rx="4" /><circle cx="39" cy="61" r="13" /><path d="M39 51v20M29 61h20M21 43v8m0 19v9" /><circle cx="39" cy="61" r="3" /></g>
-              <text x="73" y="55" className={styles.moduleTitle}>Solana vault</text><text x="73" y="72" className={styles.moduleMeta}>Owner-funded USDC</text>
+              <text x="73" y="55" className={styles.moduleTitle}>Your vault</text><text x="73" y="72" className={styles.moduleMeta}>Held in your wallet</text>
               <g transform="translate(18 98) scale(.7)" fill={`url(#${solanaId})`}><path d="M3 0h23l-3 4H0zM0 7h23l3 4H3zM3 14h23l-3 4H0z" /></g><text x="48" y="109" className={styles.moduleMeta}>Program-checked limits</text>
             </Module>
 
