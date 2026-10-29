@@ -84,8 +84,66 @@ export type JobPass = {
   set_aside_minor: number;
   left_minor: number;
   returned_minor: number;
+  /** What the task is worth, if its agent or person said. */
+  value_minor?: number;
+  /** The task's money, its sub-tasks included. */
+  pnl: TaskPnL;
   children: JobPass[];
   attempts: JobAttempt[];
+};
+
+export type TaskPnL = {
+  value_minor?: number;
+  paid_minor: number;
+  /** Paid for answers that weren't usable. */
+  wasted_minor: number;
+  accepted: number;
+  failed_free: number;
+  cost_per_accepted_minor: number;
+  /** What reused answers would have cost again. */
+  saved_minor: number;
+  reused: number;
+  /** Value less what was paid, when a value was stated. */
+  profit_minor?: number;
+};
+
+/** An agent's money over a period (GET /api/v1/me/passes/{id}/pnl). */
+export type AgentPnL = {
+  spend_pass_id: string;
+  days: number;
+  since: string;
+  paid_minor: number;
+  wasted_minor: number;
+  accepted: number;
+  failed_free: number;
+  cost_per_accepted_minor: number;
+  saved_minor: number;
+  reused: number;
+  duplicates_blocked: number;
+  duplicate_prevented_minor: number;
+  tasks: number;
+  valued_tasks: number;
+  value_minor: number;
+  valued_cost_minor: number;
+  profit_minor: number;
+};
+
+/** A task replayed on paper against sellers that misbehave (POST /api/v1/me/jobs/{id}/replay). */
+export type ReplayReport = {
+  job_pass_id: string;
+  label: string;
+  ran_at: string;
+  purchases: {
+    intent_id: string;
+    capability: string;
+    provider: string;
+    paid_minor: number;
+    findings: { scenario: string; title: string; outcome: string; safe: boolean; at_risk_minor: number; detail: string }[];
+  }[];
+  safe: number;
+  unsafe: number;
+  at_risk_minor: number;
+  protected_minor: number;
 };
 
 /** A new pass with its agent token — the token is shown exactly once. */

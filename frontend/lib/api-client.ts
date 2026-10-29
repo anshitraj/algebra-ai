@@ -3,7 +3,7 @@
 // authenticated by the HttpOnly session cookie; no token ever lives in
 // JavaScript.
 
-import type { AuthProviders, EconIntent, EconStats, IssuedPass, KeptResult, NewPass, NotificationSettings, OnboardingAnswers, PassConnect, ProviderDetail, ProviderListing, RailStatus, ReceiptVerification, SessionInfo, SpendPass, User, JobPass } from "./types";
+import type { AuthProviders, EconIntent, EconStats, IssuedPass, KeptResult, NewPass, NotificationSettings, OnboardingAnswers, PassConnect, ProviderDetail, ProviderListing, RailStatus, ReceiptVerification, SessionInfo, SpendPass, User, JobPass, AgentPnL, ReplayReport } from "./types";
 import type {
   APIKey,
   Environment,
@@ -218,6 +218,21 @@ export function listJobs(passId?: string, limit = 20) {
   const q = new URLSearchParams({ limit: String(limit) });
   if (passId) q.set("spend_pass_id", passId);
   return apiFetch<{ jobs: JobPass[] }>(`/api/v1/me/jobs?${q}`);
+}
+
+/** Records what a task is worth (null clears it): the other side of its P&L. */
+export function setJobValue(id: string, valueMinor: number | null) {
+  return apiFetch<JobPass>(`/api/v1/me/jobs/${encodeURIComponent(id)}/value`, { method: "POST", body: { value_minor: valueMinor } });
+}
+
+/** An agent's money over the last days. */
+export function getPassPnL(passId: string, days = 30) {
+  return apiFetch<AgentPnL>(`/api/v1/me/passes/${encodeURIComponent(passId)}/pnl?days=${days}`);
+}
+
+/** The task's purchases run again on paper against misbehaving sellers. Nothing is paid. */
+export function replayJob(id: string) {
+  return apiFetch<ReplayReport>(`/api/v1/me/jobs/${encodeURIComponent(id)}/replay`, { method: "POST" });
 }
 
 /** Stops a job and every job beneath it; what they didn't use goes back to the Spend Pass. */

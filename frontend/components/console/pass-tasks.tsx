@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
-import type { JobAttempt, JobPass } from "@/lib/types";
+import type { AgentPnL, JobAttempt, JobPass } from "@/lib/types";
 import { usdcNumber } from "@/lib/money";
 import { explorerTx } from "@/lib/explorer";
 import { IconChevronDown, IconExternal, Spinner } from "@/components/icons";
 import styles from "./pass-tasks.module.css";
+import { AgentPnLSummary, ReplayPanel, TaskPnLLine } from "./task-pnl";
 
 const STATE: Record<JobPass["state"], string> = { ACTIVE: "Running", CLOSED: "Done", REVOKED: "Stopped", EXPIRED: "Timed out" };
 
@@ -20,7 +21,7 @@ function ago(iso: string) {
 
 /** What an attempt came to, in a word. */
 function attemptState(a: JobAttempt) {
-  if (a.state === "COMMITTED") return a.fulfillment === "NOT_FULFILLED" ? "Paid, refunded" : "Paid";
+  if (a.state === "COMMITTED") return a.fulfillment === "NOT_FULFILLED" ? "Paid, not usable" : "Paid";
   if (a.state === "RELEASED" || a.state === "EXPIRED") return "Not paid";
   return "Settling";
 }
@@ -37,9 +38,16 @@ export function PassTasks({ passId, heldMinor = 0, onChanged }: { passId: string
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [stopping, setStopping] = useState<string | null>(null);
+  const [pnl, setPnl] = useState<AgentPnL | null>(null);
 
   useEffect(() => {
     let gone = false;
+    api
+      .getPassPnL(passId, 30)
+      .then((p) => {
+        if (!gone) setPnl(p);
+      })
+      .catch(() => {});
     api
       .listJobs(passId, 6)
       .then((r) => {
@@ -73,6 +81,7 @@ export function PassTasks({ passId, heldMinor = 0, onChanged }: { passId: string
         <h4>Recent tasks</h4>
         {heldMinor > 0 && <span>{usdcNumber(heldMinor)} USDC held by running tasks</span>}
       </div>
+      {pnl && <AgentPnLSummary pnl={pnl} />}
       {error && <p className={styles.note}>{error}</p>}
       {jobs === null && !error && (
         <p className={styles.note}>
@@ -83,7 +92,19 @@ export function PassTasks({ passId, heldMinor = 0, onChanged }: { passId: string
       {jobs && jobs.length > 0 && (
         <ul className={styles.list}>
           {jobs.map((j) => (
-            <Task key={j.id} job={j} open={open === j.id} onToggle={() => setOpen(open === j.id ? null : j.id)} onStop={() => stop(j)} stopping={stopping === j.id} />
+            <Task
+              key={j.id}
+              job={j}
+              open={open === j.id}
+              onToggle={() => setOpen(open === j.id ? null : j.id)}
+              onStop={() => stop(j)}
+              stopping={stopping === j.id}
+              onChanged={(v) => {
+                setJobs((all) => (all ?? []).map((x) => (x.id === v.id ? v : x)));
+                // A task's value changes the agent's P&L too.
+                api.getPassPnL(passId, 30).then(setPnl, () => {});
+              }}
+            />
           ))}
         </ul>
       )}
@@ -91,7 +112,7 @@ export function PassTasks({ passId, heldMinor = 0, onChanged }: { passId: string
   );
 }
 
-function Task({ job: j, open, onToggle, onStop, stopping }: { job: JobPass; open: boolean; onToggle: () => void; onStop: () => void; stopping: boolean }) {
+function Task({ job: j, open, onToggle, onStop, stopping, onChanged }: { job: JobPass; open: boolean; onToggle: () => void; onStop: () => void; stopping: boolean; onChanged: (j: JobPass) => void }) {
   const budget = Math.max(j.budget_minor, 1);
   const used = (j.paid_minor + j.held_minor + j.set_aside_minor) / budget;
   const attempts = j.attempts.filter((a) => a.state !== "RELEASED" && a.state !== "EXPIRED");
@@ -125,6 +146,7 @@ function Task({ job: j, open, onToggle, onStop, stopping }: { job: JobPass; open
               </>
             )}
           </p>
+          <TaskPnLLine job={j} onChanged={onChanged} />
           {attempts.length > 0 ? (
             <ul className={styles.attempts}>
               {attempts.map((a) => (
@@ -160,6 +182,7 @@ function Task({ job: j, open, onToggle, onStop, stopping }: { job: JobPass; open
               ))}
             </ul>
           )}
+          {!j.live && <ReplayPanel jobId={j.id} paid={j.pnl.paid_minor > 0} />}
           {j.live && (
             <button type="button" className={styles.stop} onClick={onStop} disabled={stopping}>
               {stopping && <Spinner size={11} />} Stop this task
