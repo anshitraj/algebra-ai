@@ -92,6 +92,10 @@ takes `job_id`, or pays under the job of the job token it is called with. The co
 `GET /api/v1/me/jobs/{id}`, `POST /api/v1/me/jobs/{id}/close|revoke`. The pass's view adds
 `set_aside_minor_units`: what running jobs hold and haven't used.
 
+MCP (`internal/mcpserver/job_tools.go`): `algebra_job_open`, `algebra_job_status`, `algebra_job_close`, and `job_id` on `algebra_execute`. A job token is a Bearer
+token for a sub-agent's own MCP connection and reaches what it reaches over REST: `algebra_execute` under its job, the three job tools for its tree, nothing
+else (every other tool says so). See [MCP.md](MCP.md).
+
 ## Task and agent P&L
 
 `internal/app/pnl.go`. Every task (Job Pass, sub-tasks included) and every agent (Spend Pass, last 30 days) has its money

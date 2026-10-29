@@ -61,7 +61,12 @@ type ReservationRejected struct {
 }
 
 func (e *ReservationRejected) Error() string {
-	return fmt.Sprintf("reservation rejected: %s (intent %s)", e.Reason, e.State)
+	s := fmt.Sprintf("reservation rejected: %s (intent %s)", e.Reason, e.State)
+	// Why the pass or the job refused is what a caller needs to act on.
+	if len(e.ReasonCodes) > 0 {
+		s += ": " + strings.Join(e.ReasonCodes, ", ")
+	}
+	return s
 }
 
 // ErrExecutionFrozen: the intent may already have committed; nothing new

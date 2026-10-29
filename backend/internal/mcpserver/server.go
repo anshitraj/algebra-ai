@@ -31,6 +31,7 @@ import (
 	"github.com/project-algebra/algebra/internal/app"
 	agentpkg "github.com/project-algebra/algebra/internal/domain/agent"
 	integratorpkg "github.com/project-algebra/algebra/internal/domain/integrator"
+	"github.com/project-algebra/algebra/internal/domain/jobpass"
 	"github.com/project-algebra/algebra/internal/domain/privacy"
 	"github.com/project-algebra/algebra/internal/domain/quote"
 	"github.com/project-algebra/algebra/internal/domain/tenancy"
@@ -66,6 +67,11 @@ type Server struct {
 
 	// SpendPasses backs algebra_spend_pass: an agent reading its own limits.
 	SpendPasses *app.SpendPassService
+
+	// JobPasses backs algebra_job_open, algebra_job_status and algebra_job_close,
+	// and the job_id of algebra_execute: a task's budget set aside from a Spend
+	// Pass. Nil leaves those without Job Passes.
+	JobPasses *app.JobPassService
 
 	// Tenancy resolves Algebra API keys to their project's Spend Pass. Nil
 	// leaves only Spend Pass tokens, as in tests.
@@ -112,6 +118,9 @@ func (srv *Server) resolveAgent(ctx context.Context, token string) (*agentpkg.Id
 	}
 	if token == "" {
 		return nil, fmt.Errorf("agent_token is required (or send Authorization: Bearer <token>)")
+	}
+	if jobpass.IsToken(token) {
+		return nil, fmt.Errorf("a job token only works with algebra_execute, algebra_job_open, algebra_job_status and algebra_job_close: it pays under its job and nothing else")
 	}
 	ag, err := srv.Agents.GetByTokenHash(ctx, agentpkg.HashToken(token))
 	if err != nil {
@@ -161,6 +170,7 @@ func NewMCPServer(srv *Server) *gomcp.Server {
 	s := gomcp.NewServer(&gomcp.Implementation{Name: "project-algebra", Version: "0.1.0"}, nil)
 	s.AddReceivingMiddleware(earlierNameMiddleware, bearerMiddleware, srv.rateLimitMiddleware)
 	srv.registerSpendPassTools(s)
+	srv.registerJobTools(s)
 	srv.registerEconomicTools(s)
 	srv.registerDiscoveryTools(s)
 	if srv.LegacyTools {

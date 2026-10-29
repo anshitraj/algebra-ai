@@ -15,7 +15,7 @@ import (
 var functionName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 // Tools added after the rename have no earlier, dotted name to keep answering.
-var addedAfterTheRename = []string{"algebra_cross_check"}
+var addedAfterTheRename = []string{"algebra_cross_check", "algebra_job_open", "algebra_job_status", "algebra_job_close"}
 
 func TestListedNamesNeedNoRewritingByAnyClient(t *testing.T) {
 	cs := connect(t, &Server{})

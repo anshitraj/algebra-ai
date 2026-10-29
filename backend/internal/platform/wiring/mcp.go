@@ -16,7 +16,7 @@ func (b *Bundle) MCP() *mcpserver.Server {
 		Policy: b.Policy, Orders: b.Orders, Payments: b.Payments, Privacy: b.Privacy,
 		Connectors: b.Connectors, Idempotency: b.Idempotency, Limiter: b.Limiter,
 		Integrators: b.Integrators, TransactionPolicy: b.TransactionPolicy,
-		PaymentIntents: b.PaymentIntentSvc, CommerceProfiles: b.CommerceProfileSvc, SpendPasses: b.SpendPasses,
+		PaymentIntents: b.PaymentIntentSvc, CommerceProfiles: b.CommerceProfileSvc, SpendPasses: b.SpendPasses, JobPasses: b.JobPasses,
 		Economic: b.Economic, Execution: b.Execution, Candidates: b.Candidates, Directory: b.Directory,
 		Classes: b.Classes, Health: b.Health, Tenancy: b.Tenancy,
 		IntentReceipts: b.IntentReceipts, LegacyTools: b.MCPLegacyTools,
