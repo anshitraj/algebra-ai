@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26"
+          go-version-file: backend/go.mod # the toolchain the module asks for: the one that ships
           cache: true
           cache-dependency-path: backend/go.sum
 
@@ -38,6 +38,81 @@ jobs:
       - name: go test (unit — no external dependencies)
         run: go test ./... -race -count=1
 
+  integration:
+    name: Backend integration + end-to-end (Postgres, Redis)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: algebra
+          POSTGRES_PASSWORD: algebra
+          POSTGRES_DB: algebra_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U algebra -d algebra_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod # the toolchain the module asks for: the one that ships
+          cache: true
+          cache-dependency-path: backend/go.sum
+      # What the money invariants are checked against: the Postgres repositories (one live
+      # attempt and one commitment per outcome, the job and pass limits under the pass's row
+      # lock), and the real API over HTTP and MCP against the sandbox sellers. Without
+      # DATABASE_URL these skip themselves, so the unit job above never ran them.
+      - name: go test (Postgres repositories and the end-to-end flows over HTTP and MCP)
+        env:
+          DATABASE_URL: postgres://algebra:algebra@localhost:5432/algebra_test?sslmode=disable
+          REDIS_ADDR: localhost:6379
+        run: |
+          # A throwaway key: 32 random bytes, base64 (docs/LOCAL_DEVELOPMENT.md).
+          export ALGEBRA_MASTER_KEY="$(openssl rand -base64 32)"
+          go test ./... -count=1 -p 1 -timeout 20m
+
+  vulnerabilities:
+    name: Vulnerability scan (Go, npm, Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Reachable vulnerabilities in the standard library and the modules, for the
+      # toolchain go.mod asks for: when a patched Go ships, this fails until go.mod
+      # names it, so a fix is never one a deploy silently misses.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: govulncheck
+        working-directory: backend
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+      # What the production build ships to the browser and runs on the server.
+      - uses: pnpm/action-setup@v4 # version from package.json "packageManager"
+        with:
+          package_json_file: frontend/package.json
+      - name: pnpm audit (production dependencies)
+        working-directory: frontend
+        run: pnpm audit --prod
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo audit (the Spend Pass program's crates)
+        working-directory: solana-program
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
+
   security:
     name: Security checks (no secret leakage in logs)
     runs-on: ubuntu-latest
@@ -48,7 +123,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26"
+          go-version-file: backend/go.mod # the toolchain the module asks for: the one that ships
           cache: true
           cache-dependency-path: backend/go.sum
 
@@ -85,7 +160,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26"
+          go-version-file: backend/go.mod # the toolchain the module asks for: the one that ships
           cache: true
           cache-dependency-path: backend/go.sum
       - name: Apply migrations
@@ -138,6 +213,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm exec tsc --noEmit
+      # The logic the pages rely on (cross-checks, routing, the wallet's maths...).
+      - run: node --experimental-strip-types --test scripts/*.test.mjs
       # The rewrite to the API is baked in at build time (see frontend/Dockerfile);
       # any URL works for a compile check.
       - run: pnpm build
