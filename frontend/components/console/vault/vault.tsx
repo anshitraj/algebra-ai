@@ -15,6 +15,7 @@ import { proveOwnership } from "@/lib/wallet/proof";
 import { lockVault, unlockedKeys, unlockWith, useVaultUnlocked } from "@/lib/wallet/session";
 import { fromMinor, toMinor, vaultChain, vaultChains, type VaultChain } from "@/lib/wallet/chains";
 import { buildWithdrawal } from "@/lib/wallet/withdraw";
+import { buildAllowance } from "@/lib/wallet/allowance";
 import { ChainMark } from "@/components/chain-logos";
 import { Button, ErrorNote, Field, Input, PageHeader, Skeleton } from "@/components/console/ui";
 import { IconArrowRight, IconCheck, IconCopy, IconExternal, IconLock, IconRefresh, IconShield, IconUnlock, Spinner } from "@/components/icons";
@@ -36,6 +37,7 @@ export function VaultPage() {
   const [keystore, setKeystore] = useState<Keystore | null>(null);
   const [balances, setBalances] = useState<api.VaultBalance[] | null>(null);
   const [credits, setCredits] = useState<api.TestCredits | null>(null);
+  const [allowances, setAllowances] = useState<api.VaultAllowance[] | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -65,9 +67,14 @@ export function VaultPage() {
       if (!record) return;
       setRefreshing(true);
       try {
-        const [b, c] = await Promise.all([api.getVaultBalances(test ? "testnet" : "mainnet", force), test ? api.getTestCredits().catch(() => null) : Promise.resolve(null)]);
+        const [b, c, a] = await Promise.all([
+          api.getVaultBalances(test ? "testnet" : "mainnet", force),
+          test ? api.getTestCredits().catch(() => null) : Promise.resolve(null),
+          api.getVaultAllowances().catch(() => null),
+        ]);
         setBalances(b.balances);
         setCredits(c);
+        setAllowances(a?.allowances ?? null);
       } catch (e) {
         setError(message(e, "Couldn't read the balances"));
       } finally {
@@ -85,6 +92,8 @@ export function VaultPage() {
   // This browser holds a different wallet than the one recorded: say so rather than mix them.
   const mismatch = !!record && !!keystore && (keystore.addresses.solana !== record.solana_address || keystore.addresses.evm.toLowerCase() !== record.evm_address);
   const here = useMemo(() => vaultChains(test).filter((c) => chains.find((x) => x.id === c.id)?.available), [chains, test]);
+  // What agents may spend: on this place to work's Solana, where the server runs allowances.
+  const spending = allowances?.find((a) => vaultChain(a.network)?.test === test) ?? null;
 
   if (demo) {
     return (
@@ -141,7 +150,7 @@ export function VaultPage() {
             </div>
           )}
 
-          <Portfolio test={test} chains={here} balances={balances} credits={credits} refreshing={refreshing} onRefresh={() => refresh(true)} />
+          <Portfolio test={test} chains={here} balances={balances} credits={credits} vaultPays={!!spending?.active} refreshing={refreshing} onRefresh={() => refresh(true)} />
 
           <div className={styles.actions}>
             <button type="button" aria-expanded={panel === "deposit"} onClick={() => setPanel(panel === "deposit" ? null : "deposit")}>
@@ -174,13 +183,26 @@ export function VaultPage() {
               }}
             />
           )}
+
+          {spending && (
+            <AgentSpending
+              key={spending.network}
+              test={test}
+              allowance={spending}
+              keystore={keystore && !mismatch ? keystore : null}
+              onChanged={(a) => {
+                setAllowances((all) => (all ?? []).map((x) => (x.network === a.network ? a : x)));
+                setTimeout(() => refresh(true), 3000);
+              }}
+            />
+          )}
         </>
       )}
     </div>
   );
 }
 
-function Portfolio({ test, chains, balances, credits, refreshing, onRefresh }: { test: boolean; chains: VaultChain[]; balances: api.VaultBalance[] | null; credits: api.TestCredits | null; refreshing: boolean; onRefresh: () => void }) {
+function Portfolio({ test, chains, balances, credits, vaultPays, refreshing, onRefresh }: { test: boolean; chains: VaultChain[]; balances: api.VaultBalance[] | null; credits: api.TestCredits | null; vaultPays: boolean; refreshing: boolean; onRefresh: () => void }) {
   const total = (balances ?? []).filter((b) => b.ok).reduce((s, b) => s + BigInt(b.usdc_minor), 0n);
   return (
     <section className={styles.portfolio} aria-label="Portfolio">
@@ -210,7 +232,7 @@ function Portfolio({ test, chains, balances, credits, refreshing, onRefresh }: {
             <span className={styles.creditMark} aria-hidden="true">T</span>
             <div>
               <strong>Testnet credits</strong>
-              <small>Spent by agents on Testnet · {credits.sol_lamports / 1e9} SOL</small>
+              <small>{vaultPays ? "Not used while agents pay from this vault" : `Spent by agents on Testnet · ${credits.sol_lamports / 1e9} SOL`}</small>
             </div>
             <span className={styles.amount}>{usdc(BigInt(credits.usdc_left_minor))} <small>USDC</small></span>
           </li>
@@ -282,12 +304,13 @@ function checksum(addr: string) {
 }
 
 /** Password in, keys unlocked: the one place the keystore is opened. */
-function useUnlock(keystore: Keystore) {
+function useUnlock(keystore: Keystore | null) {
   const [progress, setProgress] = useState<number | null>(null);
   const unlock = useCallback(
     async (password: string) => {
       const have = unlockedKeys();
       if (have) return have;
+      if (!keystore) throw new Error("This browser doesn't hold the vault's keys");
       setProgress(0);
       try {
         const phrase = await open(keystore, password, (p) => setProgress(p));
@@ -403,6 +426,166 @@ function Withdraw({ chains, balances, keystore, onSent }: { chains: VaultChain[]
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setReview(false)} disabled={busy}>Back</Button>
             <Button onClick={send} disabled={busy || (!unlocked && password.length < MIN_PASSWORD)}>{busy && <Spinner size={14} />} Sign and send</Button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const PRESETS = ["1", "5", "10", "25"];
+
+/**
+ * What agents may spend from the vault: a limit the token program enforces
+ * on Solana, set and stopped by a transaction this browser signs. Every Spend
+ * Pass draws from it; none can take more than is left of it.
+ */
+function AgentSpending({ test, allowance: a, keystore, onChanged }: { test: boolean; allowance: api.VaultAllowance; keystore: Keystore | null; onChanged: (a: api.VaultAllowance) => void }) {
+  const unlocked = useVaultUnlocked();
+  const { unlock, progress } = useUnlock(keystore);
+  const [mode, setMode] = useState<null | "set" | "stop">(null);
+  const [amount, setAmount] = useState("5");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ id: string; pending: boolean; stopped: boolean } | null>(null);
+  const c = vaultChain(a.network);
+  const minor = toMinor(amount, 6);
+  const left = a.active ? a.left_minor : 0;
+  const share = a.active && a.approved_minor > 0 ? Math.min(1, left / a.approved_minor) : 0;
+  const problem = mode === "set" ? (minor === null || minor <= 0n ? "Enter an amount" : minor > BigInt(a.max_minor) ? `At most ${usdc(BigInt(a.max_minor))} USDC` : null) : null;
+
+  async function sign() {
+    if (!keystore) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const keys = await unlock(password);
+      const facts = await api.prepareAllowance(a.network);
+      const transaction = buildAllowance(keys, facts, mode === "stop" ? null : minor);
+      const res = await api.submitAllowance({ network: a.network, transaction });
+      setDone({ id: res.signature, pending: res.pending, stopped: mode === "stop" });
+      setPassword("");
+      setMode(null);
+      onChanged(res.allowance);
+    } catch (e) {
+      setError(e instanceof WrongPasswordError ? e.message : message(e, "That didn't go through; nothing changed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className={styles.spending} aria-label="Agent spending">
+      <div className={styles.spendingHead}>
+        <ChainMark network={a.network} size={20} />
+        <div>
+          <strong>Agents can spend</strong>
+          <small>{a.active ? `From this vault, capped on ${c?.name ?? "Solana"}` : test ? "Off: agents use your Testnet credits" : "Off: agents can't spend from this vault"}</small>
+        </div>
+        <span className={styles.amount}>
+          {a.active ? (
+            <>
+              {a.read ? usdc(BigInt(left)) : "—"} <small>of {usdc(BigInt(a.approved_minor))} USDC</small>
+            </>
+          ) : (
+            <small>Off</small>
+          )}
+        </span>
+      </div>
+      {a.active && (
+        <div className={styles.spendingBar} role="meter" aria-label="Limit left" aria-valuemin={0} aria-valuemax={a.approved_minor} aria-valuenow={left} data-level={share <= 0 ? "out" : share < 0.2 ? "low" : "ok"}>
+          <span style={{ transform: `scaleX(${share})` }} />
+        </div>
+      )}
+
+      {done && !mode && (
+        <p className={styles.spendingDone}>
+          <IconCheck size={14} /> {done.stopped ? "Stopped." : "Set."} {done.pending ? "The network is still confirming it." : "Confirmed on chain."}{" "}
+          {c?.explorerTx && (
+            <a className={styles.txLink} href={c.explorerTx(done.id)} target="_blank" rel="noopener noreferrer">
+              {short(done.id)} <IconExternal size={11} />
+            </a>
+          )}
+        </p>
+      )}
+
+      {!mode ? (
+        <div className={styles.spendingActions}>
+          <button type="button" onClick={() => { setMode("set"); setDone(null); setError(null); }} disabled={!keystore || !a.has_token_account}>
+            {a.active ? "Change limit" : "Let agents spend"}
+          </button>
+          {a.active && (
+            <button type="button" onClick={() => { setMode("stop"); setDone(null); setError(null); }} disabled={!keystore}>
+              Stop
+            </button>
+          )}
+          {a.read && !a.has_token_account && <p className={styles.hint}>Deposit USDC on {c?.name ?? "Solana"} first: the limit is set on the vault&apos;s USDC account.</p>}
+          {!keystore && <p className={styles.hint}>Import this vault in this browser to change what agents can spend.</p>}
+        </div>
+      ) : (
+        <div className={styles.spendingSheet}>
+          {mode === "set" ? (
+            <>
+              <Field label="Agents may spend up to (USDC)" hint="This replaces the limit before it. Every Spend Pass draws from it.">
+                <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" className="tabular-nums" autoFocus />
+              </Field>
+              <div className={styles.presets} role="group" aria-label="Quick amounts">
+                {PRESETS.map((p) => (
+                  <button key={p} type="button" aria-pressed={amount === p} onClick={() => setAmount(p)}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className={styles.lead}>Agents stop paying from this vault.{test ? " On Testnet they use your test credits again." : ""} Payments already made stay made.</p>
+          )}
+          <dl className={styles.review}>
+            {mode === "set" && (
+              <div>
+                <dt>Limit</dt>
+                <dd>{minor !== null && minor > 0n ? usdc(minor) : "—"} USDC</dd>
+              </div>
+            )}
+            <div>
+              <dt>Spender</dt>
+              <dd>
+                Algebra&apos;s payer <code>{short(a.delegate)}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>On</dt>
+              <dd>
+                <ChainMark network={a.network} size={13} /> {c?.name}
+                {c?.test ? " (test network)" : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>Fee</dt>
+              <dd>Paid by Algebra</dd>
+            </div>
+          </dl>
+          {mode === "set" && (
+            <p className={styles.hint}>
+              Solana&apos;s token program holds the line: nothing, Algebra included, can move more than this from your vault with it. A refund of a failed payment returns the USDC but not the limit.
+              {a.other_delegate ? ` It also replaces the spender ${short(a.other_delegate)} you allowed elsewhere.` : ""}
+            </p>
+          )}
+          {!unlocked && (
+            <Field label="Wallet password">
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+            </Field>
+          )}
+          <Progress value={progress} label="Opening the vault" />
+          {error && <ErrorNote>{error}</ErrorNote>}
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setMode(null)} disabled={busy}>
+              Back
+            </Button>
+            <Button onClick={sign} disabled={busy || !!problem || (!unlocked && password.length < MIN_PASSWORD)}>
+              {busy && <Spinner size={14} />} {problem ?? (mode === "stop" ? "Sign and stop" : "Sign and set")}
+            </Button>
           </div>
         </div>
       )}

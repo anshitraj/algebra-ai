@@ -135,3 +135,32 @@ test("a withdrawal is built from the browser's own choices; bad server facts are
   assert.ok(base58.decode(s.id).length === 64);
   assert.throws(() => buildWithdrawal(keys, sol, "GhpmTWT8ng3viaQtFNDF7T7RyrmemosWvEDetKmBEoPA", 1n, {}), /recent block/);
 });
+
+import { buildAllowance } from "../lib/wallet/allowance.ts";
+
+test("the agent allowance: one approve to the payer, the payer's slot left to fill; bad server facts are refused", () => {
+  const keys = deriveKeys(ABANDON);
+  const payer = base58.encode(ed25519.getPublicKey(new Uint8Array(32).fill(7)));
+  const mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+  const facts = {
+    network: "solana-devnet", fee_payer: payer, delegate: payer, mint, decimals: 6, token_account: associatedTokenAddress(keys.solana.address, mint),
+    blockhash: base58.encode(new Uint8Array(32).fill(9)), compute_unit_limit: 20000, compute_unit_price: 10000, max_minor: 1_000_000_000,
+  };
+  const raw = base64.decode(buildAllowance(keys, facts, 5_000_000n));
+  assert.equal(raw[0], 2); // two signature slots
+  assert.ok(raw.slice(1, 65).every((b) => b === 0), "the payer's slot is empty");
+  const message = raw.slice(129);
+  assert.deepEqual([...message.slice(0, 3)], [2, 1, 3]); // two signers, the vault read-only; mint and two programs read-only
+  assert.equal(base58.encode(message.slice(4, 36)), payer, "the payer pays the fee");
+  assert.equal(base58.encode(message.slice(36, 68)), keys.solana.address);
+  assert.ok(ed25519.verify(raw.slice(65, 129), message, base58.decode(keys.solana.address)));
+  // The approve's data: ApproveChecked, 5 USDC, 6 decimals.
+  assert.ok(hex(message).endsWith("0d404b4c000000000006"));
+  // A revoke ends with the one-byte instruction 5 (data length 1, then 5).
+  assert.ok(hex(base64.decode(buildAllowance(keys, facts, null))).endsWith("0105"));
+  assert.throws(() => buildAllowance(keys, { ...facts, mint: "So11111111111111111111111111111111111111112" }, 1n), /other than USDC/);
+  assert.throws(() => buildAllowance(keys, { ...facts, delegate: keys.solana.address }, 1n), /hang together/);
+  assert.throws(() => buildAllowance(keys, { ...facts, token_account: payer }, 1n), /isn't this vault's/);
+  assert.throws(() => buildAllowance(keys, facts, 2_000_000_000n), /At most 1000/);
+  assert.throws(() => buildAllowance(keys, { ...facts, compute_unit_price: 5_000_000 }, 1n), /far above normal/);
+});

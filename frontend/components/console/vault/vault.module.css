@@ -455,3 +455,142 @@
     animation: none;
   }
 }
+
+/* Agent spending: what agents may take from the vault, held on chain. One
+   row like a chain's, a thin meter, two plain actions, one sheet. */
+.spending {
+  margin-top: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.spendingHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 22px 14px;
+}
+.spendingHead > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.spendingHead strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.spendingHead small {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.spendingHead .amount small {
+  font-size: 12px;
+}
+.spendingBar {
+  height: 3px;
+  margin: 0 22px;
+  border-radius: 999px;
+  background: var(--color-primary-tint);
+  overflow: hidden;
+}
+.spendingBar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-foreground);
+  transform-origin: left center;
+  transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.spendingBar[data-level="low"] span {
+  background: var(--color-warning, #d97706);
+}
+.spendingBar[data-level="out"] span {
+  background: var(--color-danger);
+}
+.spendingActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 22px 16px;
+}
+.spendingActions button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  color: var(--color-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 160ms ease;
+}
+.spendingActions button:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+}
+.spendingActions button:disabled {
+  color: var(--color-muted);
+  cursor: not-allowed;
+}
+.spendingActions .hint {
+  flex-basis: 100%;
+}
+.spendingSheet {
+  display: grid;
+  gap: 14px;
+  padding: 16px 22px 20px;
+  border-top: 1px solid var(--color-border);
+  animation: sheetIn 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.spendingDone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 22px 0;
+  color: var(--color-success);
+  font-size: 13px;
+  font-weight: 500;
+}
+.spendingDone .txLink {
+  color: var(--color-foreground);
+  font-size: 12px;
+}
+.presets {
+  display: flex;
+  gap: 6px;
+}
+.presets button {
+  min-width: 48px;
+  height: 32px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.presets button[aria-pressed="true"] {
+  border-color: var(--color-foreground);
+  color: var(--color-foreground);
+}
+@media (max-width: 480px) {
+  .spendingHead,
+  .spendingActions,
+  .spendingSheet {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .spendingBar {
+    margin: 0 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spendingSheet {
+    animation: none;
+  }
+  .spendingBar span {
+    transition: none;
+  }
+}

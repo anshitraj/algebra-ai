@@ -298,6 +298,55 @@ export function broadcastVault(req: { chain: string; raw: string }) {
   return apiFetch<{ hash: string }>("/api/v1/me/vault/broadcast", { method: "POST", body: req });
 }
 
+/**
+ * What agents may spend from the vault on one network: an SPL allowance to
+ * Algebra's payer (the delegate). left_minor is what the token program still
+ * lets it move, read from the chain; active is the owner's choice that
+ * payments there come from the vault.
+ */
+export type VaultAllowance = {
+  network: string;
+  cluster: string;
+  delegate: string;
+  mint: string;
+  token_account: string;
+  active: boolean;
+  approved_minor: number;
+  left_minor: number;
+  balance_minor: number;
+  read: boolean;
+  has_token_account: boolean;
+  other_delegate?: string;
+  signature?: string;
+  updated_at?: string;
+  max_minor: number;
+};
+export type AllowanceParams = {
+  network: string;
+  fee_payer: string;
+  delegate: string;
+  mint: string;
+  decimals: number;
+  token_account: string;
+  blockhash: string;
+  compute_unit_limit: number;
+  compute_unit_price: number;
+  max_minor: number;
+};
+
+export function getVaultAllowances() {
+  return apiFetch<{ allowances: VaultAllowance[] }>("/api/v1/me/vault/allowances");
+}
+
+export function prepareAllowance(network: string) {
+  return apiFetch<AllowanceParams>("/api/v1/me/vault/allowance/prepare", { method: "POST", body: { network } });
+}
+
+/** An approve or revoke the vault signed; Algebra checks it, pays its fee and sends it. */
+export function submitAllowance(req: { network: string; transaction: string }) {
+  return apiFetch<{ signature: string; pending: boolean; allowance: VaultAllowance }>("/api/v1/me/vault/allowance", { method: "POST", body: req });
+}
+
 // --- economic intents ---
 
 export function listMyEconomicIntents(limit = 50) {

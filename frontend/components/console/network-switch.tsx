@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { NETWORKS, useNetwork, type Network } from "@/lib/network";
 import { IconCheck, IconChevronDown } from "@/components/icons";
 import { SolanaMark } from "@/components/chain-logos";
-import { getTestCredits, type TestCredits } from "@/lib/api-client";
+import { getTestCredits, getVaultAllowances, type TestCredits, type VaultAllowance } from "@/lib/api-client";
 
 const formatUsdc = (minor: number) => (minor / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
 
@@ -33,14 +33,19 @@ export function NetworkSwitch({ compact = false }: { compact?: boolean }) {
   const options = NETWORKS.filter((n) => n.id !== "sandbox" || practiceAvailable);
   const current = NETWORKS.find((n) => n.id === network) ?? NETWORKS[0];
   const [credits, setCredits] = useState<TestCredits | null>(null);
+  const [vault, setVault] = useState<VaultAllowance | null>(null);
 
-  // What is left of the test credits, read each time the menu opens (a payment may have used some).
+  // What is left of the test credits, or of the Vault's limit when agents pay
+  // from it, read each time the menu opens (a payment may have used some).
   useEffect(() => {
     if (!open || demo) return;
     let live = true;
     getTestCredits()
       .then((c) => live && setCredits(c))
       .catch(() => live && setCredits(null));
+    getVaultAllowances()
+      .then((r) => live && setVault(r.allowances.find((a) => a.network === "solana-devnet" && a.active) ?? null))
+      .catch(() => live && setVault(null));
     return () => {
       live = false;
     };
@@ -147,10 +152,17 @@ export function NetworkSwitch({ compact = false }: { compact?: boolean }) {
                     <span className={`rounded-full px-1.5 py-px text-[0.625rem] font-medium ${MONEY[n.id].cls}`}>{MONEY[n.id].tag}</span>
                   </span>
                   <span className="mt-0.5 block text-xs leading-snug text-muted">{n.hint}</span>
-                  {n.id === "solana-devnet" && credits && (
+                  {n.id === "solana-devnet" && vault ? (
                     <span className="mt-1.5 block text-xs font-medium text-foreground tabular-nums">
-                      {formatUsdc(credits.usdc_left_minor)} of {formatUsdc(credits.usdc_granted_minor)} USDC left · {credits.sol_lamports / 1e9} SOL
+                      Paying from your Vault · {formatUsdc(vault.left_minor)} of {formatUsdc(vault.approved_minor)} USDC left
                     </span>
+                  ) : (
+                    n.id === "solana-devnet" &&
+                    credits && (
+                      <span className="mt-1.5 block text-xs font-medium text-foreground tabular-nums">
+                        {formatUsdc(credits.usdc_left_minor)} of {formatUsdc(credits.usdc_granted_minor)} USDC left · {credits.sol_lamports / 1e9} SOL
+                      </span>
+                    )
                   )}
                 </span>
                 {on && <IconCheck size={15} className="mt-0.5 shrink-0 text-primary" />}

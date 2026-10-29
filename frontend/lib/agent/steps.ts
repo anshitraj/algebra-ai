@@ -55,6 +55,8 @@ const REASONS: Record<string, string> = {
   ONCHAIN_PASS_EXPIRED: "The pass has expired on Solana",
   ONCHAIN_PASS_LIMIT: "Over a limit the pass enforces on Solana",
   ONCHAIN_PASS_UNFUNDED: "The vault holds less than this costs",
+  VAULT_ALLOWANCE_LOW: "What agents may still spend from your Vault is less than this costs",
+  VAULT_UNFUNDED: "Your Vault holds less USDC than this costs",
   ONCHAIN_PASS_AGENT_CHANGED: "The vault was made for an earlier Algebra payer key",
 };
 

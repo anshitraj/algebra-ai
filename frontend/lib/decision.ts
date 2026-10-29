@@ -46,6 +46,8 @@ const REASONS: Record<string, string> = {
   ONCHAIN_PASS_EXPIRED: "the pass has expired on Solana",
   ONCHAIN_PASS_LIMIT: "over a limit the pass enforces on Solana",
   ONCHAIN_PASS_UNFUNDED: "the vault holds less than this costs",
+  VAULT_ALLOWANCE_LOW: "what agents may still spend from your Vault is less than this costs",
+  VAULT_UNFUNDED: "your Vault holds less USDC than this costs",
   ONCHAIN_PASS_AGENT_CHANGED: "the vault was made for an earlier Algebra payer key, so it can't fund payments any more",
   PROVIDER_BLOCKED: "the provider is blocked",
   PAYEE_CHANGED: "the provider asked to be paid at a different address than the one pinned for it",
@@ -73,6 +75,8 @@ export function vaultFix(reasons: string[], passId?: string): { text: string; ac
     return { text: "Payments on this network come from a Spend Pass vault, and this pass has none yet.", action: "Create the vault", href };
   }
   if (has("ONCHAIN_PASS_UNFUNDED")) return { text: "The vault holds less than this costs.", action: "Add USDC to the vault", href };
+  if (has("VAULT_ALLOWANCE_LOW")) return { text: "What agents may still spend from your Vault is less than this costs.", action: "Raise the limit", href: "/console/vault" };
+  if (has("VAULT_UNFUNDED")) return { text: "Your Vault holds less USDC than this costs.", action: "Deposit USDC", href: "/console/vault" };
   if (has("ONCHAIN_PASS_AGENT_CHANGED")) {
     return { text: "This vault was made for an earlier Algebra payer key and can't fund payments. Your USDC is safe: withdraw it and make a new vault.", action: "Open the pass", href };
   }
