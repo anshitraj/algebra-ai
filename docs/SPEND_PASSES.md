@@ -58,6 +58,40 @@ Independently of any pass, Algebra refuses providers that are down (`provider_do
 costs (`price_outlier`, more than 10× the class median and over $0.05; $1,000 a call is never paid). The rails have hard per-payment ceilings of their own (1 USDC for x402, 5 USDC for a swap by default) that no
 pass can raise.
 
+## Job Passes: a task's budget inside a pass
+
+The hierarchy is **Vault → Spend Pass → Job Pass**. A Job Pass is a temporary budget for one task, set aside from a
+Spend Pass and shared by every agent that works on the task (code: `internal/domain/jobpass`,
+`internal/app/job_passes.go`, migration `0031_job_passes.sql`).
+
+- **Set aside at once, or not at all.** Opening a job counts its whole budget against the pass immediately, under the
+  same row lock every payment of the pass takes. When the pass hasn't that much left the job is refused
+  (`JOB_PARENT_SHORT`, with `left_minor`), so a task never starts on money another task may take. The chat opens one
+  for every turn that pays: the most the chosen cards could cost, together. Two cards that each fit but not together
+  pay nothing, instead of half the task.
+- **Shared by sub-agents.** The agent that opens a job gets the job's token once (`ajob_…`, stored hashed). A sub-agent
+  holding it can pay under the job, open a smaller job inside it, and read or close what it reaches; nothing else. It
+  can't read the pass, other jobs, the account, or approve anything. Three sub-agents on a 3 USDC job can spend 3 USDC
+  together, not 9.
+- **Parent-child limits.** A sub-job comes out of what its parent has left, at most three levels deep, and never
+  outlives its parent or the pass. While a sub-job is open its whole budget counts in the parent; once it ends, only
+  what it paid or still holds does.
+- **Every rule of the pass still applies** to each payment: per-call cap, providers, ask-me line, new-provider and
+  web-found rules, calls per minute, the kill switch. A job narrows a pass, never widens it.
+- **Ends three ways**, each giving back what it didn't use at once: closed when the task is done (the agent, a
+  sub-agent for its own job, or the chat), stopped by the person (`Stop this task` in the pass, which stops every job
+  beneath it too), or expired (an hour by default, a day at most). An attempt already under way keeps its hold until
+  it settles. A job stopped between reserving and paying releases nothing: `Begin` and the payment authority both
+  check the job again.
+- **Ledger only.** A job is an allocation in Algebra's ledger, never separate money, a wallet or a deposit. On Testnet
+  the credits pay; with a vault allowance the vault pays; the job decides only whether a payment may happen.
+
+API: `POST /api/v1/jobs` (agent token, or a job token for a sub-job) with `label`, `budget_minor`,
+`expires_in_seconds`, `parent_id`; `GET /api/v1/jobs/{id}`; `POST /api/v1/jobs/{id}/close`. `POST /api/v1/execute`
+takes `job_id`, or pays under the job of the job token it is called with. The console: `GET|POST /api/v1/me/jobs`,
+`GET /api/v1/me/jobs/{id}`, `POST /api/v1/me/jobs/{id}/close|revoke`. The pass's view adds
+`set_aside_minor_units`: what running jobs hold and haven't used.
+
 ## Connecting an agent
 
 - **MCP** at `/mcp`: send the token as an HTTP header, so it never passes through the model: see [MCP.md](MCP.md). `algebra_spend_pass` reads the pass; `algebra_execute` spends under it.
