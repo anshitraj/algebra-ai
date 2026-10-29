@@ -1562,6 +1562,12 @@ func mergeEvidence(base, add econ.Evidence) econ.Evidence {
 	if base.ValidUntilHeight == 0 {
 		base.ValidUntilHeight = add.ValidUntilHeight
 	}
+	if base.ValidBefore == 0 {
+		base.ValidBefore = add.ValidBefore
+	}
+	if base.FromBlock == 0 {
+		base.FromBlock = add.FromBlock
+	}
 	if add.AuthorityIssued && !base.AuthorityIssued {
 		base.AuthorityIssued, base.AuthorityIssuedAt = true, add.AuthorityIssuedAt
 	}

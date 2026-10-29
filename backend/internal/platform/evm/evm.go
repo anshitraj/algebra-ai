@@ -99,6 +99,7 @@ type SignedTx struct {
 	From    [20]byte
 	To      [20]byte
 	Hash    string
+	Data    []byte
 }
 
 // DecodeSignedEIP1559 reads a raw signed EIP-1559 transaction (0x02 || rlp):
@@ -140,7 +141,7 @@ func DecodeSignedEIP1559(raw string) (*SignedTx, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &SignedTx{ChainID: new(big.Int).SetBytes(items[0].body), From: from, Hash: "0x" + hex.EncodeToString(Keccak256(b))}
+	out := &SignedTx{ChainID: new(big.Int).SetBytes(items[0].body), From: from, Hash: "0x" + hex.EncodeToString(Keccak256(b)), Data: items[7].body}
 	copy(out.To[:], items[5].body)
 	return out, nil
 }

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/routing"
 )
 
@@ -50,6 +51,25 @@ type ClassSource interface {
 //     catalog;
 //   - endpoints the agent supplies are, as always, unverified web finds.
 func (r CandidateResolver) Resolve(ctx context.Context, capability string, named []string, supplied []CandidateInput) ([]routing.Candidate, []routing.Rejection) {
+	out, rejected := r.resolve(ctx, capability, named, supplied)
+	// A chain whose rail can't pay right now (its wallet is empty) is left
+	// out here, for every caller, rather than tried and failed.
+	kept := out[:0]
+	for _, c := range out {
+		if c.Network != "" && !chain.Payable(c.Network) {
+			rejected = append(rejected, routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: RejectNetworkNotReady,
+				Detail: "Algebra's wallet on " + c.Network + " can't pay yet"})
+			continue
+		}
+		kept = append(kept, c)
+	}
+	return kept, rejected
+}
+
+// RejectNetworkNotReady: the candidate sells on a chain whose rail can't pay now.
+const RejectNetworkNotReady = "network_not_ready"
+
+func (r CandidateResolver) resolve(ctx context.Context, capability string, named []string, supplied []CandidateInput) ([]routing.Candidate, []routing.Rejection) {
 	if class, ok := routing.ClassByID(capability); ok && r.Classes != nil {
 		return r.resolveClass(ctx, class, named, supplied)
 	}

@@ -113,7 +113,7 @@ func (s *IntentReceiptService) Sign(ctx context.Context, v *IntentView) (jws, id
 	if s.funding != nil {
 		if p, err := s.funding.PullFor(ctx, r.ID); err == nil && p.State != PullVoid {
 			source := "spend_pass_vault"
-			if p.Source == PullSourceVault {
+			if p.Source == PullSourceVault || p.Source == PullSourceVaultEVM {
 				source = "owner_vault_allowance"
 			}
 			c.Settlement.Funding = &receipt.FundingRef{

@@ -143,6 +143,12 @@ type Config struct {
 	// Vault is the owner's own wallet (docs/WALLET.md): the EVM nodes its
 	// balances and withdrawals use, and whether mainnet deposits are shown.
 	Vault VaultConfig
+	// EVMPayer is Algebra's payer on Base Sepolia and Arc testnet
+	// (providers/evmx402): EVM_TESTNET_PAYER=generated makes and keeps one,
+	// EVM_TESTNET_PAYER_KEY is an operator's key, EVM_TESTNET_PAYER_ADDRESS
+	// pins the address. Off when none is set. Mainnet EVM payments aren't
+	// enabled in this build.
+	EVMPayer EVMPayerConfig
 
 	// Results is how long the answer to a paid call is kept, so asking again
 	// returns it (RESULT_RETENTION, RESULT_MAX_BYTES; see results.go).
@@ -543,6 +549,9 @@ func FromEnv() (*Config, error) {
 		return nil, err
 	}
 	if err := loadVault(&cfg.Vault); err != nil {
+		return nil, err
+	}
+	if err := loadEVMPayer(&cfg.EVMPayer); err != nil {
 		return nil, err
 	}
 	if err := loadJupiter(&cfg.Jupiter); err != nil {
@@ -1037,6 +1046,32 @@ func loadVault(c *VaultConfig) error {
 		return errors.New("config: VAULT_ALLOWANCE_MAX_USDC must be between 1 and 1000000")
 	}
 	c.AllowanceMaxMinor = max * 1_000_000
+	return nil
+}
+
+// EVMPayerConfig is the EVM payer's key source (see Config.EVMPayer).
+type EVMPayerConfig struct {
+	Generate bool
+	Key      string
+	Address  string
+}
+
+// On reports whether an EVM payer is configured.
+func (c EVMPayerConfig) On() bool { return c.Generate || c.Key != "" }
+
+func loadEVMPayer(c *EVMPayerConfig) error {
+	switch mode := strings.ToLower(strings.TrimSpace(os.Getenv("EVM_TESTNET_PAYER"))); mode {
+	case "", "off":
+	case "generated":
+		c.Generate = true
+	default:
+		return fmt.Errorf("config: EVM_TESTNET_PAYER is generated or off, not %q", mode)
+	}
+	c.Key = strings.TrimSpace(os.Getenv("EVM_TESTNET_PAYER_KEY"))
+	c.Address = strings.ToLower(strings.TrimSpace(os.Getenv("EVM_TESTNET_PAYER_ADDRESS")))
+	if c.Generate && c.Key != "" {
+		return errors.New("config: set EVM_TESTNET_PAYER=generated or EVM_TESTNET_PAYER_KEY, not both")
+	}
 	return nil
 }
 

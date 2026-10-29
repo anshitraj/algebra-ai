@@ -51,6 +51,7 @@ import (
 	"github.com/project-algebra/algebra/providers/arcium"
 	"github.com/project-algebra/algebra/providers/bazaar"
 	"github.com/project-algebra/algebra/providers/catalog"
+	"github.com/project-algebra/algebra/providers/evmx402"
 	"github.com/project-algebra/algebra/providers/jupiter"
 	"github.com/project-algebra/algebra/providers/monid"
 	"github.com/project-algebra/algebra/providers/paymentdemo"
@@ -165,6 +166,11 @@ type Bundle struct {
 	// OwnerVaults is the owner's own wallet: addresses, balances, withdrawals
 	// the browser signed (docs/WALLET.md).
 	OwnerVaults *app.OwnerVaultService
+	// EVMRails pay x402 on Base Sepolia and Arc testnet (providers/evmx402).
+	EVMRails []*evmx402.Rail
+	// EVMAllowances lets agents spend from owners' vaults there, through
+	// USDC permits to the EVM payer.
+	EVMAllowances *app.EVMAllowanceService
 	// VaultAllowances lets agents spend from the owner's vault through the
 	// capped allowance it gave the payer; nil where no Solana rail runs.
 	VaultAllowances *app.VaultAllowanceService
@@ -449,7 +455,12 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		db.Close()
 		return nil, fmt.Errorf("wiring: %w", err)
 	}
-	execSvc, execProviders, solanaRails, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db), signers)
+	evmRails, err := buildEVMRails(ctx, cfg, db, masterKey)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("wiring: %w", err)
+	}
+	execSvc, execProviders, solanaRails, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db), signers, evmRails)
 	var intelSources []app.IntelSource
 	if err == nil && sandboxPersonas != nil {
 		if port := listenPort(cfg.HTTPAddr); port > 0 {
@@ -623,10 +634,14 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 			intentReceiptSvc.SetFunding(allowances)
 		}
 	}
-	if guard := buildTestMoneyGuard(cfg, solanaRails, passRepo, limiter); guard != nil {
+	evmAllowances := buildEVMAllowances(cfg, evmRails, db, passRepo, econRepo, limiter)
+	if evmAllowances != nil {
+		funders = append(funders, evmAllowances)
+	}
+	if guard := buildTestMoneyGuard(cfg, solanaRails, evmRails, passRepo, limiter); guard != nil {
 		funders = append(funders, guard)
 	}
-	credits := buildTestCredits(cfg, solanaRails, passRepo, econRepo)
+	credits := buildTestCredits(cfg, solanaRails, evmRails, passRepo, econRepo)
 	if credits != nil {
 		funders = append(funders, credits)
 	}
@@ -677,6 +692,8 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		DevnetFaucet:    buildDevnetFaucet(ctx, cfg, accountSvc, limiter, postgres.NewFaucetRepo(db)),
 		TestCredits:     credits,
 		VaultAllowances: allowances,
+		EVMRails:        evmRails,
+		EVMAllowances:   evmAllowances,
 		OwnerVaults:     app.NewOwnerVaultService(postgres.NewOwnerVaultRepo(db), vaultSolana, vaultEVM, cfg.Vault.MainnetDeposits, limiter),
 		DB:              db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
 		Users: userSvc, Intents: intentSvc, Discovery: discoverySvc, Quotes: quoteSvc,
@@ -709,7 +726,7 @@ func envWebhookSecret(provider string) string {
 // buildExecution wires the executor: the x402 runner over an HTTP client that
 // can only reach public addresses (plus the sandbox provider's own port in
 // sandbox mode), the capability catalog, and the providers an agent can name.
-func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.EconomicService, store app.ExecutionStore, signers map[string]*payersigner.Signer) (*app.ExecutionService, map[string][]routing.Candidate, []*solanax402.Rail, error) {
+func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.EconomicService, store app.ExecutionStore, signers map[string]*payersigner.Signer, evmRails []*evmx402.Rail) (*app.ExecutionService, map[string][]routing.Candidate, []*solanax402.Rail, error) {
 	var solanaRails []*solanax402.Rail
 	caps := app.DefaultCapabilities()
 	if cfg.Jupiter.Enabled {
@@ -755,6 +772,10 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 			networks[rail.Network()] = rail.Name()
 			solanaRails = append(solanaRails, rail)
 		}
+	}
+	for _, rail := range evmRails {
+		econSvc.RegisterRail(rail)
+		networks[rail.Network()] = rail.Name()
 	}
 	exec := app.NewExecutionService(econSvc, store)
 	exec.SetCapabilities(catalog)
@@ -939,13 +960,8 @@ var defaultSolanaRPC = map[string]string{
 
 // buildTestMoneyGuard counts the payments the shared devnet wallet makes (see
 // app.TestMoneyGuard). Nil where no devnet rail runs, or when it is switched off.
-func buildTestMoneyGuard(cfg *config.Config, rails []*solanax402.Rail, passes app.PassOwners, limiter app.RateLimiter) *app.TestMoneyGuard {
-	var names []string
-	for _, r := range rails {
-		if r.Network() == chain.SolanaDevnet {
-			names = append(names, r.Name())
-		}
-	}
+func buildTestMoneyGuard(cfg *config.Config, rails []*solanax402.Rail, evmRails []*evmx402.Rail, passes app.PassOwners, limiter app.RateLimiter) *app.TestMoneyGuard {
+	names := testRailNames(rails, evmRails)
 	if len(names) == 0 {
 		return nil
 	}
@@ -963,13 +979,8 @@ func buildTestMoneyGuard(cfg *config.Config, rails []*solanax402.Rail, passes ap
 
 // buildTestCredits gives every account its Testnet credits on the devnet
 // rails (see app.TestCredits). Nil where no devnet rail runs, or when off.
-func buildTestCredits(cfg *config.Config, rails []*solanax402.Rail, passes app.PassOwners, spend app.TestCreditSpend) *app.TestCredits {
-	var names []string
-	for _, r := range rails {
-		if r.Network() == chain.SolanaDevnet {
-			names = append(names, r.Name())
-		}
-	}
+func buildTestCredits(cfg *config.Config, rails []*solanax402.Rail, evmRails []*evmx402.Rail, passes app.PassOwners, spend app.TestCreditSpend) *app.TestCredits {
+	names := testRailNames(rails, evmRails)
 	if len(names) == 0 || cfg.TestMoney.CreditsOff {
 		return nil
 	}

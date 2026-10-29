@@ -61,8 +61,18 @@ func (m *memOnchainStore) UpdateOnchainPull(_ context.Context, p *OnchainPull, f
 	m.pulls[p.ReservationID] = &c
 	return nil
 }
-func (m *memOnchainStore) OpenOnchainPulls(context.Context, string, int) ([]OnchainPull, error) {
-	return nil, nil
+func (m *memOnchainStore) OpenOnchainPulls(_ context.Context, source string, limit int) ([]OnchainPull, error) {
+	var out []OnchainPull
+	for _, p := range m.pulls {
+		src := p.Source
+		if src == "" {
+			src = PullSourcePass
+		}
+		if src == source && (p.State == PullSending || p.State == PullPulled || p.State == PullRefunding) && len(out) < limit {
+			out = append(out, *p)
+		}
+	}
+	return out, nil
 }
 func (m *memOnchainStore) OnchainPullsForPass(context.Context, string, int) ([]OnchainPull, error) {
 	return nil, nil

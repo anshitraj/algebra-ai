@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 )
 
 // Canonical network names. Algebra pays on Solana. Base and Arc are named
@@ -65,14 +66,24 @@ func IsTestNetwork(network string) bool {
 
 // Payable reports whether Algebra has a payment rail for a network today.
 // Catalogs list endpoints on Base and Arc too; those are shown and tracked,
-// but never offered to the router until a rail pays there.
+// but offered to the router only while a rail can pay there (SetPayable).
 func Payable(network string) bool {
-	switch NormalizeNetwork(network) {
+	switch n := NormalizeNetwork(network); n {
 	case Solana, SolanaDevnet, Sandbox:
 		return true
+	default:
+		on, _ := payable.Load(n)
+		return on == true
 	}
-	return false
 }
+
+// payable holds the networks whose rails are ready now, beyond Solana's.
+var payable sync.Map
+
+// SetPayable says whether a rail can pay on a network right now: set by the
+// wiring for the EVM rails, on while their payer holds USDC, so a chain whose
+// wallet is empty isn't offered to the router to fail on.
+func SetPayable(network string, on bool) { payable.Store(NormalizeNetwork(network), on) }
 
 // NormalizeAsset upper-cases a token symbol ("usdc" becomes "USDC").
 func NormalizeAsset(raw string) string {

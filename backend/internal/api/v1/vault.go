@@ -2,11 +2,13 @@ package v1
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 
 	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/account"
+	"github.com/project-algebra/algebra/internal/domain/shared"
 )
 
 // The owner's vault (docs/WALLET.md). Every route is the signed-in person's
@@ -139,7 +141,7 @@ func (a *API) allowanceOwner(w http.ResponseWriter, r *http.Request) (string, bo
 	if !ok {
 		return "", false
 	}
-	if a.b.VaultAllowances == nil {
+	if a.b.VaultAllowances == nil && a.b.EVMAllowances == nil {
 		writeJSON(w, http.StatusNotImplemented, errorBody{Error: "agents can't spend from vaults on this server"})
 		return "", false
 	}
@@ -154,10 +156,21 @@ func (a *API) vaultAllowances(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	out, err := a.b.VaultAllowances.Allowances(r.Context(), userID)
-	if err != nil {
-		writeError(w, err)
-		return
+	out := []app.VaultAllowanceView{}
+	if a.b.VaultAllowances != nil {
+		sol, err := a.b.VaultAllowances.Allowances(r.Context(), userID)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		out = append(out, sol...)
+	}
+	if a.b.EVMAllowances != nil {
+		// Base and Arc are read where the vault has an EVM address; a node
+		// that doesn't answer leaves its row unread, not the page broken.
+		if evmViews, err := a.b.EVMAllowances.Allowances(r.Context(), userID); err == nil {
+			out = append(out, evmViews...)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"allowances": out})
 }
@@ -174,6 +187,19 @@ func (a *API) vaultAllowancePrepare(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, err)
+		return
+	}
+	if a.b.EVMAllowances.Has(req.Network) {
+		p, err := a.b.EVMAllowances.Prepare(r.Context(), userID, req.Network)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"kind": "permit", "permit": p})
+		return
+	}
+	if a.b.VaultAllowances == nil {
+		writeError(w, fmt.Errorf("%w: agents can't spend from a vault on %s here", shared.ErrNotFound, req.Network))
 		return
 	}
 	p, err := a.b.VaultAllowances.Prepare(r.Context(), userID, req.Network)
@@ -195,9 +221,26 @@ func (a *API) vaultAllowanceSubmit(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Network     string `json:"network"`
 		Transaction string `json:"transaction"`
+		// A permit, on Base and Arc: the limit, its deadline and the vault's signature.
+		ValueMinor int64  `json:"value_minor"`
+		Deadline   int64  `json:"deadline"`
+		Signature  string `json:"signature"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, err)
+		return
+	}
+	if a.b.EVMAllowances.Has(req.Network) {
+		out, err := a.b.EVMAllowances.Submit(r.Context(), userID, app.PermitSubmit{Network: req.Network, ValueMinor: req.ValueMinor, Deadline: req.Deadline, Signature: req.Signature})
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	if a.b.VaultAllowances == nil {
+		writeError(w, fmt.Errorf("%w: agents can't spend from a vault on %s here", shared.ErrNotFound, req.Network))
 		return
 	}
 	out, err := a.b.VaultAllowances.Submit(r.Context(), userID, req.Network, req.Transaction)

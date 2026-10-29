@@ -77,6 +77,11 @@ type Evidence struct {
 	// ValidUntilHeight is the chain height after which a signed but unseen
 	// payment can provably never land (Solana: lastValidBlockHeight).
 	ValidUntilHeight uint64 `json:"valid_until_height,omitempty"`
+	// ValidBefore is the Unix time after which a signed EIP-3009 authorization
+	// can provably never be used (EVM), and FromBlock the chain's height when
+	// it was signed, where the search for its transaction starts.
+	ValidBefore int64  `json:"valid_before,omitempty"`
+	FromBlock   uint64 `json:"from_block,omitempty"`
 	// Test marks sandbox evidence: never presented as a real payment.
 	Test bool `json:"test,omitempty"`
 }
