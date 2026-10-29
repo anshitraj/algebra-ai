@@ -5,7 +5,7 @@
 // can pay within a Spend Pass but is rejected by every approval endpoint.
 // Wraps only the endpoints the agent's tools need — see tools.ts.
 
-import type { EconIntent, ProviderDetail, ProviderListing, RailStatus, SpendPass } from "../types";
+import type { EconIntent, JobPass, ProviderDetail, ProviderListing, RailStatus, SpendPass } from "../types";
 
 const API_URL = process.env.ALGEBRA_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
@@ -33,6 +33,8 @@ export type ServerIdentity = {
   askFirst?: boolean;
   /** How the person wants providers picked for this chat; it wins over what the model asks for. */
   pick?: "cheapest" | "balanced" | "fastest";
+  /** The Job Pass this turn's chosen payments run under: the task's budget, set aside from the pass. */
+  jobId?: string;
 };
 
 export class ServerApiError extends Error {
@@ -91,6 +93,36 @@ async function parse<T>(res: Response): Promise<T> {
 async function sessionFetch<T>(path: string, cookie: string, method = "GET"): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { method, headers: { Cookie: cookie }, cache: "no-store" });
   return parse<T>(res);
+}
+
+/** A task's budget could not be set aside: what the Spend Pass has left, and what was asked for. */
+export type JobShort = { short: true; leftMinor: number; wantedMinor: number };
+
+/**
+ * Opens a Job Pass for one chat turn's chosen payments, with the person's own
+ * session: their whole most-it-could-cost is set aside from the pass at once,
+ * or nothing is. Null when this API has no Job Passes (an older server).
+ */
+export async function openTaskJob(cookie: string, p: { passId: string; label: string; budgetMinor: number; seconds: number }): Promise<JobPass | JobShort | null> {
+  const res = await fetch(`${API_URL}/api/v1/me/jobs`, {
+    method: "POST",
+    headers: { Cookie: cookie, "Content-Type": "application/json" },
+    body: JSON.stringify({ spend_pass_id: p.passId, label: p.label, budget_minor: p.budgetMinor, expires_in_seconds: p.seconds }),
+    cache: "no-store",
+  });
+  if (res.status === 404 || res.status === 501) return null;
+  const body = (await readJSON(res)) as (JobPass & { reason_codes?: string[]; left_minor?: number; wanted_minor?: number; error?: string }) | undefined;
+  if (res.status === 403 && body?.reason_codes?.includes("JOB_PARENT_SHORT")) {
+    return { short: true, leftMinor: body.left_minor ?? 0, wantedMinor: body.wanted_minor ?? p.budgetMinor };
+  }
+  if (!res.ok || !body) throw new ServerApiError(res.status, body?.error ?? res.statusText);
+  return body;
+}
+
+/** Closes a turn's Job Pass: what its payments didn't use goes back to the Spend Pass. */
+export async function closeTaskJob(cookie: string, id: string): Promise<JobPass> {
+  const res = await fetch(`${API_URL}/api/v1/me/jobs/${encodeURIComponent(id)}/close`, { method: "POST", headers: { Cookie: cookie }, cache: "no-store" });
+  return parse<JobPass>(res);
 }
 
 /** The session's console-agent token. Throws a 401 ServerApiError if the cookie is missing or stale. */
@@ -212,6 +244,7 @@ export async function execute(identity: ServerIdentity, b: ExecuteBody): Promise
       currency: "USDC",
       constraints: { allowed_networks: [identity.network] },
       spend_pass_id: identity.passId,
+      job_id: identity.jobId,
       // Only ever adds a step: the person's yes, before anything is paid.
       require_approval: b.require_approval || identity.askFirst || undefined,
     },
@@ -238,7 +271,7 @@ export async function approveAsPerson(identity: ServerIdentity, intentId: string
 export async function executeIntent(identity: ServerIdentity, intentId: string, providers: string[]): Promise<ExecutionAnswer> {
   const res = await rawFetch(`/api/v1/economic-intents/${encodeURIComponent(intentId)}/execute`, identity, {
     method: "POST",
-    body: { providers, spend_pass_id: identity.passId },
+    body: { providers, spend_pass_id: identity.passId, job_id: identity.jobId },
   });
   return answer(res);
 }

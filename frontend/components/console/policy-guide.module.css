@@ -143,6 +143,9 @@
 .limitText > span {
   white-space: nowrap;
 }
+.limitText > .held {
+  flex-basis: 100%;
+}
 .limitText strong {
   color: var(--color-foreground);
   font-family: var(--font-mono);
@@ -150,6 +153,7 @@
   font-weight: 500;
 }
 .track {
+  position: relative;
   overflow: hidden;
   height: 4px;
   margin-top: 8px;
@@ -157,6 +161,8 @@
   background: var(--color-border);
 }
 .track > span {
+  position: absolute;
+  inset: 0;
   display: block;
   height: 100%;
   border-radius: inherit;
@@ -169,6 +175,11 @@
 }
 .limit[data-level="out"] .track > span {
   background: var(--color-danger);
+}
+/* What running tasks hold: under the spent part, lighter, since it comes back. */
+.limit .track > .aside {
+  background: var(--color-primary-soft);
+  opacity: 0.45;
 }
 
 /* Two quiet actions. */

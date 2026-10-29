@@ -18,6 +18,7 @@ import { IconArrowLeft, IconArrowRight, IconCheck, IconGauge, IconShield, IconSt
 import { Button } from "./ui";
 import GlassFolder, { hashString } from "@/components/ui/glass-folder-cards";
 import styles from "./policy-guide.module.css";
+import { PassTasks } from "./pass-tasks";
 
 const USDC = 1_000_000;
 const toMinor = (v: string) => Math.round(Number(v) * USDC);
@@ -156,8 +157,12 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
   const summary = useMemo(() => sentences(draft, pass), [draft, pass]);
   const files = useMemo(() => ruleFiles(draft), [draft]);
   const env = pass.environment ? ENVIRONMENTS[pass.environment] : undefined;
-  const spent = Math.max(0, pass.budget_minor_units - pass.remaining_minor_units);
-  const used = pass.budget_minor_units > 0 ? Math.min(1, spent / pass.budget_minor_units) : 0;
+  // Running tasks hold part of the limit: not spent, but not free either until they end.
+  const aside = pass.set_aside_minor_units ?? 0;
+  const spent = Math.max(0, pass.budget_minor_units - pass.remaining_minor_units - aside);
+  const taken = Math.max(0, pass.budget_minor_units - pass.remaining_minor_units);
+  const used = pass.budget_minor_units > 0 ? Math.min(1, taken / pass.budget_minor_units) : 0;
+  const spentShare = pass.budget_minor_units > 0 ? Math.min(1, spent / pass.budget_minor_units) : 0;
   const level = used >= 1 ? "out" : used >= 0.8 ? "low" : "ok";
   const period = pass.budget_period !== "total" ? ` a ${pass.budget_period}` : "";
 
@@ -270,6 +275,7 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
               {bare(pass.remaining_minor_units)} left of {bare(pass.budget_minor_units)}
               {period}
             </span>
+            {aside > 0 && <span className={styles.held}>{bare(aside)} held by running tasks</span>}
           </div>
           <div
             className={styles.track}
@@ -277,10 +283,11 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
             aria-label="Spent of the pass's limit"
             aria-valuemin={0}
             aria-valuemax={pass.budget_minor_units}
-            aria-valuenow={spent}
-            aria-valuetext={`${formatUSDC(spent)} of ${formatUSDC(pass.budget_minor_units)}`}
+            aria-valuenow={taken}
+            aria-valuetext={`${formatUSDC(spent)} spent${aside > 0 ? ` and ${formatUSDC(aside)} held by running tasks` : ""} of ${formatUSDC(pass.budget_minor_units)}`}
           >
-            <span style={{ transform: `scaleX(${used})` }} />
+            {aside > 0 && <span className={styles.aside} style={{ transform: `scaleX(${used})` }} />}
+            <span style={{ transform: `scaleX(${spentShare})` }} />
           </div>
         </div>
 
@@ -330,7 +337,9 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
               </p>
             )}
           </div>
-        ) : (
+        ) : null}
+        {expanded && !open && <PassTasks passId={pass.id} heldMinor={aside} onChanged={onSaved} />}
+        {!open ? null : (
           <Guide
             pass={pass}
             startAt={startAt}

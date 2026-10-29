@@ -27,6 +27,8 @@ export type SpendPass = {
   active: boolean;
   spent_minor_units: number;
   remaining_minor_units: number;
+  /** Held by running Job Passes and not used yet: part of spent, back when they end. */
+  set_aside_minor_units?: number;
   window_starts_at: string;
   /** Velocity limits and the new-provider rule (see lib/routing-types). */
   controls?: import("./routing-types").PassControls;
@@ -38,6 +40,53 @@ export type SpendPass = {
 };
 
 export type PassConnect = { api_base: string; mcp_url?: string };
+
+/** A paid attempt made under a Job Pass. */
+export type JobAttempt = {
+  reservation_id: string;
+  intent_id: string;
+  job_pass_id: string;
+  capability: string;
+  provider_id: string;
+  rail?: string;
+  /** RESERVED, EXECUTING, UNKNOWN, RECONCILING: may still become a payment. COMMITTED: paid. RELEASED, EXPIRED: nothing paid. */
+  state: string;
+  hold_minor: number;
+  transaction?: string;
+  network?: string;
+  fulfillment?: string;
+  created_at: string;
+  finished_at?: string;
+};
+
+/**
+ * A Job Pass: one task's budget, set aside from a Spend Pass and shared by
+ * every agent working on the task. It is an allocation in Algebra's ledger,
+ * never separate money.
+ */
+export type JobPass = {
+  id: string;
+  spend_pass_id: string;
+  parent_id?: string;
+  depth: number;
+  label: string;
+  currency: string;
+  budget_minor: number;
+  state: "ACTIVE" | "CLOSED" | "REVOKED" | "EXPIRED";
+  created_by?: string;
+  close_reason?: string;
+  created_at: string;
+  expires_at: string;
+  closed_at?: string;
+  live: boolean;
+  paid_minor: number;
+  held_minor: number;
+  set_aside_minor: number;
+  left_minor: number;
+  returned_minor: number;
+  children: JobPass[];
+  attempts: JobAttempt[];
+};
 
 /** A new pass with its agent token — the token is shown exactly once. */
 export type IssuedPass = SpendPass & { token: string; connect: PassConnect };

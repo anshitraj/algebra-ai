@@ -27,6 +27,7 @@ import { ThinkingLine } from "./live-activity";
 import { RichText } from "./rich-text";
 import { RequestPanel } from "./request-panel";
 import { Timeline, type Step } from "./timeline";
+import { TaskBudget, type TaskJob } from "./task-budget";
 import composerStyles from "./composer.module.css";
 
 type Turn = {
@@ -45,6 +46,8 @@ type Turn = {
   paidGroups?: string[];
   /** Receipts of the calls paid in this turn. */
   receipts?: ReceiptInfo[];
+  /** The Job Pass the turn's chosen payments ran under: set aside, then what it paid and gave back. */
+  job?: TaskJob;
   reply?: string;
   error?: string;
   status: "running" | "done" | "error" | "stopped";
@@ -357,6 +360,10 @@ export function AgentWorkspace() {
                 : { ...t, approvals: [...t.approvals, { intentId: e.intentId, provider: e.provider, askedFirst: e.askedFirst, decision: e.decision }] }
             );
             refreshConsole();
+            break;
+          case "job":
+            updateTurn(id, (t) => ({ ...t, job: e.phase === "short" ? { phase: "short", leftMinor: e.leftMinor, wantedMinor: e.wantedMinor, pass: e.pass } : { phase: e.phase, job: e.job, pass: e.pass } }));
+            if (e.phase !== "opened") refreshConsole();
             break;
           case "spend":
             setSession((s) => ({ ...s, spent: s.spent + e.amount.minor_units, calls: s.calls + 1 }));
@@ -783,6 +790,8 @@ function TurnView({
       )}
 
       {delivered && <DeliveryPanel receipts={turn.receipts!} steps={turn.steps} running={running} />}
+
+      {turn.job && <TaskBudget task={turn.job} />}
 
       {turn.approvals.map((a) => (
         <ApprovalCard

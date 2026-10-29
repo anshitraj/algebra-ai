@@ -3,24 +3,7 @@
 // authenticated by the HttpOnly session cookie; no token ever lives in
 // JavaScript.
 
-import type {
-  AuthProviders,
-  EconIntent,
-  EconStats,
-  IssuedPass,
-  KeptResult,
-  NewPass,
-  NotificationSettings,
-  OnboardingAnswers,
-  PassConnect,
-  ProviderDetail,
-  ProviderListing,
-  RailStatus,
-  ReceiptVerification,
-  SessionInfo,
-  SpendPass,
-  User,
-} from "./types";
+import type { AuthProviders, EconIntent, EconStats, IssuedPass, KeptResult, NewPass, NotificationSettings, OnboardingAnswers, PassConnect, ProviderDetail, ProviderListing, RailStatus, ReceiptVerification, SessionInfo, SpendPass, User, JobPass } from "./types";
 import type {
   APIKey,
   Environment,
@@ -227,6 +210,19 @@ export function createPass(p: NewPass) {
 
 export function revokePass(id: string) {
   return apiFetch<{ ok: boolean }>(`/api/v1/me/passes/${encodeURIComponent(id)}/revoke`, { method: "POST" });
+}
+
+// --- Job Passes: a task's budget inside a Spend Pass ---
+
+export function listJobs(passId?: string, limit = 20) {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (passId) q.set("spend_pass_id", passId);
+  return apiFetch<{ jobs: JobPass[] }>(`/api/v1/me/jobs?${q}`);
+}
+
+/** Stops a job and every job beneath it; what they didn't use goes back to the Spend Pass. */
+export function revokeJob(id: string) {
+  return apiFetch<JobPass>(`/api/v1/me/jobs/${encodeURIComponent(id)}/revoke`, { method: "POST" });
 }
 
 // --- the catalogs of paid APIs (public) ---

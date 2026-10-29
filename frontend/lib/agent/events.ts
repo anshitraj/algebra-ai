@@ -3,7 +3,7 @@
 // can show each tool call as a live step instead of a spinner.
 
 import type { Decision, Recommendation, Simulation } from "../routing-types";
-import type { ProviderTrust } from "../types";
+import type { JobPass, ProviderTrust } from "../types";
 
 export type StepStatus = "running" | "done" | "error" | "blocked" | "waiting";
 
@@ -27,6 +27,13 @@ export type AgentEvent =
   | { type: "options"; group: OptionGroup }
   /** A paid call's receipt: what was paid, where, the transaction and the PDF. */
   | { type: "receipt"; receipt: ReceiptInfo }
+  /**
+   * The task's Job Pass: opened with the most the chosen cards could cost set aside
+   * from the Spend Pass, then closed with what was paid and what went back. "short":
+   * the pass hadn't that much left, so nothing was paid.
+   */
+  | { type: "job"; phase: "opened" | "closed"; job: JobPass; pass: string }
+  | { type: "job"; phase: "short"; leftMinor: number; wantedMinor: number; pass: string }
   /** USDC paid for a delivered call (micro-USDC). */
   | { type: "spend"; amount: { minor_units: number; currency: string }; intentId: string; provider: string; network?: string }
   | { type: "done"; reply: string; history: unknown[]; provider: string; model: string }
