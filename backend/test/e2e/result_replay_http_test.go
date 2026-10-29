@@ -182,9 +182,11 @@ func TestExecuteOverHTTP_ARepeatRequestIsAnsweredFromTheKeptResult(t *testing.T)
 	}
 
 	// A request that declines keeping its answer: delivered, then refused on repeat.
+	// It is paid for anew ("fresh"): the answer kept for the first request would
+	// otherwise be handed back for the same work and input (purchase memory).
 	req2 := map[string]any{
 		"capability": "solana.token-risk", "input": map[string]any{"mint": "So11111111111111111111111111111111111111112"},
-		"budget_max_minor": 50_000, "window": window + "-private", "store_result": false,
+		"budget_max_minor": 50_000, "window": window + "-private", "store_result": false, "fresh": true,
 	}
 	status, _, priv := call(t, "POST", base+"/api/v1/execute", token, req2)
 	if status != 200 || priv["delivered"] != true || priv["response"] == nil {

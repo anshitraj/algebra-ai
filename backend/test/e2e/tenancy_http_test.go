@@ -215,7 +215,7 @@ func TestTenancyOverHTTP_AProjectDefaultsTheStrategy(t *testing.T) {
 	secret, _ := issueKey(t, base, alice, project, map[string]any{"name": "ci", "environment": "sandbox"})
 
 	mode := func(strategy string) string {
-		req := priceRequest("e2e-strat-" + uuid.NewString())
+		req := freshPriceRequest("e2e-strat-" + uuid.NewString())
 		if strategy != "" {
 			req["provider_policy"] = map[string]any{"strategy": strategy}
 		}
