@@ -19,6 +19,7 @@ export const DECISION_WORDS: Record<Decision, { label: string; sentence: string 
 
 const REASONS: Record<string, string> = {
   ASKED_FOR_APPROVAL: "you asked to approve every payment",
+  REPEAT_PURCHASE: "the same thing was bought 5 times in 10 minutes, which looks like a loop",
   PASS_FROZEN: "the pass is frozen by the kill switch",
   PASS_RATE_LIMITED: "the pass made as many paid calls this minute as it may",
   PASS_NEW_PROVIDER_NEEDS_APPROVAL: "a provider you've never paid needs your approval",

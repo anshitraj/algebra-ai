@@ -56,6 +56,7 @@ const REASONS: Record<string, string> = {
   ONCHAIN_PASS_LIMIT: "Over a limit the pass enforces on Solana",
   ONCHAIN_PASS_UNFUNDED: "The vault holds less than this costs",
   VAULT_ALLOWANCE_LOW: "What agents may still spend from your Vault is less than this costs",
+  REPEAT_PURCHASE: "The same thing was bought 5 times in 10 minutes: that looks like a loop, so this one waits for your yes",
   VAULT_UNFUNDED: "Your Vault holds less USDC than this costs",
   ONCHAIN_PASS_AGENT_CHANGED: "The vault was made for an earlier Algebra payer key",
 };
@@ -184,7 +185,9 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
     case "delivered":
       return {
         status: "done",
-        summary: d.replayed
+        summary: d.reused
+          ? `Reused an answer paid for ${agoText((d.reused as { age_seconds: number }).age_seconds)}: nothing paid now`
+          : d.replayed
           ? `Already paid: the kept answer, nothing paid again${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid} the first time` : ""}`
           : `Delivered${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid}` : " · nothing to pay"}${network ? ` ${onNet(network)}` : ""}${d.test_money ? (network === "sandbox" ? " (play money)" : " (test money)") : ""}`,
         detail: { rows, links, response: pretty(d.response), note: "The response is the provider's own data, shown as received.", policy: d._policy as PolicyReport | undefined },
@@ -294,3 +297,10 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
 }
 
 export { usdc as formatUsdcMinor };
+
+/** "40 s ago", "3 min ago", "2 h ago". */
+export function agoText(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
+  return `${Math.round(seconds / 3600)} h ago`;
+}

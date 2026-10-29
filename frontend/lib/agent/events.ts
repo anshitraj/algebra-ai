@@ -100,6 +100,8 @@ export type OptionGroup = {
   recommendations: Recommendation[];
   /** Every offer, ranked balanced; at most 10. */
   compared: Recommendation[];
+  /** The same request was paid for recently enough: paying hands that answer back for nothing. */
+  reuse?: import("../routing-types").ReusedPurchase;
   /** Providers left out, and why (down, overcharging, blocked, not allowed by the pass). */
   refused: { provider: string; reason: string }[];
 };
@@ -113,6 +115,8 @@ export type Choice = {
   provider: string;
   strategy?: "cheapest" | "balanced" | "fastest";
   label: string;
+  /** Pay for a new answer even though a fresh one was already paid for. */
+  fresh?: boolean;
 };
 
 /** A delivered, paid call as the receipt card shows it. */
@@ -131,6 +135,8 @@ export type ReceiptInfo = {
   pageUrl: string;
   test?: boolean;
   at: string;
+  /** The answer is one already paid for, handed back while fresh: nothing was paid this time. */
+  reused?: { ageSeconds: number };
   /** The delivered provider response, kept as data for the result cards. */
   result?: unknown;
   work?: string;

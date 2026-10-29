@@ -208,7 +208,7 @@ export async function POST(request: Request) {
                 if (request.signal.aborted) break;
                 const { result } = await runTool(
                   "pay_choice",
-                  { work: c.work, input: c.input, max_price_usdc: c.max_price_usdc, provider: c.provider, strategy: c.strategy, window: windowFor(c) },
+                  { work: c.work, input: c.input, max_price_usdc: c.max_price_usdc, provider: c.provider, strategy: c.strategy, window: windowFor(c), fresh: c.fresh },
                   payer,
                   emit,
                 );

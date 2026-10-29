@@ -216,6 +216,8 @@ export type ExecuteBody = {
   window?: string;
   /** Ask for the person's yes before anything is paid, whatever the pass allows. */
   require_approval?: boolean;
+  /** Pay for a new answer even when a fresh one was already paid for (purchase memory). */
+  fresh?: boolean;
 };
 
 /** POST /api/v1/policy/simulate: what /execute would do, without reserving or paying anything. */

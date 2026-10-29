@@ -43,3 +43,12 @@
 .pay:disabled { opacity: .35; cursor: not-allowed; }
 @media (max-width: 1199px) and (min-width: 1024px) { .cards { grid-template-columns: 1fr; } .provider { margin-top: 12px; } }
 @media (max-width: 600px) { .cards { grid-template-columns: 1fr; } .cardButton { padding: 16px 18px; } .provider { margin-top: 14px; } .price { font-size: 24px; } .facts { grid-template-columns: 1fr 1fr; } .selectionSummary { margin-left: 0; } .pay { margin-left: auto; } }
+
+/* What one accepted answer is expected to cost, when that is more than the price. */
+.perAnswer { margin-top: 2px; color: var(--color-muted); font-size: 11px; line-height: 1.4; font-variant-numeric: tabular-nums; }
+/* An answer already paid for and still fresh: paying hands it back for nothing. */
+.reuse { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-primary-tint); color: var(--color-foreground); font-size: 12px; line-height: 1.45; }
+.reuse > span { flex: 1; min-width: 200px; }
+.reuse svg { color: var(--color-success); }
+.reuse button { flex-shrink: 0; min-height: 30px; padding: 0 11px; border: 1px solid var(--color-border-strong); border-radius: 8px; background: var(--color-surface); color: var(--color-foreground); font-size: 12px; font-weight: 600; cursor: pointer; }
+.reuse button:hover { border-color: var(--color-foreground); }

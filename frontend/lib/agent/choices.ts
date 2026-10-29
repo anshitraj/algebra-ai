@@ -27,7 +27,7 @@ export function parseChoices(raw: unknown): Choice[] | string {
     if (!group || !work || !provider || !input || !Number.isFinite(max) || max <= 0 || max > MAX_CHOICE_USDC) {
       return "A chosen card is incomplete. Compare again and pick once more.";
     }
-    out.push({ group, work, provider, input, max_price_usdc: max, strategy: isPick(o.strategy) ? o.strategy : undefined, label: str(o.label, 200) || provider });
+    out.push({ group, work, provider, input, max_price_usdc: max, strategy: isPick(o.strategy) ? o.strategy : undefined, label: str(o.label, 200) || provider, fresh: o.fresh === true || undefined });
   }
   return out;
 }

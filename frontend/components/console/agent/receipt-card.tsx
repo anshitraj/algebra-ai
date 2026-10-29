@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import * as api from "@/lib/api-client";
 import type { ReceiptInfo } from "@/lib/agent/events";
+import { agoText } from "@/lib/agent/steps";
 import { explorerAddress, explorerTx, solscanTx } from "@/lib/explorer";
 import { networkLabel } from "@/lib/network";
 import type { IntentReceiptClaims } from "@/lib/types";
@@ -77,8 +78,9 @@ export function ReceiptCard({ receipt: r }: { receipt: ReceiptInfo }) {
           <IconReceipt size={18} />
         </span>
         <p>
-          Paid <strong>{r.paid}</strong> to <Link href={`/console/providers/${encodeURIComponent(r.provider)}`}>{r.provider} <IconExternal size={10} /></Link>
-          {net && <small>{r.network === "sandbox" ? "in demo mode" : `on ${net}`}</small>}
+          {r.reused ? "Reused an answer that cost " : "Paid "}
+          <strong>{r.paid}</strong> {r.reused ? "from" : "to"} <Link href={`/console/providers/${encodeURIComponent(r.provider)}`}>{r.provider} <IconExternal size={10} /></Link>
+          {r.reused ? <small>Paid {agoText(r.reused.ageSeconds)}, still fresh · nothing paid now</small> : net && <small>{r.network === "sandbox" ? "in demo mode" : `on ${net}`}</small>}
         </p>
         {testMoney && (
           <span className={styles.testBadge}>

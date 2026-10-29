@@ -18,6 +18,7 @@ import { formatUSDC } from "@/lib/money";
 import { networkLabel } from "@/lib/network";
 import { latencySourceText, pickLabel } from "@/lib/strategy";
 import { reasonLine, vaultFix } from "@/lib/decision";
+import { agoText } from "@/lib/agent/steps";
 import { SellerChips } from "../trust-badges";
 import { IconArrowRight, IconBan, IconCheck, IconChevronDown, IconClock, IconLock } from "@/components/icons";
 import styles from "./options-card.module.css";
@@ -34,6 +35,17 @@ function providerName(id: string) {
 function priceText(r: Recommendation) {
   if (r.price_source === "unlisted") return "price on request";
   return `${formatUSDC(r.total_minor)}${r.price_source === "listed" ? " listed" : ""}`;
+}
+
+/**
+ * What one accepted answer is expected to cost, when that is more than the
+ * price: a provider whose calls are often paid for nothing costs more per
+ * answer than its price says. Undefined when the two are about the same.
+ */
+function perAnswerText(r: Recommendation) {
+  const cpa = r.cost_per_accepted_minor ?? 0;
+  if (r.price_source === "unlisted" || r.total_minor <= 0 || cpa <= r.total_minor * 1.02) return undefined;
+  return `≈ ${formatUSDC(cpa)} per accepted answer`;
 }
 
 function speedText(r: Recommendation) {
@@ -146,6 +158,18 @@ export function OptionsBoard({
     onPay(choices, text);
   }
 
+  // A fresh answer instead of the one already paid for: the recommended offer, paid even though
+  // the earlier answer is still fresh.
+  function payFresh(g: OptionGroup) {
+    const rec = g.recommendations.find((r) => r.strategy === "balanced" && r.decision !== "BLOCK");
+    if (!rec || !active) return;
+    const { choices, text } = choicesOf([{ group: g, rec, ways: ["balanced"] }]);
+    onPay(
+      choices.map((c) => ({ ...c, fresh: true })),
+      `${text.replace(/\.$/, "")}, fresh: don't reuse the earlier answer.`,
+    );
+  }
+
   // With "ask before paying" off, the recommended offer of each new comparison is paid once, as soon as
   // the answer is in. A comparison is only ever looked at once: one that isn't allowed outright
   // (waits for a yes, refused) is left for the person.
@@ -164,7 +188,7 @@ export function OptionsBoard({
   return (
     <div className={styles.board} role="group" aria-label="Choose what to pay for">
       {groups.map((g) => (
-        <GroupView key={g.id} g={g} showHeading={groups.length > 1} paid={done.has(g.id)} active={active} picked={picked} passId={passId} onToggle={toggle} />
+        <GroupView key={g.id} g={g} showHeading={groups.length > 1} paid={done.has(g.id)} active={active} picked={picked} passId={passId} onToggle={toggle} onFresh={payFresh} />
       ))}
 
       {open.length > 0 && (
@@ -214,6 +238,7 @@ function GroupView({
   picked,
   passId,
   onToggle,
+  onFresh,
 }: {
   g: OptionGroup;
   showHeading: boolean;
@@ -222,6 +247,7 @@ function GroupView({
   picked: Record<string, Picked>;
   passId?: string;
   onToggle: (g: OptionGroup, rec: Recommendation, ways: string[]) => void;
+  onFresh: (g: OptionGroup) => void;
 }) {
   const cards = cardsOf(g);
   // With one offer there is nothing to rank: the three ways would all name it.
@@ -256,6 +282,21 @@ function GroupView({
         </p>
       )}
 
+      {!paid && g.reuse && (
+        <p className={styles.reuse}>
+          <IconCheck size={13} className="shrink-0" />
+          <span>
+            You paid {formatUSDC(g.reuse.paid_minor)} for this {agoText(g.reuse.age_seconds)} ({providerName(g.reuse.provider)}). It&apos;s still fresh, so paying
+            again hands that answer back for nothing.
+          </span>
+          {active && g.recommendations.some((r) => r.strategy === "balanced" && r.decision !== "BLOCK") && (
+            <button type="button" onClick={() => onFresh(g)}>
+              Buy a fresh one
+            </button>
+          )}
+        </p>
+      )}
+
       <ul className={styles.cards}>
         {cards.map(({ rec, ways }) => {
           const key = `${g.id}|${rec.candidate_id}`;
@@ -285,6 +326,11 @@ function GroupView({
                   <span className="min-w-0"><strong title={rec.provider}>{providerName(rec.provider)}</strong><small>{g.title}</small></span>
                 </span>
                 <span className={styles.price}>{priceText(rec)}</span>
+                {perAnswerText(rec) && (
+                  <span className={styles.perAnswer} title="The price spread over how often this provider's answers are accepted, with the calls it was paid for and failed counted. Algebra ranks on this.">
+                    {perAnswerText(rec)}
+                  </span>
+                )}
                 <span className={styles.metrics}>
                   <span title={latencySourceText(rec.latency_source, rec.calls)}>{speedText(rec)}</span><span aria-hidden="true">·</span>
                   <span title={reliabilityText(rec)}>{Math.round((rec.reliability ?? 0) * 100)}% est. delivery</span>

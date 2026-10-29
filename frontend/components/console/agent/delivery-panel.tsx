@@ -13,7 +13,9 @@ import styles from "./delivery.module.css";
 
 export function DeliveryPanel({ receipts, steps, running }: { receipts: ReceiptInfo[]; steps: Step[]; running: boolean }) {
   const [open, setOpen] = useState(false);
-  const total = receipts.reduce((sum, r) => sum + r.paidMinor, 0);
+  // A reused answer was paid for the first time it ran: nothing was paid for it now.
+  const total = receipts.reduce((sum, r) => sum + (r.reused ? 0 : r.paidMinor), 0);
+  const reused = receipts.filter((r) => r.reused).length;
   const networks = [...new Set(receipts.map((r) => r.network).filter(Boolean))].map(networkLabel);
   const needsAttention = steps.some((step) => step.status === "error" || step.status === "blocked" || step.status === "waiting");
   const timed = steps.filter((s) => s.endedAt !== undefined);
@@ -27,7 +29,7 @@ export function DeliveryPanel({ receipts, steps, running }: { receipts: ReceiptI
   return <section className={styles.delivery} aria-label="Delivered API results">
     <button type="button" className={styles.deliveredBar} aria-expanded={open} title="Delivery activity and response details" onClick={() => setOpen((v) => !v)}>
       <span className={styles.deliveredCheck}><IconCheck size={15} strokeWidth={2.5} /></span>
-      <span><strong>{receipts.length === 1 ? "Delivered" : `${receipts.length} calls delivered`}</strong><span className={styles.deliveryMeta}> · {formatUSDC(total)}{networks.length ? ` on ${networks.join(", ")}` : ""}{elapsed > 0 ? ` · ${(elapsed / 1000).toFixed(1)}s` : ""}{running ? " · still working" : needsAttention ? " · other steps need attention" : ""}</span></span>
+      <span><strong>{receipts.length === 1 ? "Delivered" : `${receipts.length} calls delivered`}</strong><span className={styles.deliveryMeta}> · {reused === receipts.length ? "reused, nothing paid now" : `${formatUSDC(total)}${reused ? ` · ${reused} reused` : ""}`}{networks.length ? ` on ${networks.join(", ")}` : ""}{elapsed > 0 ? ` · ${(elapsed / 1000).toFixed(1)}s` : ""}{running ? " · still working" : needsAttention ? " · other steps need attention" : ""}</span></span>
       <IconChevronDown size={14} className={open ? styles.expanded : ""} />
     </button>
     {open && <div className={styles.activity}><Timeline steps={steps} running={running} defaultOpen onAsk={undefined} />{results.map(({ receipt, response }) => <ResponseDetails key={receipt.intentId} receipt={receipt} response={response} />)}</div>}

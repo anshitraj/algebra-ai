@@ -98,6 +98,7 @@ export function receiptOf(d: Record<string, unknown>, provider: string, context?
     pageUrl: `/console/executions/${encodeURIComponent(intentId)}/invoice`,
     test: d.test_money === true || network === "sandbox" || undefined,
     at: new Date().toISOString(),
+    reused: d.reused && typeof (d.reused as { age_seconds?: unknown }).age_seconds === "number" ? { ageSeconds: (d.reused as { age_seconds: number }).age_seconds } : undefined,
     result: d.response,
     work: context?.work,
     stepId: context?.stepId,
