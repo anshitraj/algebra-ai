@@ -101,6 +101,15 @@ func main() {
 					logger.Info("on-chain pass reconcile", "changed", n)
 				}
 			}
+			// Job Passes past their time: written as EXPIRED. They already
+			// authorize nothing; this keeps the console's word for them right.
+			if bundle.JobPasses != nil {
+				if n, err := bundle.JobPasses.Sweep(ctx); err != nil {
+					logger.Warn("job pass sweep", "error", err)
+				} else if n > 0 {
+					logger.Info("job pass sweep", "expired", n)
+				}
+			}
 			// Pulls from owners' vaults, through their allowances: the same.
 			if bundle.VaultAllowances != nil {
 				if n, err := bundle.VaultAllowances.Reconcile(ctx); err != nil {

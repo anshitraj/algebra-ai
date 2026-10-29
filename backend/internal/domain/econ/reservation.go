@@ -13,7 +13,10 @@ type Reservation struct {
 	ExecutorAgentID string `json:"executor_agent_id"`
 	// ExecutorPassID is the Spend Pass whose authority this attempt uses.
 	ExecutorPassID string `json:"executor_pass_id,omitempty"`
-	Attempt        int    `json:"attempt"`
+	// JobID is the Job Pass the attempt was made under: its hold counts
+	// against that job's budget, inside the pass's.
+	JobID   string `json:"job_pass_id,omitempty"`
+	Attempt int    `json:"attempt"`
 
 	State ReservationState `json:"state"`
 	// HoldMinor is what's counted against the executor's pass until the

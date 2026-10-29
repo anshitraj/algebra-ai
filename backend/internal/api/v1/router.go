@@ -144,6 +144,15 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/receipt.pdf", api.getEconomicReceiptPDF)
 	// Execution: Algebra prices, pays, calls, verifies and signs.
 	mux.HandleFunc("POST /api/v1/execute", api.executeOutcome)
+	// Job Passes: a task's budget inside a Spend Pass, shared by sub-agents.
+	mux.HandleFunc("POST /api/v1/jobs", api.openJob)
+	mux.HandleFunc("GET /api/v1/jobs/{id}", api.getJob)
+	mux.HandleFunc("POST /api/v1/jobs/{id}/close", api.closeJob)
+	mux.HandleFunc("GET /api/v1/me/jobs", api.listMyJobs)
+	mux.HandleFunc("POST /api/v1/me/jobs", api.openMyJob)
+	mux.HandleFunc("GET /api/v1/me/jobs/{id}", api.getMyJob)
+	mux.HandleFunc("POST /api/v1/me/jobs/{id}/close", api.closeMyJob)
+	mux.HandleFunc("POST /api/v1/me/jobs/{id}/revoke", api.revokeMyJob)
 	mux.HandleFunc("POST /api/v1/economic-intents/{id}/execute", api.executeEconomicIntent)
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/executions", api.listEconomicExecutions)
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/result", api.getEconomicResult)

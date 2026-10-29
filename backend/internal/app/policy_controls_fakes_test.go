@@ -100,16 +100,10 @@ func (f *fakePassStore) SetRules(_ context.Context, id string, maxPerCall, appro
 
 // The memory store as a PolicyReader, for the dry run.
 
-func (m *memEconStore) PassSpend(_ context.Context, passID string, since time.Time) (int64, error) {
+func (m *memEconStore) PassSpend(_ context.Context, passID string, since, now time.Time) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var total int64
-	for _, x := range m.rsv {
-		if x.ExecutorPassID == passID && (x.State.Live() || (x.State == econ.ReservationCommitted && x.FinishedAt != nil && !x.FinishedAt.Before(since))) {
-			total += x.HoldMinor
-		}
-	}
-	return total, nil
+	return memPassExposure(m.rsv, m.jobs, passID, since, now), nil
 }
 
 func (m *memEconStore) PassAttemptsRecent(_ context.Context, passID, provider string, since time.Time) (int, error) {

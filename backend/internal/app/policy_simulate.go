@@ -19,7 +19,7 @@ import (
 // PolicyReader is what a dry run reads from the economic store without
 // taking a lock: the same numbers the coordinator checks under one.
 type PolicyReader interface {
-	PassSpend(ctx context.Context, passID string, since time.Time) (int64, error)
+	PassSpend(ctx context.Context, passID string, since, now time.Time) (int64, error)
 	PassAttemptsRecent(ctx context.Context, passID, provider string, since time.Time) (int, error)
 	ProviderPaidBy(ctx context.Context, principalID, provider string) (bool, error)
 }
@@ -290,7 +290,7 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 	reader, _ := s.econ.store.(PolicyReader)
 	var spent int64
 	if reader != nil {
-		if spent, err = reader.PassSpend(ctx, p.ID, p.WindowStart(now)); err != nil {
+		if spent, err = reader.PassSpend(ctx, p.ID, p.WindowStart(now), now); err != nil {
 			return nil, err
 		}
 		if sim.Pass.CallsLastMinute, err = reader.PassAttemptsRecent(ctx, p.ID, "", now.Add(-time.Minute)); err != nil {

@@ -41,6 +41,9 @@ type executeRequest struct {
 	// while (sealed, 24 hours by default) so that asking again returns it
 	// instead of "already committed". True unless the request says false.
 	StoreResult *bool `json:"store_result"`
+	// JobID pays under one of the pass's Job Passes. A request made with a
+	// job token pays under that job unless it names one carved from it.
+	JobID string `json:"job_id"`
 }
 
 func (a *API) executionEnabled(w http.ResponseWriter) bool {
@@ -56,11 +59,6 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 	if !a.executionEnabled(w) {
 		return
 	}
-	ag, err := a.resolveAgent(r)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	var req executeRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := decodeJSON(r, &req); err != nil {
@@ -72,17 +70,18 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
 		return
 	}
-	executor, err := a.executorFor(r, ag, req.PassID)
+	caller, err := a.spendCallerFor(r, req.PassID, req.JobID, false)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	ag, executor := caller.ag, caller.executor
 	a.applyDefaultStrategy(r.Context(), ag, executor, &req.ProviderPolicy)
 	candidates, rejected := a.b.Candidates.Resolve(r.Context(), capability, req.Providers, req.Candidates)
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
-	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, DiscardResult: discardsResult(req.StoreResult)})
+	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, DiscardResult: discardsResult(req.StoreResult), JobID: caller.jobID})
 	var created *bool
 	var rep *app.PlanReport
 	if res != nil {
@@ -152,11 +151,6 @@ func (a *API) executeEconomicIntent(w http.ResponseWriter, r *http.Request) {
 	if !a.executionEnabled(w) {
 		return
 	}
-	ag, err := a.resolveAgent(r)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	var req struct {
 		Providers  []string             `json:"providers"`
 		Candidates []app.CandidateInput `json:"candidates"`
@@ -165,17 +159,20 @@ func (a *API) executeEconomicIntent(w http.ResponseWriter, r *http.Request) {
 		PassID string `json:"spend_pass_id"`
 		// StoreResult: see executeRequest.
 		StoreResult *bool `json:"store_result"`
+		// JobID: see executeRequest.
+		JobID string `json:"job_id"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := decodeJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	executor, err := a.executorFor(r, ag, req.PassID)
+	caller, err := a.spendCallerFor(r, req.PassID, req.JobID, false)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	ag, executor := caller.ag, caller.executor
 	view, err := a.b.Economic.ViewFor(r.Context(), ag.UserID, r.PathValue("id"), false)
 	if err != nil {
 		writeError(w, err)
@@ -185,7 +182,7 @@ func (a *API) executeEconomicIntent(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
-	rep, err := a.b.Execution.ExecuteCandidates(ctx, app.CandidatesRequest{AgentID: executor, IntentID: view.ID, Candidates: candidates, DiscardResult: discardsResult(req.StoreResult)})
+	rep, err := a.b.Execution.ExecuteCandidates(ctx, app.CandidatesRequest{AgentID: executor, IntentID: view.ID, Candidates: candidates, DiscardResult: discardsResult(req.StoreResult), JobID: caller.jobID})
 	a.writeExecution(w, nil, rep, rejected, err)
 }
 

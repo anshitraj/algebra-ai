@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/econ"
+	"github.com/project-algebra/algebra/internal/domain/jobpass"
 )
 
 // EconStore persists economic intents, reservations, lifecycle events and
@@ -54,8 +55,16 @@ type EconUnit interface {
 	InsertReservation(r *econ.Reservation) error
 	SaveReservation(r *econ.Reservation) error
 	// PassExposure is what the pass has committed to economic intents in
-	// its window plus every live hold: money that is spent or may be.
-	PassExposure(passID string, since time.Time) (int64, error)
+	// its window plus every live hold: money that is spent or may be. A Job
+	// Pass live at now counts with its whole budget in place of its own
+	// holds and payments (see jobExposureSQL).
+	PassExposure(passID string, since, now time.Time) (int64, error)
+	// JobExposure is what a job has used or set aside at now: the holds and
+	// payments made under it or under its ended sub-jobs, plus the whole
+	// budget of every live sub-job.
+	JobExposure(jobID string, now time.Time) (int64, error)
+	// Job reads a Job Pass.
+	Job(id string) (*jobpass.Job, error)
 	// PassAttemptsSince counts the reservations a pass was granted since a
 	// time, to one provider or (provider "") to any: the velocity limit.
 	PassAttemptsSince(passID, provider string, since time.Time) (int, error)

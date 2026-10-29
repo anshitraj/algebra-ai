@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/econ"
+	"github.com/project-algebra/algebra/internal/domain/jobpass"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 )
 
@@ -21,10 +22,13 @@ type memEconStore struct {
 	rsv      map[string]*econ.Reservation
 	events   []EconEvent
 	receipts map[string]string
+	// jobs are the Job Passes (job_passes_memstore_test.go): the same store,
+	// so exposure sees jobs and reservations together, as the SQL does.
+	jobs map[string]*jobpass.Job
 }
 
 func newMemEconStore() *memEconStore {
-	return &memEconStore{intents: map[string]*econ.Intent{}, rsv: map[string]*econ.Reservation{}, receipts: map[string]string{}}
+	return &memEconStore{intents: map[string]*econ.Intent{}, rsv: map[string]*econ.Reservation{}, receipts: map[string]string{}, jobs: map[string]*jobpass.Job{}}
 }
 
 func (m *memEconStore) CreateIntent(_ context.Context, in *econ.Intent) (*econ.Intent, bool, error) {
@@ -175,7 +179,7 @@ func (u *memUnit) SaveReservation(r *econ.Reservation) error {
 	return nil
 }
 
-func (u *memUnit) PassExposure(passID string, since time.Time) (int64, error) {
+func (u *memUnit) all() map[string]*econ.Reservation {
 	all := map[string]*econ.Reservation{}
 	for id, x := range u.m.rsv {
 		all[id] = x
@@ -183,16 +187,24 @@ func (u *memUnit) PassExposure(passID string, since time.Time) (int64, error) {
 	for id, x := range u.rsv {
 		all[id] = x
 	}
-	var total int64
-	for _, x := range all {
-		if x.ExecutorPassID != passID {
-			continue
-		}
-		if x.State.Live() || (x.State == econ.ReservationCommitted && x.FinishedAt != nil && !x.FinishedAt.Before(since)) {
-			total += x.HoldMinor
-		}
+	return all
+}
+
+func (u *memUnit) PassExposure(passID string, since, now time.Time) (int64, error) {
+	return memPassExposure(u.all(), u.m.jobs, passID, since, now), nil
+}
+
+func (u *memUnit) JobExposure(jobID string, now time.Time) (int64, error) {
+	return memJobExposure(u.all(), u.m.jobs, jobID, now), nil
+}
+
+func (u *memUnit) Job(id string) (*jobpass.Job, error) {
+	j, ok := u.m.jobs[id]
+	if !ok {
+		return nil, shared.ErrNotFound
 	}
-	return total, nil
+	cp := *j
+	return &cp, nil
 }
 
 func (u *memUnit) AppendEvent(e EconEvent) error {

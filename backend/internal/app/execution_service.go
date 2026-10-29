@@ -358,6 +358,25 @@ type CandidatesRequest struct {
 	Candidates []routing.Candidate
 	// DiscardResult: the caller asked for the answer not to be kept.
 	DiscardResult bool
+	// JobID: every attempt is made under this Job Pass of the agent's pass.
+	// Set from the caller's credentials, never from a request body alone.
+	JobID string
+}
+
+type jobKey struct{}
+
+// withJob carries the Job Pass a plan runs under down to each reservation.
+func withJob(ctx context.Context, jobID string) context.Context {
+	if jobID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, jobKey{}, jobID)
+}
+
+// jobOf is the Job Pass ctx runs under, or "".
+func jobOf(ctx context.Context) string {
+	id, _ := ctx.Value(jobKey{}).(string)
+	return id
 }
 
 const (
@@ -386,6 +405,7 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 	if req.DiscardResult {
 		ctx = WithoutKeepingResult(ctx)
 	}
+	ctx = withJob(ctx, req.JobID)
 	view, err := s.agentView(ctx, req.AgentID, req.IntentID)
 	if err != nil {
 		return nil, err
@@ -606,6 +626,8 @@ type DoRequest struct {
 	Candidates []routing.Candidate
 	// DiscardResult: the caller asked for the answer not to be kept.
 	DiscardResult bool
+	// JobID: see CandidatesRequest.
+	JobID string
 }
 
 // DoResult is what Do returns.
@@ -636,7 +658,7 @@ func (s *ExecutionService) Do(ctx context.Context, req DoRequest) (*DoResult, er
 			return &DoResult{Created: false, Report: rep, Intent: view, Replayed: true}, nil
 		}
 	}
-	rep, err := s.ExecuteCandidates(ctx, CandidatesRequest{AgentID: req.AgentID, IntentID: view.ID, Candidates: req.Candidates, DiscardResult: req.DiscardResult})
+	rep, err := s.ExecuteCandidates(ctx, CandidatesRequest{AgentID: req.AgentID, IntentID: view.ID, Candidates: req.Candidates, DiscardResult: req.DiscardResult, JobID: req.JobID})
 	return &DoResult{Created: created, Report: rep, Intent: view}, err
 }
 
@@ -783,7 +805,7 @@ func (s *ExecutionService) Execute(ctx context.Context, req ExecuteRequest) (*Ex
 	}
 	rsv, err := s.econ.Reserve(ctx, req.AgentID, req.IntentID, ReserveRequest{
 		ProviderID: q.Provider, Rail: rail, QuoteMinor: q.Cost.Total(), Semantics: q.Semantics,
-		FoundOnWeb: req.Step.Trust == routing.TrustUnverified,
+		FoundOnWeb: req.Step.Trust == routing.TrustUnverified, JobID: jobOf(ctx),
 	})
 	if err != nil {
 		return nil, err
