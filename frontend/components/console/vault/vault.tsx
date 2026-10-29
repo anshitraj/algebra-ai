@@ -16,6 +16,7 @@ import { lockVault, unlockedKeys, unlockWith, useVaultUnlocked } from "@/lib/wal
 import { fromMinor, toMinor, vaultChain, vaultChains, type VaultChain } from "@/lib/wallet/chains";
 import { buildWithdrawal } from "@/lib/wallet/withdraw";
 import { buildAllowance } from "@/lib/wallet/allowance";
+import { signPermit } from "@/lib/wallet/permit";
 import { ChainMark } from "@/components/chain-logos";
 import { Button, ErrorNote, Field, Input, PageHeader, Skeleton } from "@/components/console/ui";
 import { IconArrowRight, IconCheck, IconCopy, IconExternal, IconLock, IconRefresh, IconShield, IconUnlock, Spinner } from "@/components/icons";
@@ -93,7 +94,7 @@ export function VaultPage() {
   const mismatch = !!record && !!keystore && (keystore.addresses.solana !== record.solana_address || keystore.addresses.evm.toLowerCase() !== record.evm_address);
   const here = useMemo(() => vaultChains(test).filter((c) => chains.find((x) => x.id === c.id)?.available), [chains, test]);
   // What agents may spend: on this place to work's Solana, where the server runs allowances.
-  const spending = allowances?.find((a) => vaultChain(a.network)?.test === test) ?? null;
+  const spendings = (allowances ?? []).filter((a) => vaultChain(a.network)?.test === test);
 
   if (demo) {
     return (
@@ -150,7 +151,7 @@ export function VaultPage() {
             </div>
           )}
 
-          <Portfolio test={test} chains={here} balances={balances} credits={credits} vaultPays={!!spending?.active} refreshing={refreshing} onRefresh={() => refresh(true)} />
+          <Portfolio test={test} chains={here} balances={balances} credits={credits} vaultPays={spendings.some((a) => a.active)} refreshing={refreshing} onRefresh={() => refresh(true)} />
 
           <div className={styles.actions}>
             <button type="button" aria-expanded={panel === "deposit"} onClick={() => setPanel(panel === "deposit" ? null : "deposit")}>
@@ -184,7 +185,7 @@ export function VaultPage() {
             />
           )}
 
-          {spending && (
+          {spendings.map((spending) => (
             <AgentSpending
               key={spending.network}
               test={test}
@@ -195,7 +196,7 @@ export function VaultPage() {
                 setTimeout(() => refresh(true), 3000);
               }}
             />
-          )}
+          ))}
         </>
       )}
     </div>
@@ -462,8 +463,15 @@ function AgentSpending({ test, allowance: a, keystore, onChanged }: { test: bool
     try {
       const keys = await unlock(password);
       const facts = await api.prepareAllowance(a.network);
-      const transaction = buildAllowance(keys, facts, mode === "stop" ? null : minor);
-      const res = await api.submitAllowance({ network: a.network, transaction });
+      let res;
+      if ("kind" in facts) {
+        // Base and Arc: a permit, signed here, which Algebra submits and pays the gas for.
+        const p = signPermit(keys, facts.permit, mode === "stop" ? 0n : (minor ?? 0n));
+        res = await api.submitAllowance({ network: a.network, value_minor: Number(p.value), deadline: p.deadline, signature: p.signature });
+      } else {
+        const transaction = buildAllowance(keys, facts, mode === "stop" ? null : minor);
+        res = await api.submitAllowance({ network: a.network, transaction });
+      }
       setDone({ id: res.signature, pending: res.pending, stopped: mode === "stop" });
       setPassword("");
       setMode(null);
@@ -480,7 +488,7 @@ function AgentSpending({ test, allowance: a, keystore, onChanged }: { test: bool
       <div className={styles.spendingHead}>
         <ChainMark network={a.network} size={20} />
         <div>
-          <strong>Agents can spend</strong>
+          <strong>Agents can spend on {c?.name ?? "Solana"}</strong>
           <small>{a.active ? `From this vault, capped on ${c?.name ?? "Solana"}` : test ? "Off: agents use your Testnet credits" : "Off: agents can't spend from this vault"}</small>
         </div>
         <span className={styles.amount}>
@@ -568,7 +576,9 @@ function AgentSpending({ test, allowance: a, keystore, onChanged }: { test: bool
           </dl>
           {mode === "set" && (
             <p className={styles.hint}>
-              Solana&apos;s token program holds the line: nothing, Algebra included, can move more than this from your vault with it. A refund of a failed payment returns the USDC but not the limit.
+              {c?.kind === "evm"
+                ? `${c.name}'s USDC contract holds the line: nothing, Algebra included, can move more than this from your vault with it. Signing costs you nothing: Algebra submits it and pays the gas. A refund of a failed payment returns the USDC but not the limit.`
+                : "Solana's token program holds the line: nothing, Algebra included, can move more than this from your vault with it. A refund of a failed payment returns the USDC but not the limit."}
               {a.other_delegate ? ` It also replaces the spender ${short(a.other_delegate)} you allowed elsewhere.` : ""}
             </p>
           )}

@@ -164,3 +164,36 @@ test("the agent allowance: one approve to the payer, the payer's slot left to fi
   assert.throws(() => buildAllowance(keys, facts, 2_000_000_000n), /At most 1000/);
   assert.throws(() => buildAllowance(keys, { ...facts, compute_unit_price: 5_000_000 }, 1n), /far above normal/);
 });
+
+import { permitDigest, signDigest, signPermit } from "../lib/wallet/permit.ts";
+
+test("the Base/Arc permit: the same digest and signature as the Go code, and bad server facts are refused", () => {
+  const secret = hexToBytes("4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318");
+  const digest = permitDigest({
+    chainId: 84532, token: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", name: "USDC", version: "2",
+    owner: "0x2c7536E3605D9C16a7a3D7b1898e529396a65c23", spender: "0x1111111111111111111111111111111111111111",
+    value: 5000n, nonce: 0n, deadline: 1900000000n,
+  });
+  // Computed by backend/internal/platform/evm for the same permit and key.
+  assert.equal(bytesToHex(digest), "9a62f8cfe1cce84b1759bc8514e29c4cac7eb731b18f3417b88372ba5deeeb7e");
+  assert.equal(signDigest(digest, secret), "0x896618a0401f8b653344686637e1343e81b28a892e4e2bb7b1445f2033b020f3493229ec7bae6c49ed237024afb62826c9cd79d33b3874d4c40b5352965a17571c");
+
+  const keys = { solana: { secret: new Uint8Array(32), publicKey: new Uint8Array(32), address: "x" }, evm: { secret, address: "0x2c7536E3605D9C16a7a3D7b1898e529396a65c23" } };
+  const now = Math.floor(Date.now() / 1000);
+  const facts = { network: "base-sepolia", chain_id: 84532, token: "0x036cbd53842c5426634e7929541ec2318f3dcf7e", name: "USDC", version: "2",
+    owner: "0x2c7536e3605d9c16a7a3d7b1898e529396a65c23", spender: "0x1111111111111111111111111111111111111111", nonce: "3", deadline: now + 86400 * 365, max_minor: 1_000_000_000 };
+  const ok = signPermit(keys, facts, 5_000_000n);
+  assert.match(ok.signature, /^0x[0-9a-f]{130}$/);
+  for (const bad of [
+    { ...facts, token: "0x1111111111111111111111111111111111111111" },
+    { ...facts, chain_id: 8453 },
+    { ...facts, owner: "0x1111111111111111111111111111111111111111" },
+    { ...facts, name: "Fake USDC" },
+    { ...facts, spender: facts.owner },
+    { ...facts, deadline: now + 60 },
+    { ...facts, network: "solana-devnet" },
+  ]) {
+    assert.throws(() => signPermit(keys, bad, 5_000_000n));
+  }
+  assert.throws(() => signPermit(keys, facts, 2_000_000_000n), /At most/);
+});

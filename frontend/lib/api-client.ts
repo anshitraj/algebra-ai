@@ -334,12 +334,27 @@ export function getVaultAllowances() {
   return apiFetch<{ allowances: VaultAllowance[] }>("/api/v1/me/vault/allowances");
 }
 
+/** What a USDC permit on Base or Arc needs: the browser signs it, Algebra submits it and pays the gas. */
+export type PermitParams = {
+  network: string;
+  chain_id: number;
+  token: string;
+  name: string;
+  version: string;
+  owner: string;
+  spender: string;
+  nonce: string;
+  deadline: number;
+  max_minor: number;
+};
+
+/** Solana answers with a transaction to build; Base and Arc with a permit to sign. */
 export function prepareAllowance(network: string) {
-  return apiFetch<AllowanceParams>("/api/v1/me/vault/allowance/prepare", { method: "POST", body: { network } });
+  return apiFetch<AllowanceParams | { kind: "permit"; permit: PermitParams }>("/api/v1/me/vault/allowance/prepare", { method: "POST", body: { network } });
 }
 
-/** An approve or revoke the vault signed; Algebra checks it, pays its fee and sends it. */
-export function submitAllowance(req: { network: string; transaction: string }) {
+/** An approve or revoke the vault signed (Solana), or a permit (Base, Arc); Algebra checks it, pays its fee and sends it. */
+export function submitAllowance(req: { network: string; transaction: string } | { network: string; value_minor: number; deadline: number; signature: string }) {
   return apiFetch<{ signature: string; pending: boolean; allowance: VaultAllowance }>("/api/v1/me/vault/allowance", { method: "POST", body: req });
 }
 

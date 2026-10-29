@@ -37,6 +37,15 @@ export type ServerIdentity = {
   jobId?: string;
 };
 
+/**
+ * The networks a chat's payments may use: Testnet is every test chain Algebra
+ * pays on (Solana devnet, Base Sepolia, Arc testnet; Base and Arc only while
+ * Algebra's wallet there can pay), mainnet and the sandbox are one each.
+ */
+export function networksOf(network: ChatNetwork): string[] {
+  return network === "solana-devnet" ? ["solana-devnet", "base-sepolia", "arc-testnet"] : [network];
+}
+
 export class ServerApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -227,7 +236,7 @@ export async function simulate(identity: ServerIdentity, b: ExecuteBody): Promis
     body: {
       ...b,
       currency: "USDC",
-      constraints: { allowed_networks: [identity.network] },
+      constraints: { allowed_networks: networksOf(identity.network) },
       spend_pass_id: identity.passId,
       // The dry run shows what a real request would meet, including the yes the person asked for.
       require_approval: identity.askFirst || undefined,
@@ -244,7 +253,7 @@ export async function execute(identity: ServerIdentity, b: ExecuteBody): Promise
     body: {
       ...b,
       currency: "USDC",
-      constraints: { allowed_networks: [identity.network] },
+      constraints: { allowed_networks: networksOf(identity.network) },
       spend_pass_id: identity.passId,
       job_id: identity.jobId,
       // Only ever adds a step: the person's yes, before anything is paid.

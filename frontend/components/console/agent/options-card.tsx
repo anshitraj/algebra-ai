@@ -20,6 +20,7 @@ import { latencySourceText, pickLabel } from "@/lib/strategy";
 import { reasonLine, vaultFix } from "@/lib/decision";
 import { agoText } from "@/lib/agent/steps";
 import { SellerChips } from "../trust-badges";
+import { ChainMark, chainName, hasChainMark } from "@/components/chain-logos";
 import { IconArrowRight, IconBan, IconCheck, IconChevronDown, IconClock, IconLock } from "@/components/icons";
 import styles from "./options-card.module.css";
 
@@ -334,7 +335,10 @@ function GroupView({
                 <span className={styles.metrics}>
                   <span title={latencySourceText(rec.latency_source, rec.calls)}>{speedText(rec)}</span><span aria-hidden="true">·</span>
                   <span title={reliabilityText(rec)}>{Math.round((rec.reliability ?? 0) * 100)}% est. delivery</span>
-                  <span><span className={styles.networkDot} />{networkLabel(g.network)}</span>
+                  <span>
+                    {hasChainMark(rec.network) ? <ChainMark network={rec.network} size={12} /> : <span className={styles.networkDot} />}
+                    {rec.network && rec.network !== g.network ? chainName(rec.network) : networkLabel(g.network)}
+                  </span>
                 </span>
                 <span className={styles.select}>{paid ? "Sent to pay" : on ? "Selected" : rec.decision === "BLOCK" ? "Unavailable" : "Select"}{on ? <IconCheck size={14} /> : !paid && rec.decision !== "BLOCK" ? <IconArrowRight size={14} /> : null}</span>
                 <span className={styles.facts}>
