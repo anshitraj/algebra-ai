@@ -194,6 +194,28 @@ unverified web finds. A pass's web-found rule (`controls.web_found_providers`) h
 rule and the price guards then decide on it like any other. Needs `GEMINI_API_KEY`, a Spend Pass, and is
 limited to ten searches an hour per agent.
 
+## The Base and Arc rail (`backend/providers/evmx402`)
+
+x402 `exact` on EVM chains whose USDC supports EIP-3009 (Base, Arc). For each payment the payer signs a
+`transferWithAuthorization`: exactly the price, to the seller, once (a random 32-byte nonce), valid from a minute ago
+until at most ten minutes ahead, over USDC's EIP-712 domain on that chain. It sends nothing and needs no gas; the seller
+or its facilitator submits it. It refuses another token, more than the hold or the rail's 1 USDC ceiling, and paying
+itself. Settlement comes from the chain: `authorizationState(payer, nonce)` used means paid (the `AuthorizationUsed` log
+gives the transaction); unused is PENDING until the deadline has passed at a *finalized* block, and only then
+NOT_SETTLED, since no later block can include it.
+
+One EVM payer pays on every EVM chain (`EVM_TESTNET_PAYER=generated` makes one for Base Sepolia and Arc testnet and keeps
+it sealed in the database; `EVM_TESTNET_PAYER_KEY` is an operator's; `EVM_TESTNET_PAYER_ADDRESS` pins it). A chain is
+offered to the router only while the payer holds at least 0.01 USDC there (checked every two minutes); until then its
+sellers are left out as `network_not_ready`. Testnet is Solana devnet, Base Sepolia and Arc testnet together, and the
+Testnet credits and the test-money guard cover all three. Mainnet Base and Arc payments are not enabled in this build.
+
+Proven without funds: a read-only call of `transferWithAuthorization` on the real Base Sepolia and Arc testnet USDC
+contracts with the rail's signature fails only on the payer's balance (USDC checks the signature first), and with a
+tampered signature fails on the signature (`EVMX402_LIVE=1 go test ./providers/evmx402`). The demo provider sells
+token prices and weather on Base Sepolia and Arc (`demo:basebeam`, `demo:arcade`, `demo:basecast`), checks each
+authorization itself and submits it with its own key, so its wallet needs gas there too.
+
 ## The Solana rails
 
 ### x402 (`backend/providers/solanax402`)

@@ -37,8 +37,8 @@ cannot slip in a different recipient or amount.
 ## Agents spending
 
 Agents spend from the vault only through a limit the chain enforces (`internal/app/vault_allowance.go`,
-`frontend/lib/wallet/allowance.ts`). Built on Solana (Testnet now, mainnet behind `VAULT_MAINNET_DEPOSITS`); Base and
-Arc come with the Base payment rail.
+`frontend/lib/wallet/allowance.ts`). Built on Solana (Testnet now, mainnet behind `VAULT_MAINNET_DEPOSITS`), and on
+Base Sepolia and Arc testnet (below).
 
 - **The limit.** The owner sets "agents may spend up to X USDC". The browser builds an SPL `ApproveChecked` that names
   Algebra's payer as the delegate of the vault's USDC account for X, and the vault signs it. The token program then
@@ -64,6 +64,23 @@ Arc come with the Base payment rail.
   compromised payer key could send up to what is left of the limit elsewhere. The owner bounds that by the size of the
   limit, and stops it at once with a revoke. A program-held pass (the on-chain Spend Pass, whose pulls can only go to
   the payer) is the stricter option, at the cost of moving USDC into it.
+
+### On Base and Arc
+
+`internal/app/evm_allowance.go`, `frontend/lib/wallet/permit.ts`. The same limit, through USDC's EIP-2612 permit:
+
+- **The browser signs a permit**, never a transaction: "Algebra's EVM payer may spend up to this much of the vault's
+  USDC, until this deadline", over USDC's own EIP-712 domain on that chain. Signing costs the vault nothing; Algebra
+  submits it and pays the gas. A permit for 0 stops it. The browser checks the chain id, the USDC contract, its domain
+  name and version, and that the owner named is this vault, from its own tables; the server checks the permit
+  recovers to the vault's address, for its payer, at the current nonce, before submitting it.
+- **USDC holds the line**: `transferFrom` past what is left of the allowance fails in the contract. The payer pulls
+  exactly a payment's amount just before it signs the x402 payment, and the payment is released only once the pull is
+  mined and succeeded; what an attempt didn't spend is sent back (`Reconcile`).
+- **The payer needs gas** on each chain (Base Sepolia ETH; on Arc, USDC is the gas) to submit permits, pulls and
+  refunds. The x402 payments themselves cost it nothing: the seller submits them.
+- Checked against the real contracts without moving money: a read-only `permit()` call on Base Sepolia and Arc testnet
+  succeeds with the browser's signature and fails with a tampered one (`providers/evmx402`, `EVMX402_LIVE=1`).
 
 ## Mainnet
 
