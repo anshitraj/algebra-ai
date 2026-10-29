@@ -2,13 +2,40 @@ package keyed
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/project-algebra/algebra/internal/platform/safehttp"
 )
+
+// recording keeps the vendor's last answer, so a failure (or KEYED_LIVE_RAW=1)
+// shows what it really said. A run that is billed is not repeated to find out.
+type recording struct {
+	inner  HTTPDoer
+	mu     sync.Mutex
+	status int
+	body   []byte
+}
+
+func (r *recording) Do(req *http.Request) (*safehttp.Response, error) {
+	resp, err := r.inner.Do(req)
+	if err == nil {
+		r.mu.Lock()
+		r.status, r.body = resp.Status, resp.Body
+		r.mu.Unlock()
+	}
+	return resp, err
+}
+
+func (r *recording) answer(key string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return strings.ReplaceAll(cut(string(r.body), 1500), key, "[redacted]")
+}
 
 // Live checks against the real vendors. Each runs only when its key is in the
 // environment of the test process, so a plain `go test` never touches the
@@ -44,8 +71,9 @@ func TestLive_Vendors(t *testing.T) {
 				t.Skip("an agent run costs credits: set KEYED_LIVE_AGENT=1")
 			}
 			tools := NewTools(nil)
+			rec := &recording{inner: safehttp.New(safehttp.Options{Timeout: 120 * time.Second, MaxBody: 4 << 20})}
 			r := NewRunner(Config{
-				HTTP:   safehttp.New(safehttp.Options{Timeout: 120 * time.Second, MaxBody: 4 << 20}),
+				HTTP:   rec,
 				Keys:   keyStore{"user_1|" + c.vendor: key},
 				Passes: passStore{"pass_1": "user_1"},
 				Tools:  tools,
@@ -53,6 +81,9 @@ func TestLive_Vendors(t *testing.T) {
 			started := time.Now()
 			obs, paid := call(t, r, tools, c.vendor, c.class, "pass_1", c.input)
 			t.Logf("%s %s: delivered=%v status=%d in %s, charged %d micro-USD, class=%q", c.vendor, c.class, obs.Delivered, obs.HTTPStatus, time.Since(started).Round(time.Millisecond), obs.ChargedMinor, obs.Class)
+			if !obs.Delivered || os.Getenv("KEYED_LIVE_RAW") == "1" {
+				t.Logf("the vendor answered %d: %s", rec.status, rec.answer(key))
+			}
 			if strings.Contains(obs.Message, key) || strings.Contains(string(obs.Body), key) {
 				t.Fatal("the key must never come back in a message or an answer")
 			}

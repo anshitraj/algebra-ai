@@ -158,8 +158,10 @@ saves or replaces; `DELETE` removes.
 **Checked live.** `providers/keyed/live_test.go` runs the real adapters against the real vendors, only when a key is in the
 test process's environment (`KEYED_LIVE_TINYFISH_KEY`, `_EXA_`, `_FIRECRAWL_`, `_TAVILY_`; an Agent run costs credits and
 also needs `KEYED_LIVE_AGENT=1`): `KEYED_LIVE_TINYFISH_KEY=… go test ./providers/keyed -run Live -v -count=1`. TinyFish
-Search (10 results) and Fetch (a page as markdown) passed against the live API on 2026-10-29. The Agent, Exa, Firecrawl and
-Tavily adapters are so far tested against fake vendors only.
+Search (10 results), Fetch (a page as markdown) and one small Agent run (4 steps in 23 s, charged 4 x 1.5 cents = 0.06 USD)
+passed against the live API on 2026-10-29. TinyFish's answer to an Agent run reports its steps and not a dollar amount, so
+the charge is the steps at the pay-as-you-go step price: a plan with cheaper credits is billed less than Algebra records.
+The Exa, Firecrawl and Tavily adapters are so far tested against fake vendors only.
 
 ## Connecting an agent
 
