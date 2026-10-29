@@ -94,7 +94,7 @@ node and a fake Jupiter (`backend/providers/jupiter/jupitertest`), so nothing le
 
 ## Accounts and sessions
 
-People sign in to the web app with a six-digit code emailed to them (no password to make or remember), or with email and password (argon2id) behind a link on the same page while `PASSWORD_LOGIN` is on (`backend/internal/api/v1/auth.go`). The same address is the same account either way. A sign-in creates:
+People sign in to the web app with a six-digit code emailed to them (no password to make or remember), or with email and password (argon2id) behind a link on the same page while `PASSWORD_LOGIN` is on (`backend/internal/api/v1/auth.go`). The same address is the same account either way. A password sign-up does not prove the address; when its owner later proves it (by a code, or a provider that has verified it) the account loses the password and the sessions it had, so whoever signed up first with an address that was not theirs keeps nothing (`AccountService.claimAddress`). A sign-in creates:
 
 - an **HttpOnly, SameSite=Lax session cookie** (`algebra_session`, SHA-256-hashed at rest in `user_sessions`), and
 - a **per-session console agent**: the identity every agent-scoped endpoint acts as when called with the cookie. Its token is sealed (AES-256-GCM) on the session row; the web app's server-side loop fetches

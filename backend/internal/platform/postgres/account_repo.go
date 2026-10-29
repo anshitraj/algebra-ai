@@ -93,7 +93,7 @@ func (r *AccountRepo) UpdateUserProfile(ctx context.Context, id, name, avatarURL
 }
 
 func (r *AccountRepo) SetPassword(ctx context.Context, userID, hash string) error {
-	return r.exec(ctx, "setting password", `UPDATE users SET password_hash = $2 WHERE id = $1`, userID, hash)
+	return r.exec(ctx, "setting password", `UPDATE users SET password_hash = NULLIF($2,'') WHERE id = $1`, userID, hash)
 }
 
 func (r *AccountRepo) MarkEmailVerified(ctx context.Context, userID string, at time.Time) error {

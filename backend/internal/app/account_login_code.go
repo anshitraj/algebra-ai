@@ -90,7 +90,8 @@ func (s *AccountService) RequestLoginCode(ctx context.Context, email, linkBase s
 
 // SignInWithLoginCode signs in with the code emailed to an address, making the
 // account when the address has none. Having the code proves the address, so
-// the address counts as verified.
+// the address counts as verified; an account that had it unverified loses the
+// password and the sessions it had (claimAddress).
 func (s *AccountService) SignInWithLoginCode(ctx context.Context, email, code string, meta account.ClientMeta) (*SignInResult, error) {
 	if !s.LoginCodesOn() {
 		return nil, ErrLoginCodesOff
@@ -118,8 +119,9 @@ func (s *AccountService) SignInWithLoginCode(ctx context.Context, email, code st
 	switch {
 	case err == nil:
 		if u.EmailVerifiedAt == nil {
-			_ = s.store.MarkEmailVerified(ctx, u.ID, now)
-			u.EmailVerifiedAt = &now
+			if err := s.claimAddress(ctx, u, now); err != nil {
+				return nil, err
+			}
 		}
 	case errors.Is(err, shared.ErrNotFound):
 		u = &account.User{ID: newID("user"), Email: address, EmailVerifiedAt: &now, CreatedAt: now}

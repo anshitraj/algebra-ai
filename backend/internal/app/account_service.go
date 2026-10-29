@@ -208,7 +208,15 @@ func (s *AccountService) SignInWithOAuth(ctx context.Context, p account.OAuthPro
 	u, err := s.store.GetUserByEmail(ctx, email)
 	switch {
 	case err == nil:
-		// Existing account, same verified email — link this provider to it.
+		// Existing account, same verified email — link this provider to it. If
+		// nobody had proved the address before, whoever made the account may
+		// hold its password and sessions, and the person who just did gets
+		// neither (claimAddress, before anything is linked).
+		if u.EmailVerifiedAt == nil {
+			if err := s.claimAddress(ctx, u, now); err != nil {
+				return nil, err
+			}
+		}
 	case errors.Is(err, shared.ErrNotFound):
 		u = &account.User{
 			ID: newID("user"), Email: email, Name: strings.TrimSpace(p.Name),
@@ -224,10 +232,6 @@ func (s *AccountService) SignInWithOAuth(ctx context.Context, p account.OAuthPro
 	if err := s.store.LinkOAuthIdentity(ctx, p.Provider, p.ProviderUserID, u.ID, email, now); err != nil {
 		return nil, err
 	}
-	if u.EmailVerifiedAt == nil {
-		_ = s.store.MarkEmailVerified(ctx, u.ID, now)
-		u.EmailVerifiedAt = &now
-	}
 	s.fillProfile(ctx, u, p)
 	res, err := s.startSession(ctx, u, meta)
 	if err != nil {
@@ -235,6 +239,37 @@ func (s *AccountService) SignInWithOAuth(ctx context.Context, p account.OAuthPro
 	}
 	res.Created = created
 	return res, nil
+}
+
+// claimAddress is what proving an address does to an account that had it
+// unverified. Whoever made that account never proved the address, and may have
+// given it a password and left sessions open (a sign-up with somebody else's
+// address, waiting for them to arrive), so the person who just proved it gets
+// the account without either. The address is marked verified last: a failure
+// part-way leaves the account unverified, and the next proof does it all again.
+// An account whose address was already verified is never passed here: a
+// password on it is its owner's.
+func (s *AccountService) claimAddress(ctx context.Context, u *account.User, now time.Time) error {
+	if u.HasPassword() {
+		if err := s.store.SetPassword(ctx, u.ID, ""); err != nil {
+			return fmt.Errorf("app: clearing the password of an account whose address was just verified: %w", err)
+		}
+		u.PasswordHash = ""
+	}
+	sessions, err := s.store.ListActiveSessions(ctx, u.ID, now)
+	if err != nil {
+		return err
+	}
+	for i := range sessions {
+		if err := s.SignOut(ctx, &sessions[i]); err != nil {
+			return err
+		}
+	}
+	if err := s.store.MarkEmailVerified(ctx, u.ID, now); err != nil {
+		return err
+	}
+	u.EmailVerifiedAt = &now
+	return nil
 }
 
 // fillProfile backfills a missing name/avatar from the provider — never

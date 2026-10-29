@@ -108,6 +108,40 @@ func TestLoginCodeSignInOverHTTP(t *testing.T) {
 		}
 	})
 
+	// Someone signs up with an address that is not theirs and waits. The owner
+	// proves the address with a code and gets the account, but not the password
+	// or the session the first person made.
+	t.Run("a code takes the account from whoever signed up first", func(t *testing.T) {
+		email := "squat-" + uuid.NewString() + "@example.test"
+		const squatterPassword = "squatter horse battery staple"
+		status, squatterCookie, out := browserCall(t, "POST", base+"/api/v1/auth/signup", nil, map[string]any{"name": "Squatter", "email": email, "password": squatterPassword})
+		if status != 201 || squatterCookie == nil || userOf(t, out)["email_verified"] != false {
+			t.Fatalf("signup: %d %v", status, out)
+		}
+		existing := userOf(t, out)["id"]
+		// A session that doesn't hold is a 200 with no user: the page asks, it isn't an error.
+		if status, _, out := browserCall(t, "GET", base+"/api/v1/auth/session", squatterCookie, nil); status != 200 || userOf(t, out)["id"] != existing {
+			t.Fatalf("the squatter's session before: %d %v", status, out)
+		}
+
+		if status, out := send(email); status != 200 {
+			t.Fatalf("send: %d %v", status, out)
+		}
+		status, ownerCookie, out := verify(email, codeSentTo(t, box, email))
+		if status != 200 || ownerCookie == nil || userOf(t, out)["id"] != existing || userOf(t, out)["email_verified"] != true {
+			t.Fatalf("the owner's sign-in: %d %v", status, out)
+		}
+		if status, _, out := browserCall(t, "GET", base+"/api/v1/auth/session", squatterCookie, nil); status != 200 || out["user"] != nil {
+			t.Errorf("the squatter's session after: %d %v, want no user", status, out)
+		}
+		if status, cookie, _ := browserCall(t, "POST", base+"/api/v1/auth/login", nil, map[string]any{"email": email, "password": squatterPassword}); status != 401 || cookie != nil {
+			t.Errorf("the squatter's password after: %d, want 401", status)
+		}
+		if status, _, out := browserCall(t, "GET", base+"/api/v1/auth/session", ownerCookie, nil); status != 200 || userOf(t, out)["id"] != existing || userOf(t, out)["has_password"] != false {
+			t.Errorf("the owner's session: %d %v", status, out)
+		}
+	})
+
 	t.Run("bad input", func(t *testing.T) {
 		if status, _ := send("not an address"); status != 400 {
 			t.Errorf("a bad address: %d, want 400", status)

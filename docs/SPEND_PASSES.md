@@ -160,9 +160,9 @@ saves or replaces; `DELETE` removes.
 made with it is billed there, and it is offered only to the accounts at the addresses in `ALGEBRA_OPERATOR_EMAILS`, and to
 nobody else (`internal/app/operator_keys.go`). An account counts only when it is a first-party account (not a B2B tenant's
 person), its person has proved the address (a sign-in code or a verified provider), it is not a demo, and it has **no
-password**: signing in with a code verifies an address but does not clear a password set on the account before, and that
-password may be somebody else's, so for now an operator account must be one that never had one. The set is looked up from the
-addresses at most every 30 seconds, so a first sign-in counts within that.
+password**: proving an address now clears a password set before it (`AccountService.claimAddress`), but an account verified
+before that change may still carry one that is somebody else's, so an operator account is one with none. The set is looked up
+from the addresses at most every 30 seconds, so a first sign-in counts within that.
 
 - A key the person saves themselves always wins, and removing it hands back to the server's. The server's key can't be saved,
   replaced or removed from the app, and is never returned: the listing only says `server_key: true` and Account → Web tools
