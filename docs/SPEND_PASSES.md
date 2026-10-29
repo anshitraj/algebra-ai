@@ -92,6 +92,40 @@ takes `job_id`, or pays under the job of the job token it is called with. The co
 `GET /api/v1/me/jobs/{id}`, `POST /api/v1/me/jobs/{id}/close|revoke`. The pass's view adds
 `set_aside_minor_units`: what running jobs hold and haven't used.
 
+## Task and agent P&L
+
+`internal/app/pnl.go`. Every task (Job Pass, sub-tasks included) and every agent (Spend Pass, last 30 days) has its money
+worked out from what the chain and the coordinator recorded:
+
+- **Paid**: payments committed. **Wasted**: the part of that which bought an answer that wasn't usable.
+- **Accepted** answers, and **cost per accepted answer** (paid ÷ accepted).
+- **Saved by reuse**: what answers handed back by purchase memory would have cost again (each reuse records the task and
+  the pass that asked).
+- **Value** is never guessed: the agent states it when it opens a task (`value_minor` on `POST /api/v1/jobs`, or later
+  `POST /api/v1/jobs/{id}/value`), or the person does in the pass's task list. With a value, **P&L = value − paid**; an
+  agent's P&L adds up its tasks that have one.
+
+`GET /api/v1/me/passes/{id}/pnl?days=30` is an agent's; each task's is in its view (`pnl`).
+
+## Replay: a task under chaos
+
+`internal/app/replay_chaos.go`, `POST /api/v1/me/jobs/{id}/replay`, "Replay under chaos" in the task list. A finished
+task's paid purchases run again, on paper, through the router's dry run under the task's own Spend Pass, with one
+misbehaving seller added per scenario:
+
+| Scenario | What the seller does | What normally answers it |
+|---|---|---|
+| Overcharge | lists the usual price, asks four times as much | `price_above_listing` |
+| Honeypot | asks 25 USDC for the same work | the intent's ceiling, the outlier guard |
+| Web lure | an endpoint found on the open web at half price | the pass's web-found rule (asks first by default) |
+| Stranger | a seller never paid, at the same price | the pass's new-provider rule |
+| Seller down | the seller the task paid doesn't answer | falling back to the next, or stopping with nothing paid |
+| Loop | the same thing asked again and again | purchase memory, then the repeat-purchase rule |
+
+The adversaries are never contacted (their answers are written into the dry run) and the task's real sellers are priced
+from their listings, so nothing leaves Algebra and nothing is paid. Each finding says whether it was caught, waited for
+the person, was ranked below a better offer, or would have been paid, with the rule that decided.
+
 ## Connecting an agent
 
 - **MCP** at `/mcp`: send the token as an HTTP header, so it never passes through the model: see [MCP.md](MCP.md). `algebra_spend_pass` reads the pass; `algebra_execute` spends under it.
