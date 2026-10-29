@@ -65,6 +65,16 @@ func (s *ExecutionService) keepResult(ctx, bg context.Context, principalID, inte
 // provider. In every nil case the request goes on as before and is refused as
 // already committed.
 func (s *ExecutionService) replay(ctx context.Context, agentID string, view *IntentView) *PlanReport {
+	rep := s.keptReport(ctx, agentID, view)
+	if rep != nil {
+		s.event(ctx, view.ID, "result.replayed", map[string]any{"agent_id": agentID, "size_bytes": len(rep.Attempts[0].Body)})
+	}
+	return rep
+}
+
+// keptReport is replay without its record: the kept answer of a committed
+// intent as a report, or nil, under the same checks.
+func (s *ExecutionService) keptReport(ctx context.Context, agentID string, view *IntentView) *PlanReport {
 	if !s.results.Enabled() || view.State != econ.StateCommitted {
 		return nil
 	}
@@ -111,7 +121,6 @@ func (s *ExecutionService) replay(ctx context.Context, agentID string, view *Int
 			ResponseHash: kept.SHA256, HTTPStatus: kept.HTTPStatus,
 		}
 	}
-	s.event(ctx, view.ID, "result.replayed", map[string]any{"agent_id": agentID, "size_bytes": len(kept.Body)})
 	return &PlanReport{
 		Intent: view, Delivered: res.Succeeded(), Stopped: "replayed", Replayed: true,
 		Attempts: []ExecutionReport{{Result: res, Quality: quality, Intent: view, ContentType: kept.ContentType, Body: kept.Body}},

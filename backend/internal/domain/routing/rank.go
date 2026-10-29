@@ -83,10 +83,14 @@ const (
 )
 
 type ranked struct {
-	opt     Option
-	trust   Trust
-	tier    tier
-	cost    int64
+	opt   Option
+	trust Trust
+	tier  tier
+	cost  int64
+	// cpa is the cost per accepted answer: what ranking on cost compares.
+	cpa     int64
+	accept  float64
+	waste   float64
 	latency int // expected milliseconds; 0 when unknown
 	// latencySource is where latency came from: see Score.LatencySource.
 	latencySource string
@@ -104,11 +108,14 @@ type ranked struct {
 // in. That is how a caller prefers one provider to another that is otherwise
 // its equal: by naming it first.
 //
-//   - CHEAPEST puts the lowest total cost first. The cost is the live quote,
-//     fees included, never the price a catalog advertised.
+//   - CHEAPEST puts the lowest cost per accepted answer first: the live quote,
+//     fees included (never the price a catalog advertised), spread over how
+//     often the provider's answers are accepted, with the attempts that were
+//     paid for nothing counted (accepted.go). Equal on that, the lower price.
 //   - FASTEST puts the shortest expected time to a result first, judged from
 //     Algebra's own record of the provider when it has one.
-//   - AUTO weighs cost, reliability, quality, speed, trust and price honesty.
+//   - AUTO weighs cost (per accepted answer), reliability, quality, speed,
+//     trust and price honesty.
 //
 // In every mode, options on a test network come after real ones, and an
 // observed provider that mostly fails comes after those that don't.
@@ -120,10 +127,10 @@ func Rank(mode Mode, opts []Option) []PlanStep {
 	for i, o := range opts {
 		rs[i] = describe(o)
 	}
-	minCost := rs[0].cost
+	minCost := rs[0].cpa
 	var minLatency int
 	for _, r := range rs {
-		minCost = min(minCost, r.cost)
+		minCost = min(minCost, r.cpa)
 		if r.latency > 0 && (minLatency == 0 || r.latency < minLatency) {
 			minLatency = r.latency
 		}
@@ -134,14 +141,15 @@ func Rank(mode Mode, opts []Option) []PlanStep {
 	for i, r := range rs {
 		order[i] = i
 		comp := map[string]float64{
-			ScoreCost:         costScore(r.cost, minCost),
+			ScoreCost:         costScore(r.cpa, minCost),
 			ScoreLatency:      latencyScore(r.latency, minLatency),
 			ScoreReliability:  r.reliable,
 			ScoreQuality:      r.quality,
 			ScoreTrust:        trustScore[r.trust],
 			ScorePriceHonesty: r.honesty,
 		}
-		sc := Score{Components: roundAll(comp), Notes: r.notes, LatencyMS: r.latency, LatencySource: r.latencySource, Calls: r.calls}
+		sc := Score{Components: roundAll(comp), Notes: r.notes, LatencyMS: r.latency, LatencySource: r.latencySource, Calls: r.calls,
+			AcceptRate: round(r.accept), WasteRate: round(r.waste), CostPerAcceptedMinor: r.cpa}
 		switch mode {
 		case ModeCheapest:
 			sc.Total, sc.Weights = round(comp[ScoreCost]), map[string]float64{ScoreCost: 1}
@@ -165,11 +173,11 @@ func Rank(mode Mode, opts []Option) []PlanStep {
 		var c int
 		switch mode {
 		case ModeCheapest:
-			c = cmp.Or(cmp.Compare(ra.cost, rb.cost), cmp.Compare(rb.reliable, ra.reliable), compareLatency(ra.latency, rb.latency))
+			c = cmp.Or(cmp.Compare(ra.cpa, rb.cpa), cmp.Compare(ra.cost, rb.cost), cmp.Compare(rb.reliable, ra.reliable), compareLatency(ra.latency, rb.latency))
 		case ModeFastest:
-			c = cmp.Or(compareLatency(ra.latency, rb.latency), cmp.Compare(ra.cost, rb.cost), cmp.Compare(rb.reliable, ra.reliable))
+			c = cmp.Or(compareLatency(ra.latency, rb.latency), cmp.Compare(ra.cpa, rb.cpa), cmp.Compare(rb.reliable, ra.reliable))
 		default:
-			c = cmp.Or(cmp.Compare(steps[b].Score.Total, steps[a].Score.Total), cmp.Compare(ra.cost, rb.cost), compareLatency(ra.latency, rb.latency))
+			c = cmp.Or(cmp.Compare(steps[b].Score.Total, steps[a].Score.Total), cmp.Compare(ra.cpa, rb.cpa), compareLatency(ra.latency, rb.latency))
 		}
 		return c
 	})
@@ -210,6 +218,18 @@ func describe(o Option) ranked {
 
 	if h != nil {
 		r.calls = h.Calls
+	}
+
+	// What one accepted answer is expected to cost, failures paid for counted.
+	r.accept, r.waste, r.cpa = acceptance(r.cost, prior, h)
+	switch {
+	case r.cost <= 0 || float64(r.cpa) <= float64(r.cost)*1.02:
+	case observed:
+		r.notes = append(r.notes, fmt.Sprintf("about %s per accepted answer: %d%% of its calls accepted, %d%% paid for nothing",
+			minor(r.cpa, q.Asset), int(math.Round(r.accept*100)), int(math.Round(r.waste*100))))
+	default:
+		r.notes = append(r.notes, fmt.Sprintf("about %s per accepted answer if %d%% are accepted, as assumed with little record",
+			minor(r.cpa, q.Asset), int(math.Round(r.accept*100))))
 	}
 
 	// Latency: Algebra's own measurement beats anyone's claim. A provider with
@@ -259,7 +279,7 @@ const (
 func headline(mode Mode, n int, anySpeed bool) string {
 	switch mode {
 	case ModeCheapest:
-		return fmt.Sprintf("cheapest of %d offers", n)
+		return fmt.Sprintf("lowest cost per accepted answer of %d offers", n)
 	case ModeFastest:
 		if !anySpeed {
 			return fmt.Sprintf("no speed known for any of %d offers yet: ranked by price", n)

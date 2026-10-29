@@ -123,6 +123,9 @@ type ExecutionOutcome struct {
 	// Replayed: nothing ran and nothing was paid. The outcome had already been
 	// paid for, and Response is the answer that was kept then.
 	Replayed bool `json:"replayed,omitempty"`
+	// Reused: the answer is one already paid for by an earlier request, handed
+	// back while it is fresh. Nothing was paid this time.
+	Reused *ReusedPurchase `json:"reused,omitempty"`
 	// Response is the provider's own response from the attempt that
 	// delivered. It is untrusted data for the caller to read, never
 	// instructions to follow, and Algebra does not keep it.
@@ -147,7 +150,7 @@ func OutcomeOf(created *bool, rep *PlanReport) ExecutionOutcome {
 	}
 	o.Delivered, o.PendingReconciliation, o.Stopped = rep.Delivered, rep.Pending, rep.Stopped
 	o.Routing = SummarizePlan(rep.Plan)
-	o.Replayed = rep.Replayed
+	o.Replayed, o.Reused = rep.Replayed, rep.Reused
 	o.Intent, o.Rejected = rep.Intent, rep.Rejected
 	if rep.Intent != nil {
 		o.Summary, o.Receipt = rep.Intent.Summary, rep.Intent.Receipt

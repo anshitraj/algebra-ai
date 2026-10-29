@@ -109,6 +109,9 @@ type PlanReport struct {
 	// Replayed: nothing ran. This is the answer that was kept when the outcome
 	// was paid for.
 	Replayed bool `json:"replayed,omitempty"`
+	// Reused is set when the answer is one already paid for, handed back while
+	// fresh (purchase_memory.go): nothing was paid this time.
+	Reused *ReusedPurchase `json:"reused,omitempty"`
 }
 
 // Final is the last attempt, or nil when none was made.
@@ -628,6 +631,9 @@ type DoRequest struct {
 	DiscardResult bool
 	// JobID: see CandidatesRequest.
 	JobID string
+	// Fresh: pay for a new answer even when a fresh one was already paid for
+	// (purchase_memory.go).
+	Fresh bool
 }
 
 // DoResult is what Do returns.
@@ -647,6 +653,13 @@ type DoResult struct {
 // Do creates the intent for an outcome (or finds the one that already exists
 // for it) and runs it. It is the one call an agent needs.
 func (s *ExecutionService) Do(ctx context.Context, req DoRequest) (*DoResult, error) {
+	// The same work, asked again while an answer already paid for is fresh:
+	// that answer, for nothing, and no new intent.
+	if !req.Fresh {
+		if rep := s.reuse(ctx, req.AgentID, req.Spec); rep != nil {
+			return &DoResult{Created: false, Report: rep, Intent: rep.Intent, Replayed: true}, nil
+		}
+	}
 	view, created, err := s.econ.CreateIntent(ctx, req.AgentID, req.Spec)
 	if err != nil {
 		return nil, err

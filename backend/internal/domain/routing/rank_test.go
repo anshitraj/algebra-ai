@@ -43,7 +43,7 @@ func TestRankCheapestPutsTheLowestLiveCostFirst(t *testing.T) {
 	if got[0].Score.Total != 1 || got[1].Score.Total >= got[0].Score.Total {
 		t.Errorf("the cheapest scores one and the rest less: %+v", got)
 	}
-	if !strings.Contains(strings.Join(got[0].Score.Notes, "|"), "cheapest of 3 offers") {
+	if !strings.Contains(strings.Join(got[0].Score.Notes, "|"), "lowest cost per accepted answer of 3 offers") {
 		t.Errorf("the winner says why: %v", got[0].Score.Notes)
 	}
 }

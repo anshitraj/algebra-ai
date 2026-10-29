@@ -200,7 +200,9 @@ func TestJobPass_SubJobsNestInsideTheirParent(t *testing.T) {
 	if _, err := rig.jobs.End(context.Background(), a.ID, jobpass.Revoked, "stopped by owner"); err != nil {
 		t.Fatal(err)
 	}
-	if v := rig.view(t, a.ID); v.Children[1].State != jobpass.Revoked || v.Children[1].Children[0].State != jobpass.Revoked {
+	v := rig.view(t, a.ID)
+	i := slices.IndexFunc(v.Children, func(x JobView) bool { return x.ID == c.ID })
+	if i < 0 || v.Children[i].State != jobpass.Revoked || v.Children[i].Children[0].State != jobpass.Revoked {
 		t.Errorf("revoking a job revokes the jobs carved from it: %+v", v.Children)
 	}
 	if got := rig.passExposure(t); got != 2_000 {

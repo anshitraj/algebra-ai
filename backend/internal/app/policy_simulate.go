@@ -139,14 +139,18 @@ type Recommendation struct {
 	LatencySource string `json:"latency_source,omitempty"`
 	// Reliability is the share of calls expected to deliver (0 to 1), from
 	// Calls of Algebra's own calls smoothed towards a prior when they are few.
-	Reliability float64  `json:"reliability"`
-	Calls       int      `json:"calls,omitempty"`
-	Score       float64  `json:"score"`
-	Decision    string   `json:"decision"`
-	Reasons     []string `json:"reasons,omitempty"`
-	Seller      Seller   `json:"seller"`
-	Notes       []string `json:"notes,omitempty"`
-	Test        bool     `json:"test,omitempty"`
+	Reliability float64 `json:"reliability"`
+	// CostPerAcceptedMinor is what one accepted answer from it is expected to
+	// cost: the price spread over how often answers are accepted, with the
+	// calls paid for nothing counted. Zero for an unlisted price.
+	CostPerAcceptedMinor int64    `json:"cost_per_accepted_minor"`
+	Calls                int      `json:"calls,omitempty"`
+	Score                float64  `json:"score"`
+	Decision             string   `json:"decision"`
+	Reasons              []string `json:"reasons,omitempty"`
+	Seller               Seller   `json:"seller"`
+	Notes                []string `json:"notes,omitempty"`
+	Test                 bool     `json:"test,omitempty"`
 }
 
 // recommendFor ranks the same options each way and keeps each way's winner.
@@ -182,10 +186,11 @@ func recommendationOf(st routing.PlanStep, cv CandidateVerdict) Recommendation {
 		Rank: st.Rank, Provider: st.Quote.Provider, CandidateID: st.Quote.CandidateID, Network: st.Quote.Network,
 		TotalMinor: cv.TotalMinor, PriceSource: cv.PriceSource, LatencyMS: st.Score.LatencyMS, LatencySource: st.Score.LatencySource,
 		Reliability: st.Score.Components[routing.ScoreReliability], Calls: st.Score.Calls, Score: st.Score.Total,
-		Decision: cv.Verdict.Decision(), Reasons: cv.Reasons, Seller: cv.Seller, Notes: st.Score.Notes, Test: st.Quote.Test,
+		CostPerAcceptedMinor: st.Score.CostPerAcceptedMinor,
+		Decision:             cv.Verdict.Decision(), Reasons: cv.Reasons, Seller: cv.Seller, Notes: st.Score.Notes, Test: st.Quote.Test,
 	}
 	if cv.PriceSource == "unlisted" {
-		r.TotalMinor = 0
+		r.TotalMinor, r.CostPerAcceptedMinor = 0, 0
 	}
 	return r
 }
@@ -210,6 +215,9 @@ type Simulation struct {
 	// strategy. They include offers that would wait for the person (HOLD).
 	Recommendations []Recommendation `json:"recommendations,omitempty"`
 	Compared        []Recommendation `json:"compared,omitempty"`
+	// Reuse is set when an answer to the same request was already paid for and
+	// is still fresh: paying would hand it back for nothing instead.
+	Reuse *ReusedPurchase `json:"reuse,omitempty"`
 	// Pass is what the Spend Pass looked like for this question.
 	Pass struct {
 		ID              string             `json:"id"`
@@ -313,6 +321,12 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 		return sim, nil
 	}
 	approvalAtCreate := whole.Decision == policy.RequireApproval
+	in.ProjectID = p.ProjectID
+	sim.Reuse = s.reusable(ctx, req.AgentID, in)
+	if whole.Decision == policy.Allow && sim.Reuse == nil && s.econ.repeated(ctx, in) {
+		approvalAtCreate = true
+		whole.ReasonCodes = append(whole.ReasonCodes, ReasonRepeatPurchase)
+	}
 
 	// Every candidate: the pass, the router's guards, the pass's rules, with
 	// the same record of each provider the router ranks on.

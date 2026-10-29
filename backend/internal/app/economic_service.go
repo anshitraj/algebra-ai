@@ -408,6 +408,11 @@ func (s *EconomicService) create(ctx context.Context, p *spendpass.Pass, agentID
 		d.Decision = policy.RequireApproval
 		d.ReasonCodes = append(d.ReasonCodes, ReasonAskedFirst)
 	}
+	// The same thing bought over and over looks like a loop: the next one waits.
+	if d.Decision == policy.Allow && s.repeated(ctx, in) {
+		d.Decision = policy.RequireApproval
+		d.ReasonCodes = append(d.ReasonCodes, ReasonRepeatPurchase)
+	}
 	if d.Decision == policy.RequireApproval {
 		in.RequiresApproval = true
 		in.State = econ.StateAwaitingApproval

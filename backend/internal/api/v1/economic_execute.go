@@ -44,6 +44,9 @@ type executeRequest struct {
 	// JobID pays under one of the pass's Job Passes. A request made with a
 	// job token pays under that job unless it names one carved from it.
 	JobID string `json:"job_id"`
+	// Fresh pays for a new answer even when the same work with the same input
+	// was paid for recently enough to be handed back (purchase memory).
+	Fresh bool `json:"fresh"`
 }
 
 func (a *API) executionEnabled(w http.ResponseWriter) bool {
@@ -81,7 +84,7 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
-	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, DiscardResult: discardsResult(req.StoreResult), JobID: caller.jobID})
+	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, DiscardResult: discardsResult(req.StoreResult), JobID: caller.jobID, Fresh: req.Fresh})
 	var created *bool
 	var rep *app.PlanReport
 	if res != nil {

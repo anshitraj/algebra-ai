@@ -30,9 +30,11 @@ const (
 //     slow for a reason that says nothing about how fast the provider answers.
 //   - ValidRate is the share of paid-for responses that were usable, and zero
 //     when nothing was paid for.
+//   - WastedRate is the share of all attempts that were paid for and brought
+//     nothing usable back: what makes a cheap provider expensive per answer.
 func SummarizeHistory(recs []StoredExecution) routing.History {
 	var h routing.History
-	var successes, paid, usable int
+	var successes, paid, usable, wasted int
 	var latencies []int
 	var qualitySum float64
 	var qualityN, settled int
@@ -48,6 +50,9 @@ func SummarizeHistory(recs []StoredExecution) routing.History {
 		}
 		if r.Succeeded() {
 			successes++
+		}
+		if r.Payment == routing.PaymentSettled && !r.Succeeded() {
+			wasted++
 		}
 		if r.Payment == routing.PaymentSettled {
 			settled++
@@ -73,6 +78,7 @@ func SummarizeHistory(recs []StoredExecution) routing.History {
 		return h
 	}
 	h.SuccessRate = float64(successes) / float64(h.Calls)
+	h.WastedRate = float64(wasted) / float64(h.Calls)
 	if paid > 0 {
 		h.ValidRate = float64(usable) / float64(paid)
 	}
