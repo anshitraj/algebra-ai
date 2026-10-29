@@ -144,6 +144,8 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/receipt.pdf", api.getEconomicReceiptPDF)
 	// Execution: Algebra prices, pays, calls, verifies and signs.
 	mux.HandleFunc("POST /api/v1/execute", api.executeOutcome)
+	// Cross-check: do several providers' answers to one question agree? Moves no money.
+	mux.HandleFunc("POST /api/v1/cross-check", api.crossCheck)
 	// Job Passes: a task's budget inside a Spend Pass, shared by sub-agents.
 	mux.HandleFunc("POST /api/v1/jobs", api.openJob)
 	mux.HandleFunc("GET /api/v1/jobs/{id}", api.getJob)

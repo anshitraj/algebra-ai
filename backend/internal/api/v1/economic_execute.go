@@ -84,7 +84,7 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
-	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, DiscardResult: discardsResult(req.StoreResult), JobID: caller.jobID, Fresh: req.Fresh})
+	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, DiscardResult: discardsResult(req.StoreResult), JobID: caller.jobID, Fresh: req.Fresh, Named: req.Providers})
 	var created *bool
 	var rep *app.PlanReport
 	if res != nil {

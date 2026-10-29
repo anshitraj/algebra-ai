@@ -4,6 +4,7 @@
 
 import type { Decision, Recommendation, Simulation } from "../routing-types";
 import type { JobPass, ProviderTrust } from "../types";
+import type { CrossCheckInfo } from "./cross-check";
 
 export type StepStatus = "running" | "done" | "error" | "blocked" | "waiting";
 
@@ -34,6 +35,8 @@ export type AgentEvent =
    */
   | { type: "job"; phase: "opened" | "closed"; job: JobPass; pass: string }
   | { type: "job"; phase: "short"; leftMinor: number; wantedMinor: number; pass: string }
+  /** Several providers were paid for the same question: whether their answers agree. */
+  | { type: "crosscheck"; check: CrossCheckInfo }
   /** USDC paid for a delivered call (micro-USDC). */
   | { type: "spend"; amount: { minor_units: number; currency: string }; intentId: string; provider: string; network?: string }
   | { type: "done"; reply: string; history: unknown[]; provider: string; model: string }

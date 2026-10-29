@@ -28,6 +28,8 @@ import { RichText } from "./rich-text";
 import { RequestPanel } from "./request-panel";
 import { Timeline, type Step } from "./timeline";
 import { TaskBudget, type TaskJob } from "./task-budget";
+import { CrossCheckCard } from "./cross-check-card";
+import type { CrossCheckInfo } from "@/lib/agent/cross-check";
 import composerStyles from "./composer.module.css";
 
 type Turn = {
@@ -48,6 +50,8 @@ type Turn = {
   receipts?: ReceiptInfo[];
   /** The Job Pass the turn's chosen payments ran under: set aside, then what it paid and gave back. */
   job?: TaskJob;
+  /** Whether the providers paid for the same question agreed. */
+  checks?: CrossCheckInfo[];
   reply?: string;
   error?: string;
   status: "running" | "done" | "error" | "stopped";
@@ -360,6 +364,9 @@ export function AgentWorkspace() {
                 : { ...t, approvals: [...t.approvals, { intentId: e.intentId, provider: e.provider, askedFirst: e.askedFirst, decision: e.decision }] }
             );
             refreshConsole();
+            break;
+          case "crosscheck":
+            updateTurn(id, (t) => ({ ...t, checks: [...(t.checks ?? []).filter((c) => c.group !== e.check.group), e.check] }));
             break;
           case "job":
             updateTurn(id, (t) => ({ ...t, job: e.phase === "short" ? { phase: "short", leftMinor: e.leftMinor, wantedMinor: e.wantedMinor, pass: e.pass } : { phase: e.phase, job: e.job, pass: e.pass } }));
@@ -790,6 +797,8 @@ function TurnView({
       )}
 
       {delivered && <DeliveryPanel receipts={turn.receipts!} steps={turn.steps} running={running} />}
+
+      {turn.checks?.map((c) => <CrossCheckCard key={c.group} check={c} />)}
 
       {turn.job && <TaskBudget task={turn.job} />}
 

@@ -637,6 +637,10 @@ type DoRequest struct {
 	// Fresh: pay for a new answer even when a fresh one was already paid for
 	// (purchase_memory.go).
 	Fresh bool
+	// Named is the providers the request named, when it named any: only an answer
+	// one of them gave may be handed back as a reuse. Empty: any provider of the
+	// work may have given it.
+	Named []string
 }
 
 // DoResult is what Do returns.
@@ -659,7 +663,7 @@ func (s *ExecutionService) Do(ctx context.Context, req DoRequest) (*DoResult, er
 	// The same work, asked again while an answer already paid for is fresh:
 	// that answer, for nothing, and no new intent.
 	if !req.Fresh {
-		if rep := s.reuse(ctx, req.AgentID, req.JobID, req.Spec); rep != nil {
+		if rep := s.reuse(ctx, req.AgentID, req.JobID, req.Spec, req.Named); rep != nil {
 			return &DoResult{Created: false, Report: rep, Intent: rep.Intent, Replayed: true}, nil
 		}
 	}

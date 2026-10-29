@@ -53,7 +53,7 @@ func (a *API) simulatePolicy(w http.ResponseWriter, r *http.Request) {
 	candidates, rejected := a.b.Candidates.ResolveFor(r.Context(), ag.UserID, capability, req.Providers, req.Candidates)
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
-	sim, err := a.b.Execution.Simulate(ctx, app.SimulateRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, LiveQuotes: req.LiveQuotes})
+	sim, err := a.b.Execution.Simulate(ctx, app.SimulateRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, LiveQuotes: req.LiveQuotes, Named: req.Providers})
 	if err != nil {
 		writeError(w, err)
 		return

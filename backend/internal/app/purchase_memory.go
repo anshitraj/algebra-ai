@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/project-algebra/algebra/internal/domain/econ"
@@ -90,8 +91,10 @@ func (s *EconomicService) repeated(ctx context.Context, in *econ.Intent) bool {
 }
 
 // recall is the earlier purchases in may reuse, newest first, before their
-// answers are checked.
-func (s *EconomicService) recall(ctx context.Context, in *econ.Intent) ([]RememberedPurchase, time.Duration) {
+// answers are checked. A request that named providers (named) is answered only by
+// one of them: asking beta for what alpha was paid for is a different purchase,
+// and it is the one that makes two answers worth comparing.
+func (s *EconomicService) recall(ctx context.Context, in *econ.Intent, named []string) ([]RememberedPurchase, time.Duration) {
 	fresh := freshFor(in)
 	m := s.memory()
 	if m == nil || fresh <= 0 {
@@ -107,6 +110,9 @@ func (s *EconomicService) recall(ctx context.Context, in *econ.Intent) ([]Rememb
 			continue
 		}
 		if len(in.ProviderPolicy.Providers) > 0 && !slices.Contains(in.ProviderPolicy.Providers, r.ProviderID) {
+			continue
+		}
+		if len(named) > 0 && !slices.ContainsFunc(named, func(n string) bool { return strings.EqualFold(strings.TrimSpace(n), r.ProviderID) }) {
 			continue
 		}
 		out = append(out, r)
@@ -146,7 +152,7 @@ func (s *EconomicService) Draft(ctx context.Context, agentID string, spec econ.S
 
 // reuse answers a request with a fresh answer already paid for, or returns nil
 // and the request goes on to be paid for as usual.
-func (s *ExecutionService) reuse(ctx context.Context, agentID, jobID string, spec econ.Spec) *PlanReport {
+func (s *ExecutionService) reuse(ctx context.Context, agentID, jobID string, spec econ.Spec, named []string) *PlanReport {
 	if !s.results.Enabled() {
 		return nil
 	}
@@ -154,7 +160,7 @@ func (s *ExecutionService) reuse(ctx context.Context, agentID, jobID string, spe
 	if err != nil {
 		return nil
 	}
-	earlier, fresh := s.econ.recall(ctx, in)
+	earlier, fresh := s.econ.recall(ctx, in, named)
 	for _, e := range earlier {
 		view, err := s.econ.View(ctx, e.IntentID, false)
 		// The very same request (same window) is the intent itself: Do replays it.
@@ -186,11 +192,11 @@ func (s *ExecutionService) reuse(ctx context.Context, agentID, jobID string, spe
 
 // reusable is what a dry run says about reuse: the earlier purchase whose
 // answer would be handed back, or nil.
-func (s *ExecutionService) reusable(ctx context.Context, agentID string, in *econ.Intent) *ReusedPurchase {
+func (s *ExecutionService) reusable(ctx context.Context, agentID string, in *econ.Intent, named []string) *ReusedPurchase {
 	if !s.results.Enabled() {
 		return nil
 	}
-	earlier, fresh := s.econ.recall(ctx, in)
+	earlier, fresh := s.econ.recall(ctx, in, named)
 	for _, e := range earlier {
 		view, err := s.econ.View(ctx, e.IntentID, false)
 		if err != nil || s.keptReport(ctx, agentID, view) == nil {

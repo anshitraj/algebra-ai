@@ -64,6 +64,9 @@ type SimulateRequest struct {
 	// LiveQuotes asks each candidate for its price with an unpaid request.
 	// Without it, nothing leaves Algebra and listed prices stand in.
 	LiveQuotes bool
+	// Named is the providers the request named, as for DoRequest: the dry run says
+	// "would reuse" only for an answer one of them gave.
+	Named []string
 	// Chaos answers for some candidates as if they had been asked (Replay):
 	// a price they would quote, or the error they would fail with. Those
 	// candidates are never contacted.
@@ -332,7 +335,7 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 	}
 	approvalAtCreate := whole.Decision == policy.RequireApproval
 	in.ProjectID = p.ProjectID
-	sim.Reuse = s.reusable(ctx, req.AgentID, in)
+	sim.Reuse = s.reusable(ctx, req.AgentID, in, req.Named)
 	if whole.Decision == policy.Allow && sim.Reuse == nil && s.econ.repeated(ctx, in) {
 		approvalAtCreate = true
 		whole.ReasonCodes = append(whole.ReasonCodes, ReasonRepeatPurchase)

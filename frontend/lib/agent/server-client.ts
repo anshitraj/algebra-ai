@@ -6,6 +6,7 @@
 // Wraps only the endpoints the agent's tools need — see tools.ts.
 
 import type { EconIntent, JobPass, ProviderDetail, ProviderListing, RailStatus, SpendPass } from "../types";
+import type { CrossCheckReport } from "./cross-check";
 
 const API_URL = process.env.ALGEBRA_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
@@ -285,6 +286,15 @@ export async function executeIntent(identity: ServerIdentity, intentId: string, 
     body: { providers, spend_pass_id: identity.passId, job_id: identity.jobId },
   });
   return answer(res);
+}
+
+/**
+ * Whether several providers' answers to one question agree: Algebra compares the answers it kept for these
+ * intents (2 to 5, one provider each). Moves no money.
+ */
+export async function crossCheck(identity: ServerIdentity, intentIds: string[]): Promise<CrossCheckReport> {
+  const res = await rawFetch("/api/v1/cross-check", identity, { method: "POST", body: { intent_ids: intentIds } });
+  return parse<CrossCheckReport>(res);
 }
 
 export function getIntent(identity: ServerIdentity, intentId: string) {

@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { resolveProvider } from "@/lib/agent/models";
 import { buildSystemPrompt } from "@/lib/agent/system-prompt";
-import { closeTaskJob, consumeAgentTurn, getAgentToken, getOnchainNetworks, getPasses, getRails, openTaskJob, ServerApiError, type ChatNetwork, type JobShort, type ServerIdentity, type TurnQuota } from "@/lib/agent/server-client";
+import { closeTaskJob, consumeAgentTurn, crossCheck, getAgentToken, getOnchainNetworks, getPasses, getRails, openTaskJob, ServerApiError, type ChatNetwork, type JobShort, type ServerIdentity, type TurnQuota } from "@/lib/agent/server-client";
 import type { JobPass } from "@/lib/types";
 import { toolsFor } from "@/lib/agent/tools";
 import { trimHistory } from "@/lib/agent/history";
 import { runTool } from "@/lib/agent/run-tool";
 import type { AgentEvent } from "@/lib/agent/events";
 import { parseChoices, windowFor } from "@/lib/agent/choices";
+import { checkForModel, checkSets, type PaidCard } from "@/lib/agent/cross-check";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -203,6 +204,7 @@ export async function POST(request: Request) {
             if (job) emit({ type: "job", phase: "opened", job, pass: passName });
             const payer: ServerIdentity = job ? { ...identity, jobId: job.id } : identity;
             const results: unknown[] = [];
+            const delivered: PaidCard[] = [];
             try {
               for (const c of choices) {
                 if (request.signal.aborted) break;
@@ -213,12 +215,25 @@ export async function POST(request: Request) {
                   emit,
                 );
                 results.push({ card: c.label, provider: c.provider, work: c.work, ...(result.ok ? (result.data as object) : { error: result.error }) });
+                const data = result.ok ? (result.data as Record<string, unknown>) : undefined;
+                if (data?.outcome === "delivered" && typeof data.intent_id === "string") {
+                  delivered.push({ group: c.group, work: c.work, provider: c.provider, intentId: data.intent_id });
+                }
               }
             } finally {
               if (job) {
                 const closed = await closeTaskJob(cookie, job.id).catch(() => null);
                 if (closed) emit({ type: "job", phase: "closed", job: closed, pass: passName });
               }
+            }
+            // Several providers answered the same question: do they agree? Best effort, and it moves no money.
+            for (const set of checkSets(delivered)) {
+              if (request.signal.aborted) break;
+              const report = await crossCheck(identity, set.map((p) => p.intentId)).catch(() => null);
+              if (!report) continue;
+              const check = { group: set[0].group, work: set[0].work, report };
+              emit({ type: "crosscheck", check });
+              results.push(checkForModel(check));
             }
             let text = JSON.stringify(results);
             if (text.length > MAX_RESULTS_CHARS) text = `${text.slice(0, MAX_RESULTS_CHARS)}…`;

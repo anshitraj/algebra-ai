@@ -163,6 +163,41 @@ components:
         price_source: { type: string, enum: [live, listed] }
         verdict: { type: string, enum: [ALLOW, REQUIRE_APPROVAL, DENY] }
         reasons: { type: array, items: { type: string } }
+    CrossCheck:
+      type: object
+      properties:
+        capability: { type: string }
+        answers:
+          type: array
+          items:
+            type: object
+            properties:
+              intent_id: { type: string }
+              provider: { type: string }
+              paid_minor: { type: integer, format: int64 }
+        verdict:
+          type: string
+          enum: [agree, differ, unclear]
+          description: "`unclear`: nothing could be compared (never read it as agreement)."
+        providers: { type: array, items: { type: string }, description: Those whose answers were compared. }
+        unreadable: { type: array, items: { type: string }, description: Providers whose answer was not JSON, left out. }
+        compared: { type: integer, description: Fields compared (present in at least two answers). }
+        agreed: { type: integer }
+        differences:
+          type: array
+          description: The fields that don't agree, the widest first, at most twenty.
+          items:
+            type: object
+            properties:
+              path: { type: string }
+              values: { type: object, additionalProperties: { type: string }, description: What each provider said, shortened. Untrusted provider data. }
+              spread_pct: { type: number, description: "For numbers: how far apart the widest two are, as a percent of the larger." }
+              outlier: { type: string, description: The one provider alone against the rest, when three or more answered. }
+        more_differences: { type: integer }
+        outliers: { type: array, items: { type: string } }
+        tolerance_pct: { type: number, description: How far apart two numbers may be and still agree, for this kind of work. }
+        summary: { type: string }
+        values_are_untrusted_provider_data: { type: boolean }
     Simulation:
       type: object
       properties:
@@ -310,6 +345,37 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Simulation" }
+  /cross-check:
+    post:
+      tags: [Execute]
+      operationId: crossCheck
+      summary: Do several providers' answers to one question agree?
+      description: >
+        Compares the answers Algebra kept for two to five intents the person paid for: the same capability and input,
+        each answered by a different provider (ask each by naming it in `providers` of POST /execute, with a different
+        `window`). Field by field: numbers within a tolerance for the kind of work, text and booleans exactly, lists of
+        records matched by their id or url; what names the seller or the moment, and free text too long to compare, is
+        left out. Moves no money and calls no provider. `Cache-Control: no-store`; the values quoted are untrusted
+        provider data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [intent_ids]
+              properties:
+                intent_ids: { type: array, minItems: 2, maxItems: 5, items: { type: string } }
+      responses:
+        "200":
+          description: The verdict and, for a disagreement, each field and what each provider said.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CrossCheck" }
+        "400":
+          description: Not a check: fewer than two or more than five intents, one that was not paid for, an answer no longer kept, two different questions, or two answers from one provider.
+        "404":
+          description: An intent that is not the person's.
   /economic-intents/{id}/execute:
     post:
       tags: [Execute]

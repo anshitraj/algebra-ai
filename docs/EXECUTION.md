@@ -137,10 +137,25 @@ A new request (another `window`) for the same work with the same input, by the s
 answered with the earlier answer while it is fresh (`internal/app/purchase_memory.go`): `reused` names the purchase and its age, nothing is paid and no
 intent is created. Fresh is the request's own `max_age_seconds`, else the work's default (`routing.FreshFor`): token price 60 s, balances 30 s,
 news 10 min, token or wallet risk, search, scrape and weather 30 min, translation and lookups a day; a model's completion and an endpoint with no class
-are never reused. The asking agent's pass must allow the provider that answered, and the request's provider list must include it. `fresh: true` (REST,
-MCP, and "Buy a fresh one" in the chat) pays for a new answer. The dry run says when an answer would be reused (`reuse`).
+are never reused. The asking agent's pass must allow the provider that answered, and a request that names providers (`providers`) is only ever answered by
+one of them: asking beta for what alpha was paid for is a purchase of its own. `fresh: true` (REST, MCP, and "Buy a fresh one" in the chat) pays for a new
+answer. The dry run says when an answer would be reused (`reuse`).
 
 Buying the same work with the same input five times in ten minutes looks like a loop: the next purchase waits for the person (`REPEAT_PURCHASE`).
+
+### Cross-checking: do the providers agree?
+
+Ask two to five providers the same question (name one in `providers` of each `POST /execute`, a new `window` each time; in the chat, "Pick several providers for
+the same work"), then `POST /api/v1/cross-check {"intent_ids": [...]}` (MCP `algebra_cross_check`; the chat does it by itself and shows a card).
+`internal/domain/routing/crosscheck.go` compares the answers Algebra kept, field by field, only the fields that appear in at least two of them: numbers within
+a tolerance for the kind of work (token price 1%, balances 0.1%, weather 10%, else 2%), text and booleans exactly, records in a list matched by their `id`,
+`url`, `symbol`... Left out: what names the seller or the moment (`provider`, `source`, timestamps, request ids, notes), what repeats the request's own
+parameters, and prose too long to compare. The answer is `verdict` `agree`, `differ` (each field, what each provider said, how far apart numbers are, and with three
+or more the one provider alone against the rest: `outlier`) or `unclear`: nothing could be compared, which is never agreement.
+
+It reads answers already paid for (`store_result: false` or an expired answer can't be checked), calls nobody and moves no money. It refuses what can't be a
+check: fewer than two or more than five intents, one never paid for, two questions, two answers from one provider. It is written on each intent's record
+(`result.crosschecked`). The values it quotes are the providers' own words: untrusted data.
 
 ## Discovery: the catalogs (`backend/providers/catalog`, `backend/providers/paysh`, `backend/providers/bazaar`)
 
