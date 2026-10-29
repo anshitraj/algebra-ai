@@ -107,6 +107,24 @@ func TestJobPassRepo_ExposureCountsJobsOnce(t *testing.T) {
 	if j, err := jobs.ByToken(ctx, top.Token); err != nil || j.ID != top.ID {
 		t.Errorf("the token finds the job: %v", err)
 	}
+
+	// The task's P&L, and a value stored on it.
+	v := int64(10_000)
+	view, err := jobs.SetValue(ctx, top.ID, &v)
+	if err != nil || view.PnL.PaidMinor != 4_000 || view.PnL.Accepted != 2 || view.PnL.ProfitMinor == nil || *view.PnL.ProfitMinor != 6_000 {
+		t.Fatalf("task P&L: %+v %v", view.PnL, err)
+	}
+	if again, _ := jobs.View(ctx, top.ID); again.PnL.ValueMinor == nil || *again.PnL.ValueMinor != 10_000 {
+		t.Errorf("the value is kept: %+v", again.PnL)
+	}
+	jobs.SetPnL(f.repo)
+	agent, err := jobs.AgentPnL(ctx, f.userID, pass.ID, 30)
+	if err != nil || agent.PaidMinor != 4_000 || agent.Accepted != 2 || agent.Tasks != 1 || agent.ValuedTasks != 1 || agent.ProfitMinor != 6_000 {
+		t.Fatalf("agent P&L: %+v %v", agent, err)
+	}
+	if s, err := repo.JobSavings(ctx, []string{top.ID}); err != nil || s[top.ID].Count != 0 {
+		t.Errorf("no reuse yet: %+v %v", s, err)
+	}
 }
 
 // Many sub-agents paying under one job at once, on real Postgres: the pass's

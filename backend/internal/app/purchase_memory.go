@@ -146,11 +146,11 @@ func (s *EconomicService) Draft(ctx context.Context, agentID string, spec econ.S
 
 // reuse answers a request with a fresh answer already paid for, or returns nil
 // and the request goes on to be paid for as usual.
-func (s *ExecutionService) reuse(ctx context.Context, agentID string, spec econ.Spec) *PlanReport {
+func (s *ExecutionService) reuse(ctx context.Context, agentID, jobID string, spec econ.Spec) *PlanReport {
 	if !s.results.Enabled() {
 		return nil
 	}
-	in, _, err := s.econ.Draft(ctx, agentID, spec)
+	in, pass, err := s.econ.Draft(ctx, agentID, spec)
 	if err != nil {
 		return nil
 	}
@@ -171,7 +171,14 @@ func (s *ExecutionService) reuse(ctx context.Context, agentID string, spec econ.
 			IntentID: e.IntentID, Provider: e.ProviderID, PaidMinor: e.CommittedMinor, PaidAt: e.At.UTC(),
 			AgeSeconds: int(age.Seconds()), FreshForSeconds: int(fresh.Seconds()),
 		}
-		s.event(ctx, e.IntentID, "result.reused", map[string]any{"agent_id": agentID, "age_seconds": int(age.Seconds()), "fresh_for_seconds": int(fresh.Seconds())})
+		// The pass and the task that asked are on the record, with what the
+		// reuse saved: the task's and the agent's P&L count it.
+		data := map[string]any{"agent_id": agentID, "age_seconds": int(age.Seconds()), "fresh_for_seconds": int(fresh.Seconds()),
+			"spend_pass_id": pass.ID, "saved_minor": e.CommittedMinor}
+		if jobID != "" {
+			data["job_pass_id"] = jobID
+		}
+		s.event(ctx, e.IntentID, "result.reused", data)
 		return rep
 	}
 	return nil

@@ -27,13 +27,13 @@ func NewJobPassRepo(db *DB) *JobPassRepo { return &JobPassRepo{db: db} }
 var _ app.JobPassStore = (*JobPassRepo)(nil)
 
 const jobCols = `id, user_id, pass_id, COALESCE(parent_id,''), depth, label, currency, budget_minor, state,
-	created_by, COALESCE(token_hash,''), close_reason, created_at, expires_at, closed_at`
+	created_by, COALESCE(token_hash,''), close_reason, created_at, expires_at, closed_at, value_minor`
 
 func scanJob(row pgx.Row) (*jobpass.Job, error) {
 	var j jobpass.Job
 	var state string
 	err := row.Scan(&j.ID, &j.UserID, &j.PassID, &j.ParentID, &j.Depth, &j.Label, &j.Currency, &j.BudgetMinor, &state,
-		&j.CreatedBy, &j.TokenHash, &j.CloseReason, &j.CreatedAt, &j.ExpiresAt, &j.ClosedAt)
+		&j.CreatedBy, &j.TokenHash, &j.CloseReason, &j.CreatedAt, &j.ExpiresAt, &j.ClosedAt, &j.ValueMinor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, shared.ErrNotFound
 	}
@@ -233,10 +233,10 @@ func (u *jobUnit) LiveJobs(passID string, now time.Time) (int, error) {
 func (u *jobUnit) InsertJob(j *jobpass.Job) error {
 	_, err := u.tx.Exec(u.ctx, `
 		INSERT INTO job_passes (id, user_id, pass_id, parent_id, depth, label, currency, budget_minor, state,
-		    created_by, token_hash, close_reason, created_at, expires_at, closed_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		    created_by, token_hash, close_reason, created_at, expires_at, closed_at, value_minor)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 		j.ID, j.UserID, j.PassID, nullable(j.ParentID), j.Depth, j.Label, j.Currency, j.BudgetMinor, string(j.State),
-		j.CreatedBy, nullable(j.TokenHash), j.CloseReason, j.CreatedAt.UTC(), j.ExpiresAt.UTC(), j.ClosedAt)
+		j.CreatedBy, nullable(j.TokenHash), j.CloseReason, j.CreatedAt.UTC(), j.ExpiresAt.UTC(), j.ClosedAt, j.ValueMinor)
 	if err != nil {
 		return fmt.Errorf("postgres: inserting job pass: %w", err)
 	}
@@ -311,6 +311,71 @@ func (r *JobPassRepo) JobAttempts(ctx context.Context, jobIDs []string, limit in
 	}
 	return out, rows.Err()
 }
+
+func (r *JobPassRepo) SetJobValue(ctx context.Context, id string, value *int64) error {
+	tag, err := r.db.Pool.Exec(ctx, `UPDATE job_passes SET value_minor = $2 WHERE id = $1`, id, value)
+	if err != nil {
+		return fmt.Errorf("postgres: setting a task's value: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
+// JobSavings sums the reuse events that name each job (purchase memory).
+func (r *JobPassRepo) JobSavings(ctx context.Context, jobIDs []string) (map[string]app.Saving, error) {
+	rows, err := r.db.Pool.Query(ctx, `
+		SELECT data->>'job_pass_id', COALESCE(SUM((data->>'saved_minor')::bigint), 0), COUNT(*)
+		FROM economic_events
+		WHERE event = 'result.reused' AND data->>'job_pass_id' = ANY($1)
+		GROUP BY 1`, jobIDs)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: reading job savings: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]app.Saving{}
+	for rows.Next() {
+		var id string
+		var s app.Saving
+		if err := rows.Scan(&id, &s.Minor, &s.Count); err != nil {
+			return nil, fmt.Errorf("postgres: scanning job savings: %w", err)
+		}
+		out[id] = s
+	}
+	return out, rows.Err()
+}
+
+// PassPnL implements app.PnLStore on EconRepo: one pass's money since a time.
+func (r *EconRepo) PassPnL(ctx context.Context, passID string, since time.Time) (*app.PassMoney, error) {
+	var m app.PassMoney
+	err := r.db.Pool.QueryRow(ctx, `
+		SELECT
+		  COALESCE(SUM(rv.hold_minor) FILTER (WHERE rv.state = 'COMMITTED'), 0),
+		  COALESCE(SUM(rv.hold_minor) FILTER (WHERE rv.state = 'COMMITTED' AND i.fulfillment = 'NOT_FULFILLED'), 0),
+		  COUNT(*) FILTER (WHERE rv.state = 'COMMITTED' AND i.fulfillment = 'FULFILLED'),
+		  COUNT(*) FILTER (WHERE rv.state IN ('RELEASED', 'EXPIRED'))
+		FROM economic_reservations rv JOIN economic_intents i ON i.id = rv.intent_id
+		WHERE rv.executor_pass_id = $1 AND rv.created_at >= $2`, passID, since).Scan(&m.PaidMinor, &m.WastedMinor, &m.Accepted, &m.FailedFree)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: summing a pass's payments: %w", err)
+	}
+	err = r.db.Pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM((data->>'saved_minor')::bigint), 0), COUNT(*)
+		FROM economic_events WHERE event = 'result.reused' AND data->>'spend_pass_id' = $1 AND created_at >= $2`, passID, since).Scan(&m.SavedMinor, &m.Reused)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: summing a pass's reuse: %w", err)
+	}
+	err = r.db.Pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(blocked_attempts), 0), COALESCE(SUM(blocked_attempts::bigint * budget_max_minor), 0)
+		FROM economic_intents WHERE pass_id = $1 AND created_at >= $2`, passID, since).Scan(&m.DuplicatesBlocked, &m.DuplicatePreventedMinor)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: summing a pass's blocked duplicates: %w", err)
+	}
+	return &m, nil
+}
+
+var _ app.PnLStore = (*EconRepo)(nil)
 
 func (r *JobPassRepo) ExpireJobs(ctx context.Context, now time.Time, limit int) (int, error) {
 	tag, err := r.db.Pool.Exec(ctx, `

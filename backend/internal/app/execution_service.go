@@ -656,7 +656,7 @@ func (s *ExecutionService) Do(ctx context.Context, req DoRequest) (*DoResult, er
 	// The same work, asked again while an answer already paid for is fresh:
 	// that answer, for nothing, and no new intent.
 	if !req.Fresh {
-		if rep := s.reuse(ctx, req.AgentID, req.Spec); rep != nil {
+		if rep := s.reuse(ctx, req.AgentID, req.JobID, req.Spec); rep != nil {
 			return &DoResult{Created: false, Report: rep, Intent: rep.Intent, Replayed: true}, nil
 		}
 	}

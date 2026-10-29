@@ -424,6 +424,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	econSvc := app.NewEconomicService(econRepo, agents, passRepo, passRepo)
 	// Job Passes set a task's budget aside under the same pass lock reservations take.
 	jobSvc := app.NewJobPassService(postgres.NewJobPassRepo(db), passRepo, passRepo)
+	jobSvc.SetPnL(econRepo)
 	// Demo sign-ins are free and open to anyone: they pay in the sandbox only.
 	econSvc.SetAccountModes(accountSvc)
 	// Real-money mainnet payments only when the operator turned them on.

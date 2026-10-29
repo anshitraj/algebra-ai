@@ -12,6 +12,7 @@ import (
 	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/agent"
 	"github.com/project-algebra/algebra/internal/domain/jobpass"
+	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 )
 
@@ -145,13 +146,16 @@ type openJobRequest struct {
 	ParentID string `json:"parent_id"`
 	// PassID: the console's agent, or the console, naming one of the person's passes.
 	PassID string `json:"spend_pass_id"`
+	// ValueMinor is what the task is worth, if the opener says: the other side
+	// of its P&L.
+	ValueMinor *int64 `json:"value_minor"`
 }
 
 func (req openJobRequest) spec() (jobpass.Spec, error) {
 	if req.ExpiresInSeconds < 0 {
 		return jobpass.Spec{}, badRequest("expires_in_seconds can't be negative")
 	}
-	return jobpass.Spec{Label: req.Label, BudgetMinor: req.BudgetMinor, Lifetime: time.Duration(req.ExpiresInSeconds) * time.Second}, nil
+	return jobpass.Spec{Label: req.Label, BudgetMinor: req.BudgetMinor, Lifetime: time.Duration(req.ExpiresInSeconds) * time.Second, ValueMinor: req.ValueMinor}, nil
 }
 
 // writeJobError adds the reason codes a refusal carries, and what is left
@@ -311,6 +315,89 @@ func (a *API) revokeMyJob(w http.ResponseWriter, r *http.Request) {
 	a.myJob(w, r, func(id string) (*app.JobView, error) {
 		return a.b.JobPasses.End(r.Context(), id, jobpass.Revoked, "stopped by owner")
 	})
+}
+
+// setJobValue records what a task is worth: {value_minor} (null clears it).
+// The agent that can reach a job may set it, and so may its person.
+func (a *API) setJobValue(w http.ResponseWriter, r *http.Request) {
+	if !a.jobPasses(w) {
+		return
+	}
+	var req struct {
+		ValueMinor *int64 `json:"value_minor"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	a.agentJob(w, r, func(j *jobpass.Job) (*app.JobView, error) {
+		return a.b.JobPasses.SetValue(r.Context(), j.ID, req.ValueMinor)
+	})
+}
+
+func (a *API) setMyJobValue(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ValueMinor *int64 `json:"value_minor"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	a.myJob(w, r, func(id string) (*app.JobView, error) { return a.b.JobPasses.SetValue(r.Context(), id, req.ValueMinor) })
+}
+
+// myPassPnL: GET /api/v1/me/passes/{id}/pnl?days=30. An agent's money over a
+// period: paid, wasted, accepted answers, saved, and its tasks' P&L.
+func (a *API) myPassPnL(w http.ResponseWriter, r *http.Request) {
+	sess, ok := a.requireSession(w, r)
+	if !ok || !a.jobPasses(w) {
+		return
+	}
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	out, err := a.b.JobPasses.AgentPnL(r.Context(), sess.UserID, r.PathValue("id"), days)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// replayMyJob: POST /api/v1/me/jobs/{id}/replay. The task's purchases run
+// again, on paper, against sellers that misbehave, under the task's own pass.
+// Nothing is contacted or paid.
+func (a *API) replayMyJob(w http.ResponseWriter, r *http.Request) {
+	sess, ok := a.requireSession(w, r)
+	if !ok || !a.jobPasses(w) || !a.executionEnabled(w) {
+		return
+	}
+	j, err := a.b.JobPasses.Job(r.Context(), r.PathValue("id"))
+	if err != nil || j.UserID != sess.UserID {
+		writeError(w, fmt.Errorf("%w: job %s", shared.ErrNotFound, r.PathValue("id")))
+		return
+	}
+	p, err := a.b.SpendPasses.OwnedActive(r.Context(), sess.UserID, j.PassID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	v, err := a.b.JobPasses.View(r.Context(), j.ID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	rep, err := a.b.Execution.Replay(ctx, v, p.AgentID, func(ctx context.Context, capability string) []routing.Candidate {
+		cands, _ := a.b.Candidates.Resolve(ctx, capability, nil, nil)
+		return cands
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
 }
 
 func (a *API) myJob(w http.ResponseWriter, r *http.Request, do func(id string) (*app.JobView, error)) {

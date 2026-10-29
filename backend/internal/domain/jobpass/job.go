@@ -86,7 +86,10 @@ type Job struct {
 	Currency string `json:"currency"`
 	// BudgetMinor is set aside from the parent for the job's whole life.
 	BudgetMinor int64 `json:"budget_minor"`
-	State       State `json:"state"`
+	// ValueMinor is what the task is worth, as the agent or the person stated
+	// it: the other side of its P&L. Nil when nobody said.
+	ValueMinor *int64 `json:"value_minor,omitempty"`
+	State      State  `json:"state"`
 	// CreatedBy is the agent that opened the job, or "" for the person.
 	CreatedBy   string     `json:"created_by,omitempty"`
 	TokenHash   string     `json:"-"`
@@ -128,6 +131,19 @@ type Spec struct {
 	Label       string        `json:"label"`
 	BudgetMinor int64         `json:"budget_minor"`
 	Lifetime    time.Duration `json:"-"`
+	// ValueMinor: what the task is worth, if the opener says.
+	ValueMinor *int64 `json:"value_minor,omitempty"`
+}
+
+// MaxValueMinor bounds a stated value: 10 million USDC, a typo guard.
+const MaxValueMinor = 10_000_000 * 1_000_000
+
+// CheckValue refuses a value that can't be one.
+func CheckValue(v int64) error {
+	if v < 0 || v > MaxValueMinor {
+		return errors.New("a task's value is between 0 and 10,000,000 USDC")
+	}
+	return nil
 }
 
 // Normalize cleans a spec and reports what's wrong with it.
@@ -147,6 +163,11 @@ func (s Spec) Normalize() (Spec, error) {
 	}
 	if s.BudgetMinor <= 0 {
 		return s, errors.New("a job's budget must be more than zero")
+	}
+	if s.ValueMinor != nil {
+		if err := CheckValue(*s.ValueMinor); err != nil {
+			return s, err
+		}
 	}
 	if s.Lifetime == 0 {
 		s.Lifetime = DefaultLifetime

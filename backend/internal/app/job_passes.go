@@ -32,6 +32,10 @@ type JobPassStore interface {
 	// ExpireJobs writes EXPIRED on active jobs past their time. Nothing waits
 	// on it: a job past its time already authorizes nothing.
 	ExpireJobs(ctx context.Context, now time.Time, limit int) (int, error)
+	// SetJobValue records what a task is worth (nil clears it).
+	SetJobValue(ctx context.Context, id string, value *int64) error
+	// JobSavings is what reused answers saved each of the given jobs.
+	JobSavings(ctx context.Context, jobIDs []string) (map[string]Saving, error)
 }
 
 // JobUnit is the work done under a pass's lock.
@@ -79,9 +83,11 @@ type JobView struct {
 	// LeftMinor: what can still be spent or set aside under it (0 once it ended).
 	LeftMinor int64 `json:"left_minor"`
 	// ReturnedMinor: once it ended, what went back to its parent.
-	ReturnedMinor int64        `json:"returned_minor"`
-	Children      []JobView    `json:"children"`
-	Attempts      []JobAttempt `json:"attempts"`
+	ReturnedMinor int64 `json:"returned_minor"`
+	// PnL is the task's money, its sub-tasks included (pnl.go).
+	PnL      TaskPnL      `json:"pnl"`
+	Children []JobView    `json:"children"`
+	Attempts []JobAttempt `json:"attempts"`
 	// Token is the job's delegation token, present only in the answer that
 	// opened it.
 	Token string `json:"token,omitempty"`
@@ -107,6 +113,7 @@ type JobPassService struct {
 	store  JobPassStore
 	passes SpendPassStore
 	ledger PassSpendLedger
+	pnl    PnLStore
 	log    *slog.Logger
 	now    func() time.Time
 }
@@ -169,7 +176,7 @@ func (s *JobPassService) Open(ctx context.Context, req OpenJob) (*JobView, error
 	}
 	j := &jobpass.Job{
 		ID: newID("job"), UserID: req.UserID, PassID: p.ID, ParentID: req.ParentID, Depth: depth,
-		Label: spec.Label, Currency: p.Currency, BudgetMinor: spec.BudgetMinor, State: jobpass.Active,
+		Label: spec.Label, Currency: p.Currency, BudgetMinor: spec.BudgetMinor, ValueMinor: spec.ValueMinor, State: jobpass.Active,
 		CreatedBy: req.CreatedBy, CreatedAt: now.UTC(), ExpiresAt: expires.UTC(),
 	}
 	var token string
@@ -340,13 +347,17 @@ func (s *JobPassService) view(ctx context.Context, id string, now time.Time) (*J
 	if err != nil {
 		return nil, err
 	}
-	return buildJobView(id, tree, attempts, now), nil
+	savings, err := s.store.JobSavings(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	return buildJobView(id, tree, attempts, savings, now), nil
 }
 
 // buildJobView assembles the tree under root and works out each job's
 // numbers the way JobExposure counts them: a live sub-job by its whole
 // budget, an ended one by what its attempts held or paid.
-func buildJobView(root string, tree []jobpass.Job, attempts []JobAttempt, now time.Time) *JobView {
+func buildJobView(root string, tree []jobpass.Job, attempts []JobAttempt, savings map[string]Saving, now time.Time) *JobView {
 	byParent := map[string][]jobpass.Job{}
 	var top *jobpass.Job
 	for i := range tree {
@@ -367,6 +378,11 @@ func buildJobView(root string, tree []jobpass.Job, attempts []JobAttempt, now ti
 		if v.Attempts == nil {
 			v.Attempts = []JobAttempt{}
 		}
+		v.PnL.ValueMinor = j.ValueMinor
+		v.PnL.SavedMinor, v.PnL.Reused = savings[j.ID].Minor, savings[j.ID].Count
+		for _, a := range v.Attempts {
+			v.PnL.add(a)
+		}
 		for _, a := range v.Attempts {
 			switch {
 			case a.State == econ.ReservationCommitted:
@@ -384,7 +400,14 @@ func buildJobView(root string, tree []jobpass.Job, attempts []JobAttempt, now ti
 				v.HeldMinor += cv.HeldMinor
 			}
 			v.Children = append(v.Children, cv)
+			v.PnL.PaidMinor += cv.PnL.PaidMinor
+			v.PnL.WastedMinor += cv.PnL.WastedMinor
+			v.PnL.Accepted += cv.PnL.Accepted
+			v.PnL.FailedFree += cv.PnL.FailedFree
+			v.PnL.SavedMinor += cv.PnL.SavedMinor
+			v.PnL.Reused += cv.PnL.Reused
 		}
+		v.PnL.finish()
 		used := v.PaidMinor + v.HeldMinor + v.SetAsideMinor
 		if v.Live {
 			v.LeftMinor = max(v.BudgetMinor-used, 0)

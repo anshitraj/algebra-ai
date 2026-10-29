@@ -254,4 +254,86 @@ func (m *memEconStore) ExpireJobs(_ context.Context, now time.Time, _ int) (int,
 	return n, nil
 }
 
+func (m *memEconStore) SetJobValue(_ context.Context, id string, value *int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok {
+		return shared.ErrNotFound
+	}
+	j.ValueMinor = value
+	return nil
+}
+
+func (m *memEconStore) JobSavings(_ context.Context, jobIDs []string) (map[string]Saving, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	want := map[string]bool{}
+	for _, id := range jobIDs {
+		want[id] = true
+	}
+	out := map[string]Saving{}
+	for _, e := range m.events {
+		id, _ := e.Data["job_pass_id"].(string)
+		if e.Event != "result.reused" || !want[id] {
+			continue
+		}
+		s := out[id]
+		s.Minor += savedOf(e)
+		s.Count++
+		out[id] = s
+	}
+	return out, nil
+}
+
+func savedOf(e EconEvent) int64 {
+	switch v := e.Data["saved_minor"].(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	}
+	return 0
+}
+
+func (m *memEconStore) PassPnL(_ context.Context, passID string, since time.Time) (*PassMoney, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out PassMoney
+	for _, r := range m.rsv {
+		if r.ExecutorPassID != passID || r.CreatedAt.Before(since) {
+			continue
+		}
+		in := m.intents[r.IntentID]
+		var j JobAttempt
+		j.State, j.HoldMinor = r.State, r.HoldMinor
+		if in != nil {
+			j.Fulfillment = in.Fulfillment
+		}
+		var p TaskPnL
+		p.add(j)
+		out.PaidMinor += p.PaidMinor
+		out.WastedMinor += p.WastedMinor
+		out.Accepted += p.Accepted
+		out.FailedFree += p.FailedFree
+	}
+	for _, e := range m.events {
+		if e.Event == "result.reused" && e.Data["spend_pass_id"] == passID && !e.CreatedAt.Before(since) {
+			out.SavedMinor += savedOf(e)
+			out.Reused++
+		}
+	}
+	for _, in := range m.intents {
+		if in.PassID == passID && !in.CreatedAt.Before(since) {
+			out.DuplicatesBlocked += in.BlockedAttempts
+			out.DuplicatePreventedMinor += int64(in.BlockedAttempts) * in.BudgetMaxMinor
+		}
+	}
+	return &out, nil
+}
+
+var _ PnLStore = (*memEconStore)(nil)
+
 var _ JobPassStore = (*memEconStore)(nil)

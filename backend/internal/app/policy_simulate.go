@@ -64,6 +64,16 @@ type SimulateRequest struct {
 	// LiveQuotes asks each candidate for its price with an unpaid request.
 	// Without it, nothing leaves Algebra and listed prices stand in.
 	LiveQuotes bool
+	// Chaos answers for some candidates as if they had been asked (Replay):
+	// a price they would quote, or the error they would fail with. Those
+	// candidates are never contacted.
+	Chaos map[string]ChaosQuote `json:"-"`
+}
+
+// ChaosQuote is what a simulated seller answers a price request with.
+type ChaosQuote struct {
+	ProviderMinor int64
+	Err           string
 }
 
 // Verdict is a dry run's overall answer.
@@ -414,7 +424,22 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 			Method: c.Method, Cost: routing.Cost{ProviderMinor: c.PriceMinor}, Asset: c.Asset, Network: c.Network,
 			EstimatedLatencyMS: c.EstimatedLatencyMS, QuotedAt: now, ValidUntil: now.Add(s.quoteTTL), Test: c.Network != "" && strings.Contains(c.Network, "devnet"),
 		}
+		chaos, isChaos := req.Chaos[c.ID]
 		switch {
+		case isChaos:
+			if chaos.Err != "" {
+				deny(routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: routing.RejectUnquotable, Detail: chaos.Err})
+				continue
+			}
+			q.Cost.ProviderMinor = chaos.ProviderMinor
+			if q.Asset == "" {
+				q.Asset = in.Currency
+			}
+			cv.PriceSource, cv.PriceMinor, cv.TotalMinor = "live", chaos.ProviderMinor, q.Cost.Total()
+			if r := g.after(c, q); r != nil {
+				deny(*r)
+				continue
+			}
 		case live != nil:
 			if live[i].err != nil {
 				deny(routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: routing.RejectUnquotable, Detail: briefly(live[i].err.Error())})
