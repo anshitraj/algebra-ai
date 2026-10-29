@@ -154,6 +154,11 @@ type Config struct {
 	// returns it (RESULT_RETENTION, RESULT_MAX_BYTES; see results.go).
 	Results ResultsConfig
 
+	// WebTools are the web-tool vendor keys the operator keeps in the
+	// environment (TINY_FISH_API, ...) and the accounts that may use them
+	// (ALGEBRA_OPERATOR_EMAILS); see webtools.go.
+	WebTools WebToolsConfig
+
 	Auth AuthConfig
 
 	Billing BillingConfig
@@ -542,6 +547,7 @@ func FromEnv() (*Config, error) {
 	if err := loadResults(&cfg.Results); err != nil {
 		return nil, err
 	}
+	loadWebTools(&cfg.WebTools)
 	if err := loadOnchainPasses(&cfg.OnchainPasses); err != nil {
 		return nil, err
 	}

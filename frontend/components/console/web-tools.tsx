@@ -5,6 +5,8 @@
 // can choose. The vendor bills the person's own account; Algebra keeps the key
 // sealed, shows only its last four characters and never sends it anywhere but
 // that vendor. The Spend Pass's budget and rules apply to these calls as to any.
+// Where the operator keeps a vendor key in the server's environment, the
+// operator's own accounts see "Using the server's key" until they add their own.
 
 import { useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
@@ -94,9 +96,18 @@ export function WebTools() {
                   {done === v.id ? "Saved" : v.hint ? `Key saved · ends ${v.hint}` : "Key saved"}
                 </span>
               )}
+              {!v.saved && v.server_key && open !== v.id && (
+                <span
+                  title="This server's key, set in its environment. Add a key of your own to use that instead."
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary"
+                >
+                  <IconLock size={12} />
+                  Using the server&apos;s key
+                </span>
+              )}
               {open !== v.id && (
                 <button type="button" onClick={() => setOpen(v.id)} className="text-xs font-medium text-muted hover:text-foreground">
-                  {v.saved ? "Replace" : "Add key"}
+                  {v.saved ? "Replace" : v.server_key ? "Use my own key" : "Add key"}
                 </button>
               )}
               {v.saved && open !== v.id && (

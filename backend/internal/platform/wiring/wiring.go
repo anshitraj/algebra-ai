@@ -495,7 +495,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		}
 		execSvc.SetResults(app.NewResultVault(postgres.NewResultRepo(db), resultEnc, cfg.Results.Retention, cfg.Results.MaxBytes))
 	}
-	toolKeys, err := buildKeyedTools(db, masterKey, econSvc, execSvc, passRepo, accountSvc)
+	toolKeys, err := buildKeyedTools(db, masterKey, econSvc, execSvc, passRepo, accountSvc, cfg.WebTools, accountSvc)
 	if err != nil {
 		db.Close()
 		return nil, err

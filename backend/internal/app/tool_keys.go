@@ -19,6 +19,11 @@ import (
 // rules apply, and the vendor bills the person's own account (providers/keyed).
 // Algebra holds the key sealed, shows only its last four characters, never
 // returns it, and reads it only to make the owner's calls.
+//
+// The operator may also keep a vendor key in the server's environment
+// (TINY_FISH_API, ...). That key is the operator's own account with the vendor,
+// so it is offered only to the accounts OperatorAccounts names, and a key the
+// person saved themselves always wins over it (operator_keys.go).
 
 // ToolVendor is a vendor whose tools can be used with a person's key.
 type ToolVendor struct {
@@ -59,6 +64,10 @@ type ToolKeyView struct {
 	// Hint is the last four characters of the saved key.
 	Hint    string     `json:"hint,omitempty"`
 	SavedAt *time.Time `json:"saved_at,omitempty"`
+	// ServerKey is true when the operator's key for this vendor, kept in the
+	// server's environment, is available to this account: its calls use that
+	// key until the person saves one of their own. The key is never shown.
+	ServerKey bool `json:"server_key,omitempty"`
 }
 
 // ToolKeys saves and reads the keys.
@@ -69,6 +78,10 @@ type ToolKeys struct {
 	offers  func(vendor string) []routing.Candidate
 	modes   AccountModes
 	now     func() time.Time
+
+	// operatorKeys (by vendor id) and who may use them; see SetOperatorKeys.
+	operatorKeys map[string]string
+	operators    OperatorAccounts
 }
 
 // NewToolKeys builds the service. offers gives a vendor's tools as candidates;
@@ -81,6 +94,13 @@ const (
 	minToolKey = 8
 	maxToolKey = 256
 )
+
+// validToolKey is the shape of an API key: printable characters, no spaces.
+// Only the vendor can say whether it works, on the first call.
+func validToolKey(key string) bool {
+	return len(key) >= minToolKey && len(key) <= maxToolKey &&
+		strings.IndexFunc(key, func(r rune) bool { return r <= ' ' || r > '~' }) < 0
+}
 
 // aad binds a sealed key to its owner and vendor, so a row copied to another
 // account or vendor opens to nothing.
@@ -95,19 +115,21 @@ func (s *ToolKeys) known(vendor string) bool {
 	return false
 }
 
-// List is every vendor, with whether the person has saved a key for it.
+// List is every vendor, with whether the person has saved a key for it, and
+// whether the operator's key is theirs to use.
 func (s *ToolKeys) List(ctx context.Context, userID string) ([]ToolKeyView, error) {
 	saved, err := s.store.ToolKeys(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
+	operator := s.isOperator(ctx, userID)
 	by := make(map[string]ToolKeyRecord, len(saved))
 	for _, k := range saved {
 		by[k.Vendor] = k
 	}
 	out := make([]ToolKeyView, 0, len(s.vendors))
 	for _, v := range s.vendors {
-		view := ToolKeyView{ToolVendor: v}
+		view := ToolKeyView{ToolVendor: v, ServerKey: operator && s.operatorKeys[v.ID] != ""}
 		if k, ok := by[v.ID]; ok {
 			at := k.CreatedAt
 			view.Saved, view.Hint, view.SavedAt = true, k.Hint, &at
@@ -125,7 +147,7 @@ func (s *ToolKeys) Save(ctx context.Context, userID, vendor, key string) error {
 		return fmt.Errorf("%w: %q is not a vendor Algebra can use a key for", ErrInvalidRequest, vendor)
 	}
 	key = strings.TrimSpace(key)
-	if len(key) < minToolKey || len(key) > maxToolKey || strings.IndexFunc(key, func(r rune) bool { return r <= ' ' || r > '~' }) >= 0 {
+	if !validToolKey(key) {
 		return fmt.Errorf("%w: that doesn't look like an API key (%d to %d printable characters, no spaces)", ErrInvalidRequest, minToolKey, maxToolKey)
 	}
 	if s.modes != nil {
@@ -158,9 +180,15 @@ func (s *ToolKeys) Remove(ctx context.Context, userID, vendor string) error {
 }
 
 // Key opens the person's key for a vendor. It is for the keyed runner and
-// nothing else; the error wraps shared.ErrNotFound when none is saved.
+// nothing else; the error wraps shared.ErrNotFound when none is saved. A person
+// the operator named gets the operator's key when they have none of their own.
 func (s *ToolKeys) Key(ctx context.Context, userID, vendor string) (string, error) {
 	k, err := s.store.ToolKey(ctx, userID, vendor)
+	if errors.Is(err, shared.ErrNotFound) {
+		if key, ok := s.operatorKey(ctx, userID, vendor); ok {
+			return key, nil
+		}
+	}
 	if err != nil {
 		return "", err
 	}
@@ -182,9 +210,22 @@ func (s *ToolKeys) CandidatesFor(ctx context.Context, userID, capability string)
 	if err != nil {
 		return nil
 	}
-	var out []routing.Candidate
+	have := make(map[string]bool, len(saved))
+	vendors := make([]string, 0, len(saved))
 	for _, k := range saved {
-		for _, c := range s.offers(k.Vendor) {
+		have[k.Vendor] = true
+		vendors = append(vendors, k.Vendor)
+	}
+	if s.isOperator(ctx, userID) {
+		for _, v := range s.vendors {
+			if s.operatorKeys[v.ID] != "" && !have[v.ID] {
+				vendors = append(vendors, v.ID)
+			}
+		}
+	}
+	var out []routing.Candidate
+	for _, vendor := range vendors {
+		for _, c := range s.offers(vendor) {
 			if c.Capability == capability {
 				out = append(out, c)
 			}

@@ -119,6 +119,8 @@ export type ToolKey = {
   /** The last four characters of the saved key. */
   hint?: string;
   saved_at?: string;
+  /** The operator's key for this vendor, kept in the server's environment, is theirs to use; a key they save themselves wins over it. Never shown. */
+  server_key?: boolean;
 };
 
 /** An agent's money over a period (GET /api/v1/me/passes/{id}/pnl). */

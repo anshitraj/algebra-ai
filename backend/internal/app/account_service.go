@@ -411,6 +411,12 @@ func (s *AccountService) User(ctx context.Context, id string) (*account.User, er
 	return s.store.GetUser(ctx, id)
 }
 
+// UserByEmail finds a first-party account by its normalised address
+// (OperatorUsers).
+func (s *AccountService) UserByEmail(ctx context.Context, email string) (*account.User, error) {
+	return s.store.GetUserByEmail(ctx, email)
+}
+
 func (s *AccountService) LinkedProviders(ctx context.Context, userID string) ([]string, error) {
 	return s.store.ListOAuthProviders(ctx, userID)
 }
