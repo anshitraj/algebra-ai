@@ -36,9 +36,34 @@ cannot slip in a different recipient or amount.
 
 ## Agents spending
 
-Not in this stage. Agents will spend only through permissions the chain enforces with a cap (an SPL `Approve` of a
-capped amount to Algebra's payer on Solana; a capped USDC allowance on Base and Arc), pulled just in time. A
-backend policy is never the only thing between an agent and the owner's money. See the roadmap.
+Agents spend from the vault only through a limit the chain enforces (`internal/app/vault_allowance.go`,
+`frontend/lib/wallet/allowance.ts`). Built on Solana (Testnet now, mainnet behind `VAULT_MAINNET_DEPOSITS`); Base and
+Arc come with the Base payment rail.
+
+- **The limit.** The owner sets "agents may spend up to X USDC". The browser builds an SPL `ApproveChecked` that names
+  Algebra's payer as the delegate of the vault's USDC account for X, and the vault signs it. The token program then
+  refuses any transfer by the payer past what is left of X, whatever Algebra's server does. "Stop" is an SPL `Revoke`,
+  signed the same way. Phantom, Solflare or any Solana wallet holding the phrase can revoke too, without Algebra.
+- **Algebra pays the network fee** of the approve and the revoke, so a vault holding only USDC can use them. The
+  browser signs as the second signer; the server adds the payer's signature as fee payer only after checking the
+  transaction holds exactly one approve (to the payer, on the vault's USDC account, at most `VAULT_ALLOWANCE_MAX_USDC`)
+  or one revoke, and at most a bounded compute budget. The payer's signature then pays the fee and nothing else.
+- **The browser checks the server's answer**: the USDC mint and the vault's own token account come from the browser's
+  own table and derivation, not from the server; a different mint, token account or a delegate that isn't the fee
+  payer is refused, as is a priority fee far above normal.
+- **Pull before pay.** Just before an agent's signed x402 payment is handed over, the payer pulls exactly its amount
+  from the vault into its own USDC account, as the delegate (one `TransferChecked` with a memo naming the attempt).
+  The payment is released only once the pull is confirmed. Whatever the attempt didn't spend goes back to the vault
+  (the same reconciler as on-chain Spend Passes). A refund returns the USDC but not the limit: the token program counts
+  the limit down on every transfer, and only the owner can raise it.
+- **Spend Passes and Job Passes are budgets inside the limit**, kept by Algebra's atomic reservations. They are not
+  separate funds on chain. The limit is the most any of them, together, can ever take.
+- **Testnet credits** are used only while agents don't pay from the vault; a payment the vault funded is not counted
+  against them. The receipt names the vault's USDC account and the pull's transaction (`owner_vault_allowance`).
+- **What the limit does not bound**: who receives what the payer pulls. A delegate can transfer to any account, so a
+  compromised payer key could send up to what is left of the limit elsewhere. The owner bounds that by the size of the
+  limit, and stops it at once with a revoke. A program-held pass (the on-chain Spend Pass, whose pulls can only go to
+  the payer) is the stricter option, at the cost of moving USDC into it.
 
 ## Mainnet
 
@@ -53,5 +78,8 @@ until this design has had an independent security review. Withdrawal works every
 | The owner's email is taken over | The wallet needs its own password or the phrase. |
 | The keystore is copied off the device | Argon2id at 32 MiB per guess; AES-GCM refuses tampering; a long password is required. |
 | A malicious server answer during a withdrawal | The browser builds the transaction; the server only gives a blockhash or nonce and fees. |
+| Algebra's server tries to take more than the owner allowed agents | The token program refuses any transfer past what is left of the limit. |
+| Algebra's payer key is stolen | It can move at most what is left of each vault's limit; owners revoke from the Vault page or any Solana wallet. |
+| An owner tries to make the payer sign more than a fee | The server signs only a transaction holding exactly one approve to itself or one revoke, with a bounded compute budget; 20 changes an hour per account. |
 | Script injection in the console (XSS) | The real risk of any web wallet: a strict CSP, no third-party scripts in the console, keys only in memory while unlocked, auto-lock. Independent review before mainnet. |
 | The owner forgets the password and loses the phrase | Nothing can recover it. The phrase is shown once at creation and the owner confirms two of its words. |

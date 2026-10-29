@@ -19,7 +19,7 @@ and **Activity** (what was bought, what it cost, what came back). Everything els
 2. **Agents spend only through on-chain-enforced, limited permissions.** Backend policy is never the only thing
    between an agent and unrestricted signing:
    - Solana: SPL Token `approve` (delegate with a capped amount) or the Spend Pass program; Algebra pulls just in time,
-     then pays (pull-before-pay, already built for the Anchor pass).
+     then pays (pull-before-pay). Built: docs/WALLET.md, "Agents spending".
    - EVM (Base, Arc): USDC `approve` to Algebra's spender with a capped allowance, pulled just in time; x402 `exact`
      paid with EIP-3009 from the payer.
    - Circle Gateway (one USDC balance across Solana, Base and Arc; deposits on any chain, spends on any chain in
@@ -52,7 +52,7 @@ and **Activity** (what was bought, what it cost, what came back). Everything els
 | 2 | Recovery and refunds: unknown outcome blocks new payments and reconciles (built); credits come back when a paid call delivered nothing usable | built |
 | 3 | Console: chat is the default page, Testnet/Mainnet switch, Solana/Base/Arc marks, Spend Pass folders (on/off, limit bar, delete), answer cards per kind of request | built |
 | 4 | Browser wallet: generate, encrypt, recover, import, export, withdraw; EVM + Solana signer (docs/WALLET.md) | built on Testnet; Solana withdrawal proven on devnet, EVM withdrawal built and checked offline only |
-| 5 | Capped on-chain permissions on Solana and Base; Base x402 rail (EIP-3009); Circle Gateway deposits | next |
+| 5 | Capped on-chain permissions on Solana and Base; Base x402 rail (EIP-3009); Circle Gateway deposits | Solana built and proven on devnet (an SPL limit to the payer, set and stopped from the Vault page, Algebra pays the fee, pull before pay, refunds); Base/Arc limits come with the Base rail, next; Gateway after |
 | 6 | Job Pass: task budget, expiry, sub-agents share the parent budget, unknown recipients need approval, duplicate detection | next |
 | 7 | Multi-select and smart routing by cost per accepted result (failures and retries counted), purchase memory (reuse a fresh, reusable result instead of paying twice; catch loops) | next |
 | 8 | Task P&L per agent; Replay (financial chaos tests before an agent ships) | later |
