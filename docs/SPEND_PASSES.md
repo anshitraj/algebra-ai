@@ -126,6 +126,35 @@ The adversaries are never contacted (their answers are written into the dry run)
 from their listings, so nothing leaves Algebra and nothing is paid. Each finding says whether it was caught, waited for
 the person, was ranked below a better offer, or would have been paid, with the rule that decided.
 
+## Web tools with your own API key
+
+`backend/providers/keyed`, `internal/app/tool_keys.go`, "Web tools" in Account. A person saves their own key for a vendor and
+that vendor's tools become one more seller their agents can route to, priced and ranked beside the paid ones:
+
+| Vendor | Tools | Class |
+|---|---|---|
+| TinyFish | Search · Fetch · Agent | `web.search` · `web.scrape` · `web.agent` |
+| Exa | Search | `web.search` |
+| Firecrawl | Scrape | `web.scrape` |
+| Tavily | Search | `web.search` |
+
+- **The vendor bills the person**, so Algebra moves no money. The call still goes through the coordinator: the Spend Pass's
+  budget, its rules and its ask-first gate apply, the quote is the vendor's list price, and the call settles on the `keyed`
+  rail for **what the vendor reported charging** (TinyFish Agent: steps × 1.5 cents; Exa: its `costDollars`; Firecrawl and
+  Tavily: their list price). A free call commits nothing; a call the vendor refused or failed is not billed and not counted.
+  The receipt says "Your own API key" and names the vendor's reference, never a chain transaction.
+- **The key** is sealed under a key derived from the master key (`algebra:tool-keys:v1`), bound to its owner and vendor, never
+  returned (only its last four characters are shown), never logged, never put in a URL, and sent only to the vendor's own
+  address: the runner looks the tool up by provider and class and refuses a quote that names any other endpoint. It is read
+  only for the owner of the Spend Pass making the call. Erasing an account deletes its keys. A demo account can't save one.
+- **Whose tools**: `CandidateResolver.ResolveFor` adds a person's keyed tools to their own requests only, first in the order
+  (they need no network to be priced). Naming `keyed:exa` in `providers` selects it; endpoints an agent supplies itself are
+  never keyed.
+- Environments: keyed calls are exempt from the network limit (no chain is used), so they work in Testnet and Mainnet alike.
+
+`GET /api/v1/me/tool-keys` lists the vendors and which keys are saved; `PUT /api/v1/me/tool-keys/{vendor}` with `{"key": "…"}`
+saves or replaces; `DELETE` removes.
+
 ## Connecting an agent
 
 - **MCP** at `/mcp`: send the token as an HTTP header, so it never passes through the model: see [MCP.md](MCP.md). `algebra_spend_pass` reads the pass; `algebra_execute` spends under it.

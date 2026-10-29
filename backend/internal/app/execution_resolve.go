@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/routing"
@@ -33,6 +35,55 @@ type CandidateResolver struct {
 	// Classes may be nil. With it, a capability that names a class
 	// ("token.price") is every provider of that class, not one endpoint.
 	Classes ClassSource
+	// Keyed may be nil. With it, ResolveFor adds the tools a person has saved
+	// an API key for (providers/keyed) to that person's own candidates.
+	Keyed KeyedSource
+}
+
+// KeyedSource gives the tools a person can run with their own API keys.
+type KeyedSource interface {
+	CandidatesFor(ctx context.Context, userID, capability string) []routing.Candidate
+}
+
+// ResolveFor is Resolve for one person: their keyed tools compete with the
+// rest when nothing was named, and are used when named ("keyed:exa"). Endpoints
+// an agent supplies are never keyed, and nobody sees another person's tools.
+func (r CandidateResolver) ResolveFor(ctx context.Context, userID, capability string, named []string, supplied []CandidateInput) ([]routing.Candidate, []routing.Rejection) {
+	out, rejected := r.Resolve(ctx, capability, named, supplied)
+	if r.Keyed == nil || userID == "" {
+		return out, rejected
+	}
+	mine := r.Keyed.CandidatesFor(ctx, userID, capability)
+	if len(named) > 0 {
+		kept := mine[:0]
+		for _, c := range mine {
+			if slices.ContainsFunc(named, func(n string) bool { return strings.EqualFold(strings.TrimSpace(n), c.Provider) }) {
+				kept = append(kept, c)
+			}
+		}
+		mine = kept
+	} else if len(supplied) > 0 {
+		mine = nil
+	}
+	if len(mine) == 0 {
+		return out, rejected
+	}
+	// Named keyed tools were not found by Resolve, which doesn't know them.
+	rejected = slices.DeleteFunc(rejected, func(rj routing.Rejection) bool {
+		return slices.ContainsFunc(mine, func(c routing.Candidate) bool { return c.Provider == strings.ToLower(strings.TrimSpace(rj.Provider)) })
+	})
+	// They need no network to be priced, so they go first: the router quotes
+	// only the first few candidates.
+	have := make(map[string]bool, len(mine))
+	for _, c := range mine {
+		have[c.ID] = true
+	}
+	for _, c := range out {
+		if !have[c.ID] {
+			mine = append(mine, c)
+		}
+	}
+	return mine, rejected
 }
 
 // ClassSource gives the candidates of a class of work across every catalog

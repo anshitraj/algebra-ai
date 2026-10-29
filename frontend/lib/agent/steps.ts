@@ -130,7 +130,7 @@ export function friendlyFailure(message: string): string {
 }
 
 /** Where a payment happened, as a step card says it: "on devnet", "on mainnet" or "in demo mode". */
-const onNet = (n: string) => (n === "sandbox" ? "in demo mode" : `on ${networkWord(n)}`);
+const onNet = (n: string) => (n === "sandbox" ? "in demo mode" : n === "keyed" ? "billed to your account" : `on ${networkWord(n)}`);
 
 function paidOutcome(d: Record<string, unknown>): StepOutcome {
   const outcome = String(d.outcome ?? "");
@@ -140,7 +140,8 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
   const rows: { label: string; value: string }[] = [];
   if (typeof d.paid === "string" && (d.paid_minor as number) > 0) rows.push({ label: "Paid", value: `${d.paid}${network ? ` ${onNet(network)}` : ""}` });
   if (pullTx) rows.push({ label: "Spend Pass pull", value: `${pullTx.slice(0, 8)}…${pullTx.slice(-8)}` });
-  if (tx) rows.push({ label: "Transaction", value: `${tx.slice(0, 8)}…${tx.slice(-8)}` });
+  // A web tool called with your own key has the vendor's reference, not a chain transaction.
+  if (tx && network !== "keyed") rows.push({ label: "Transaction", value: `${tx.slice(0, 8)}…${tx.slice(-8)}` });
   const routing = d.routing as { mode?: string; ranked?: { rank: number; provider: string; price?: string }[] } | undefined;
   if (routing?.mode && pickLabel(routing.mode)) rows.push({ label: "Picked by", value: pickLabel(routing.mode) });
   for (const r of (routing?.ranked ?? []).slice(0, 3)) rows.push({ label: `Rank ${r.rank}`, value: `${r.provider}${r.price ? ` · ${r.price}` : ""}` });

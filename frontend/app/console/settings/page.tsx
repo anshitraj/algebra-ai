@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
 import { EmailNotifications } from "@/components/console/email-notifications";
+import { WebTools } from "@/components/console/web-tools";
 import { realEmail, useSession } from "@/lib/session";
 import type { SessionInfo } from "@/lib/types";
 import { GitHubMark, GoogleMark, IconCheck, IconMail, Spinner } from "@/components/icons";
@@ -157,6 +158,8 @@ export default function SettingsPage() {
       <Suspense fallback={null}>
         <EmailNotifications />
       </Suspense>
+
+      <WebTools />
 
       <section className="mt-8">
         <h2 className="text-[0.95rem] font-semibold text-foreground">Where you&apos;re signed in</h2>

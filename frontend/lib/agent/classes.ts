@@ -11,6 +11,7 @@ export const WORK_CLASSES: WorkClass[] = [
   { id: "wallet.risk", title: "sanctions / AML / fraud screen of a wallet", input: '{"wallet": "<wallet address>"}' },
   { id: "web.search", title: "ranked web results for a query", input: '{"query": "<text>"}' },
   { id: "web.scrape", title: "readable content of one web page", input: '{"url": "<https URL>"}' },
+  { id: "web.agent", title: "a browser agent works through a goal on one page (only with the person's own TinyFish key)", input: '{"url": "<https URL>", "goal": "<what to do or find>"}' },
   { id: "news.search", title: "recent news articles for a query", input: '{"query": "<text>"}' },
   { id: "llm.chat", title: "a language-model answer to a prompt", input: '{"prompt": "<text>"}' },
   { id: "image.generate", title: "an image from a text prompt", input: '{"prompt": "<text>"}' },

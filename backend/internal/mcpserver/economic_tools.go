@@ -73,7 +73,7 @@ func (srv *Server) registerEconomicTools(s *gomcp.Server) {
 		if in.Input == nil {
 			raw = nil
 		}
-		candidates, rejected := srv.Candidates.Resolve(ctx, capability, in.Providers, in.Candidates)
+		candidates, rejected := srv.Candidates.ResolveFor(ctx, ag.UserID, capability, in.Providers, in.Candidates)
 
 		ctx, cancel := context.WithTimeout(ctx, 80*time.Second)
 		defer cancel()
@@ -214,7 +214,7 @@ func (srv *Server) simulate(ctx context.Context, in simulateToolInput) (map[stri
 			return nil, fmt.Errorf("input must be a JSON object")
 		}
 	}
-	candidates, rejected := srv.Candidates.Resolve(ctx, capability, in.Providers, in.Candidates)
+	candidates, rejected := srv.Candidates.ResolveFor(ctx, ag.UserID, capability, in.Providers, in.Candidates)
 
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()

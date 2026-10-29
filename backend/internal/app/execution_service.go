@@ -66,6 +66,9 @@ type StepObservation struct {
 	// SettleTx is the transaction the provider's own settle header named.
 	SettleTx            string
 	ProviderOperationID string
+	// ChargedMinor is what a vendor reported charging for a call it bills
+	// itself (a keyed tool), when the payment authority named no amount.
+	ChargedMinor int64
 	// Class and Message say why nothing was delivered.
 	Class   routing.FailureClass
 	Message string
@@ -316,7 +319,7 @@ func screen(view *IntentView, c routing.Candidate, q routing.Quote) *routing.Rej
 		return reject(routing.RejectExcluded, "the intent only allows "+strings.Join(p, ", "))
 	}
 	cons := view.Constraints
-	if n := cons.AllowedNetworks; len(n) > 0 && !slices.Contains(n, chain.NormalizeNetwork(q.Network)) {
+	if n := cons.AllowedNetworks; len(n) > 0 && !chain.IsKeyed(q.Network) && !slices.Contains(n, chain.NormalizeNetwork(q.Network)) {
 		return reject(routing.RejectNetwork, "pays on "+q.Network)
 	}
 	if q.Asset != "" && !strings.EqualFold(q.Asset, view.Currency) {
@@ -959,7 +962,7 @@ func (s *ExecutionService) evaluate(ctx context.Context, c routing.Capability, o
 // Success is only ever a claim here: the coordinator checks payment against
 // the rail before committing anything.
 func (s *ExecutionService) completion(obs StepObservation, res routing.ExecutionResult, valid bool) CompletionReport {
-	ev := econ.Evidence{Transaction: obs.SettleTx, RequestHash: obs.RequestHash, ResultHash: res.ResponseHash, ProviderOperationID: obs.ProviderOperationID}
+	ev := econ.Evidence{Transaction: obs.SettleTx, RequestHash: obs.RequestHash, ResultHash: res.ResponseHash, ProviderOperationID: obs.ProviderOperationID, AmountMinor: obs.ChargedMinor}
 	switch {
 	case obs.Delivered && obs.AuthorityReleased && valid:
 		return CompletionReport{Outcome: econ.OutcomeFulfilled, Evidence: ev}

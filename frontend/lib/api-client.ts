@@ -3,7 +3,7 @@
 // authenticated by the HttpOnly session cookie; no token ever lives in
 // JavaScript.
 
-import type { AuthProviders, EconIntent, EconStats, IssuedPass, KeptResult, NewPass, NotificationSettings, OnboardingAnswers, PassConnect, ProviderDetail, ProviderListing, RailStatus, ReceiptVerification, SessionInfo, SpendPass, User, JobPass, AgentPnL, ReplayReport } from "./types";
+import type { AuthProviders, EconIntent, EconStats, IssuedPass, KeptResult, NewPass, NotificationSettings, OnboardingAnswers, PassConnect, ProviderDetail, ProviderListing, RailStatus, ReceiptVerification, SessionInfo, SpendPass, User, JobPass, AgentPnL, ReplayReport, ToolKey } from "./types";
 import type {
   APIKey,
   Environment,
@@ -228,6 +228,22 @@ export function setJobValue(id: string, valueMinor: number | null) {
 /** An agent's money over the last days. */
 export function getPassPnL(passId: string, days = 30) {
   return apiFetch<AgentPnL>(`/api/v1/me/passes/${encodeURIComponent(passId)}/pnl?days=${days}`);
+}
+
+// --- web tools run with the person's own API keys ---
+
+/** Every vendor, and whether a key is saved for it. The key itself never comes back. */
+export function listToolKeys() {
+  return apiFetch<{ tools: ToolKey[] }>("/api/v1/me/tool-keys");
+}
+
+/** Saves (or replaces) the key for a vendor. It is sealed on the server and sent only to that vendor. */
+export function saveToolKey(vendor: string, key: string) {
+  return apiFetch<{ tools: ToolKey[] }>(`/api/v1/me/tool-keys/${encodeURIComponent(vendor)}`, { method: "PUT", body: { key } });
+}
+
+export function deleteToolKey(vendor: string) {
+  return apiFetch<{ tools: ToolKey[] }>(`/api/v1/me/tool-keys/${encodeURIComponent(vendor)}`, { method: "DELETE" });
 }
 
 /** The task's purchases run again on paper against misbehaving sellers. Nothing is paid. */

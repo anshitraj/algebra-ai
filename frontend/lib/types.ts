@@ -107,6 +107,20 @@ export type TaskPnL = {
   profit_minor?: number;
 };
 
+/** A vendor whose web tools run with the person's own API key (GET /api/v1/me/tool-keys). The key is never in it. */
+export type ToolKey = {
+  id: string;
+  name: string;
+  /** Where to get a key. */
+  site: string;
+  /** What the key opens, in plain words. */
+  tools: string[];
+  saved: boolean;
+  /** The last four characters of the saved key. */
+  hint?: string;
+  saved_at?: string;
+};
+
 /** An agent's money over a period (GET /api/v1/me/passes/{id}/pnl). */
 export type AgentPnL = {
   spend_pass_id: string;

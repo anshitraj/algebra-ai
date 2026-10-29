@@ -50,7 +50,7 @@ func (a *API) simulatePolicy(w http.ResponseWriter, r *http.Request) {
 		req.Window = "simulate"
 	}
 	a.applyDefaultStrategy(r.Context(), ag, executor, &req.ProviderPolicy)
-	candidates, rejected := a.b.Candidates.Resolve(r.Context(), capability, req.Providers, req.Candidates)
+	candidates, rejected := a.b.Candidates.ResolveFor(r.Context(), ag.UserID, capability, req.Providers, req.Candidates)
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 	sim, err := a.b.Execution.Simulate(ctx, app.SimulateRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, LiveQuotes: req.LiveQuotes})

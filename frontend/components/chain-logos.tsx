@@ -84,6 +84,7 @@ export function ChainMark({ network, size = 14, className = "" }: { network: str
 /** A chain's name for people: "Solana", "Base", "Arc" (test networks say so). */
 export function chainName(network: string | undefined): string {
   const n = (network ?? "").toLowerCase();
+  if (n === "keyed") return "Your API key";
   const test = /devnet|sepolia|testnet/.test(n);
   const name = n.startsWith("solana") ? "Solana" : n.startsWith("base") ? "Base" : n.startsWith("arc") ? "Arc" : network ?? "";
   return test ? `${name} (test)` : name;

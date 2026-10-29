@@ -80,7 +80,7 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 	}
 	ag, executor := caller.ag, caller.executor
 	a.applyDefaultStrategy(r.Context(), ag, executor, &req.ProviderPolicy)
-	candidates, rejected := a.b.Candidates.Resolve(r.Context(), capability, req.Providers, req.Candidates)
+	candidates, rejected := a.b.Candidates.ResolveFor(r.Context(), ag.UserID, capability, req.Providers, req.Candidates)
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
@@ -181,7 +181,7 @@ func (a *API) executeEconomicIntent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	candidates, rejected := a.b.Candidates.Resolve(r.Context(), view.Capability, req.Providers, req.Candidates)
+	candidates, rejected := a.b.Candidates.ResolveFor(r.Context(), ag.UserID, view.Capability, req.Providers, req.Candidates)
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()

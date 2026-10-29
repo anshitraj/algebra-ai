@@ -115,6 +115,9 @@ type Bundle struct {
 	// JobPasses are task budgets set aside from a Spend Pass (internal/domain/jobpass).
 	JobPasses      *app.JobPassService
 	IntentReceipts *app.IntentReceiptService
+	// ToolKeys holds a person's own API keys for web tools (providers/keyed);
+	// nil when the server has no database.
+	ToolKeys *app.ToolKeys
 	// SandboxProvider is the SANDBOX x402 provider, nil unless
 	// ECONOMIC_SANDBOX is on (see config.Config.EconomicSandbox).
 	SandboxProvider *sandboxpay.Provider
@@ -492,8 +495,13 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		}
 		execSvc.SetResults(app.NewResultVault(postgres.NewResultRepo(db), resultEnc, cfg.Results.Retention, cfg.Results.MaxBytes))
 	}
+	toolKeys, err := buildKeyedTools(db, masterKey, econSvc, execSvc, passRepo, accountSvc)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 	directory := buildDirectory(cfg)
-	candidates := app.CandidateResolver{Configured: execProviders}
+	candidates := app.CandidateResolver{Configured: execProviders, Keyed: toolKeys}
 	var classIndex *catalog.ClassIndex
 	if directory != nil {
 		candidates.Catalog = catalogSource{directory}
@@ -702,7 +710,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, Tenancy: tenancySvc, Leads: leadSvc, Notifications: notificationSvc,
-		Economic: econSvc, JobPasses: jobSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, Signers: signers, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders,
+		Economic: econSvc, JobPasses: jobSvc, ToolKeys: toolKeys, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, Signers: signers, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,

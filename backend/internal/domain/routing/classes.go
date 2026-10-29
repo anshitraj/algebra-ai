@@ -131,6 +131,18 @@ var classes = []Class{
 		exclude: regexp.MustCompile(`pdf|robots|llms|audit|search|crawlers|sitemap|screenshot|png`),
 	},
 	{
+		// web.agent is not found in catalogs (its match never fires): it is a
+		// tool the person gives Algebra a key for (providers/keyed).
+		ID: "web.agent", Title: "Web agent task", Kind: KindData,
+		Description: "A browser agent that works through a goal on one web page and reports what it found. Available with your own TinyFish API key.",
+		Fields: []ClassField{
+			{Name: "url", Required: true, Description: "Page to start from", Example: "https://solana.com"},
+			{Name: "goal", Required: true, Description: "What to do or find there, in words", Example: "List the three newest blog post titles"},
+		},
+		Sample: json.RawMessage(`{"url":"https://example.com","goal":"Report the page title"}`),
+		match:  regexp.MustCompile(`a^`),
+	},
+	{
 		ID: "news.search", Title: "News search", Kind: KindData,
 		Description: "Recent news articles for a query.",
 		Fields: []ClassField{{Name: "query", Required: true, Description: "Topic to search news for", Example: "solana",

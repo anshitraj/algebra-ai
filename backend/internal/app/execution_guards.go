@@ -91,7 +91,7 @@ func (g guards) before(view *IntentView, c routing.Candidate) (routing.Candidate
 	}
 	// A candidate on a network the intent can't pay on would only take a
 	// pricing slot from one it can.
-	if n := view.Constraints.AllowedNetworks; len(n) > 0 && c.Network != "" && !slices.Contains(n, chain.NormalizeNetwork(c.Network)) {
+	if n := view.Constraints.AllowedNetworks; len(n) > 0 && c.Network != "" && !chain.IsKeyed(c.Network) && !slices.Contains(n, chain.NormalizeNetwork(c.Network)) {
 		return reject(routing.RejectNetwork, "listed on "+c.Network)
 	}
 	// A blocked endpoint isn't even asked for a price.

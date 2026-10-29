@@ -307,6 +307,7 @@ func (r *AccountRepo) EraseUser(ctx context.Context, userID string, at time.Time
 		{"commerce profile", `DELETE FROM commerce_profiles WHERE user_id = $1`},
 		{"guardrails", `DELETE FROM user_guardrails WHERE user_id = $1`},
 		{"plugin settings", `DELETE FROM user_plugins WHERE user_id = $1`},
+		{"tool keys", `DELETE FROM tool_keys WHERE user_id = $1`},
 		{"payment methods", `UPDATE payment_sources SET revoked_at = COALESCE(revoked_at, $2),
 			nickname = NULL, last4 = NULL, issuer_meta = NULL, expiry_meta = NULL WHERE user_id = $1`},
 		{"agents", `UPDATE agents SET revoked_at = COALESCE(revoked_at, $2) WHERE user_id = $1`},

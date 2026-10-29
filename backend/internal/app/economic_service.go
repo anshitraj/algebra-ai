@@ -876,7 +876,7 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 	// The intent's network limit holds here too, not only when the router picks
 	// a provider: an executor that reserved a rail itself still gets nothing
 	// signed on a network the intent excludes.
-	if len(networks) > 0 && !slices.Contains(networks, chain.NormalizeNetwork(auth.Evidence.Network)) {
+	if len(networks) > 0 && !chain.IsKeyed(auth.Evidence.Network) && !slices.Contains(networks, chain.NormalizeNetwork(auth.Evidence.Network)) {
 		return nil, &AuthorityDenied{ReasonCodes: []string{DenyNetworkNotAllowed}}
 	}
 	// Real money on mainnet only where the deployment has turned it on.
@@ -1060,7 +1060,9 @@ func (s *EconomicService) commit(u EconUnit, in *econ.Intent, r *econ.Reservatio
 	r.Evidence = mergeEvidence(r.Evidence, econ.Evidence{
 		Transaction: st.Transaction, AmountMinor: st.AmountMinor, Network: st.Network, Asset: st.Asset, Payer: st.Payer, PayTo: st.PayTo, ResultHash: resultHash, Test: st.Test,
 	})
-	if st.AmountMinor > 0 {
+	// A tool its vendor bills itself (a keyed call) settles for what the vendor
+	// charged, which may be nothing: the hold is then not the intent's ceiling.
+	if st.AmountMinor > 0 || chain.IsKeyed(st.Network) {
 		r.HoldMinor = st.AmountMinor // unused authority is released
 		// What the rail proved moved is the amount, not the ceiling that was
 		// authorized: a usage-based payment settles for less and refunds the rest.

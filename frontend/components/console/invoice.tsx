@@ -212,14 +212,16 @@ export function Invoice({ intentId }: { intentId: string }) {
         {/* Payment */}
         <section className="grid gap-x-8 gap-y-2 border-t border-border px-6 py-6 text-xs sm:grid-cols-2 sm:px-9">
           <h2 className="text-[0.7rem] font-medium tracking-wider text-muted uppercase sm:col-span-2">Payment</h2>
-          <Fact label="Rail" value={s ? `${s.rail}${network ? ` · ${networkWord(network)}` : ""}` : "—"} />
+          <Fact label="Rail" value={s ? (network === "keyed" ? "Your own API key" : `${s.rail}${network ? ` · ${networkWord(network)}` : ""}`) : "—"} />
           <Fact label="Asset" value={s?.asset && s.asset.length > 12 ? `USDC · mint ${mid(s.asset, 4)}` : (s?.asset ?? "USDC")} />
           {s?.funding && <Fact label="Funded from" value={`Your Spend Pass vault ${mid(s.funding.vault, 5)}`} />}
           {s?.funding && <Fact label="Vault owner" value={`Your wallet ${mid(s.funding.owner, 5)}`} />}
-          {s?.payer && <Fact label="Signed by" value={`Algebra's payer key ${mid(s.payer, 4)}`} />}
-          {s?.pay_to && <Fact label="Paid to" value={mid(s.pay_to, 6)} mono />}
+          {s?.payer && network === "keyed" && <Fact label="Billed to" value={s.payer.charAt(0).toUpperCase() + s.payer.slice(1)} />}
+          {s?.payer && network !== "keyed" && <Fact label="Signed by" value={`Algebra's payer key ${mid(s.payer, 4)}`} />}
+          {s?.pay_to && <Fact label={network === "keyed" ? "Vendor" : "Paid to"} value={network === "keyed" ? s.pay_to : mid(s.pay_to, 6)} mono={network !== "keyed"} />}
           {s?.funding && <Fact label="Vault transaction" value={mid(s.funding.pull_signature, 10)} mono />}
-          {s?.transaction && <Fact label="Transaction" value={mid(s.transaction, 10)} mono />}
+          {s?.transaction && network !== "keyed" && <Fact label="Transaction" value={mid(s.transaction, 10)} mono />}
+          {s?.transaction && network === "keyed" && <Fact label="Vendor reference" value={mid(s.transaction.replace(/^billed:/, ""), 10)} mono />}
           <Fact label="Attempts" value={`${c?.coordination.attempts ?? intent.attempts}${c?.coordination.duplicate_commit_attempts_blocked ? ` · ${c.coordination.duplicate_commit_attempts_blocked} duplicate payment stopped` : " · paid once"}`} />
           {onChain && (
             <p className="flex flex-wrap gap-x-4 gap-y-1 pt-1 sm:col-span-2 print:hidden">

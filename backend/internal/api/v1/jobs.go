@@ -390,7 +390,7 @@ func (a *API) replayMyJob(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	rep, err := a.b.Execution.Replay(ctx, v, p.AgentID, func(ctx context.Context, capability string) []routing.Candidate {
-		cands, _ := a.b.Candidates.Resolve(ctx, capability, nil, nil)
+		cands, _ := a.b.Candidates.ResolveFor(ctx, sess.UserID, capability, nil, nil)
 		return cands
 	})
 	if err != nil {
