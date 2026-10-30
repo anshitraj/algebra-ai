@@ -67,7 +67,8 @@ components:
         network: { type: string }
     ExecuteRequest:
       type: object
-      required: [capability, budget_max_minor]
+      required: [capability]
+      description: Send the most it may cost as `max_usd` or as `budget_max_minor`, one of the two.
       properties:
         capability:
           type: string
@@ -78,12 +79,19 @@ components:
         input:
           type: object
           description: The request's parameters. For a class, its canonical fields (see GET /classes). For `solana.swap`, `{output_mint, amount_usdc, max_slippage_bps}`.
-        budget_max_minor: { type: integer, format: int64, description: The most this outcome may cost. }
+        budget_max_minor: { type: integer, format: int64, description: "The most this outcome may cost, in micro-USDC (1000000 is one USDC)." }
+        max_usd:
+          type: string
+          example: "0.05"
+          description: >
+            The same ceiling in dollars, as a decimal string with at most 6 decimals. A JSON number is refused, so an
+            amount is never read as a float. Send it or `budget_max_minor`; both must agree when both are sent.
         window:
           type: string
           description: >
             What makes this request the same one as an earlier one. Asking again with the same capability, input and
             window returns the kept answer instead of paying twice. To buy the same thing again, pass a new window.
+            Ignored when the request carries an `Idempotency-Key`, which replaces it.
         quantity: { type: integer }
         currency: { type: string, enum: [USDC], default: USDC }
         constraints: { $ref: "#/components/schemas/Constraints" }
@@ -141,6 +149,8 @@ components:
         stopped: { type: string, description: "Why no further step was tried: committed, replayed, outcome_unknown, no_more_candidates, error." }
         replayed: { type: boolean, description: "Nothing ran: this is the answer kept when the outcome was paid for." }
         summary: { type: string }
+        budget_max_usd: { type: string, example: "0.05", description: "The ceiling in dollars: intent.budget_max_minor as a decimal string." }
+        paid_usd: { type: string, example: "0.0012", description: "What settled, in dollars: intent.committed_minor as a decimal string." }
         intent: { type: object, description: "The economic intent: state, committed_minor, reservations and the rest." }
         attempts: { type: array, items: { type: object } }
         rejected: { type: array, items: { $ref: "#/components/schemas/Rejection" } }
@@ -335,7 +345,16 @@ paths:
         Creates the intent (or finds the one that already exists for the same capability, input and window), prices
         the candidates with free unpaid requests, ranks them for the strategy, reserves, pays, calls, verifies and
         returns the answer with a receipt. Asking again for what was already paid for returns the kept answer
-        (`replayed: true`) and pays nothing.
+        (`replayed: true`) and pays nothing. Send an `Idempotency-Key` to make a retry safe whatever the client does
+        to the rest of the request: the key is the request's identity, a retry with the same key and the same
+        request gets the first answer, and the same key with a different request is refused (409,
+        `idempotency_key_reused`).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: 1 to 255 printable characters, such as a UUID. Scoped to the person; replaces `window`.
+          schema: { type: string, maxLength: 255 }
       requestBody:
         required: true
         content:
@@ -344,7 +363,7 @@ paths:
             example:
               capability: token.price
               input: { mint: So11111111111111111111111111111111111111112 }
-              budget_max_minor: 10000
+              max_usd: "0.01"
               provider_policy: { strategy: cheapest }
       responses:
         "200":
@@ -357,7 +376,7 @@ paths:
         "403":
           description: The Spend Pass doesn't allow it (reason codes included).
         "409":
-          description: The intent can't be attempted now (waiting for the person's approval, already committed with nothing kept, held).
+          description: The intent can't be attempted now (waiting for the person's approval, already committed with nothing kept, held), or the Idempotency-Key was used for a different request. `error` is the same sentence MCP returns.
         "422":
           description: No candidate fit the limits; `rejected` says why each was left out.
         "429":

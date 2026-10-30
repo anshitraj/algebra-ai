@@ -12,7 +12,7 @@ For a business it is one API: create a project, issue an API key for the sandbox
 curl -s localhost:8080/api/v1/execute \
   -H "Authorization: Bearer $SPEND_PASS_TOKEN" -H "Content-Type: application/json" \
   -d '{"capability":"token.price","input":{"mint":"So11111111111111111111111111111111111111112"},
-       "budget_max_minor":10000,"provider_policy":{"strategy":"cheapest"}}'
+       "max_usd":"0.01","provider_policy":{"strategy":"cheapest"}}'
 ```
 
 ```jsonc
@@ -29,7 +29,7 @@ curl -s localhost:8080/api/v1/execute \
 }
 ```
 
-The bearer token is a Spend Pass token or an Algebra API key (`alg_sk_…`, which spends through a pass of its own project and environment). Amounts are micro-USDC (3000 = 0.003 USDC). `token.price` is a *class* of work: Algebra prices every provider of it and routes to the best for your strategy (`cheapest`, `fastest` or `auto`), falling back to the next if one fails.
+The bearer token is a Spend Pass token or an Algebra API key (`alg_sk_…`, which spends through a pass of its own project and environment). Send the most it may cost as `max_usd` (a decimal string of dollars) or as `budget_max_minor` (micro-USDC: 10000 = 0.01 USDC); the answer carries both, and its `*_minor` amounts are micro-USDC (3000 = 0.003 USDC). Retries are safe with an `Idempotency-Key` header: the same key and request gets the first answer, never a second payment. `token.price` is a *class* of work: Algebra prices every provider of it and routes to the best for your strategy (`cheapest`, `fastest` or `auto`), falling back to the next if one fails.
 
 ## Why
 

@@ -65,7 +65,7 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 	var req executeRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := decodeJSON(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		writeError(w, err)
 		return
 	}
 	capability, err := econ.NormalizeCapability(req.Capability)
@@ -79,12 +79,18 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ag, executor := caller.ag, caller.executor
+	finishKey, err := a.applyIdempotencyKey(r, caller.ag.UserID, &req)
+	if err != nil {
+		writeIdempotencyError(w, err)
+		return
+	}
 	a.applyDefaultStrategy(r.Context(), ag, executor, &req.ProviderPolicy)
 	candidates, rejected := a.b.Candidates.ResolveFor(r.Context(), ag.UserID, capability, req.Providers, req.Candidates)
 
 	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
 	defer cancel()
 	res, err := a.b.Execution.Do(ctx, app.DoRequest{AgentID: executor, Spec: req.spec(), Candidates: candidates, DiscardResult: discardsResult(req.StoreResult), JobID: caller.jobID, Fresh: req.Fresh, Named: req.Providers})
+	finishKey(err)
 	var created *bool
 	var rep *app.PlanReport
 	if res != nil {
@@ -95,7 +101,7 @@ func (a *API) executeOutcome(w http.ResponseWriter, r *http.Request) {
 	var rej *app.ReservationRejected
 	if errors.As(err, &rej) && rej.Reason == app.RejectApproval && res != nil && res.Intent != nil {
 		writeJSON(w, http.StatusConflict, map[string]any{
-			"error": err.Error(), "reason": rej.Reason, "intent_state": rej.State, "intent_id": res.Intent.ID,
+			"error": app.ExplainRefusal(err, nil).Error(), "reason": rej.Reason, "intent_state": rej.State, "intent_id": res.Intent.ID,
 			"budget_max_minor": res.Intent.BudgetMaxMinor, "capability": res.Intent.Capability,
 		})
 		return
@@ -202,7 +208,7 @@ func (a *API) writeExecution(w http.ResponseWriter, created *bool, rep *app.Plan
 	switch {
 	case errors.As(err, &nr):
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-			"error": err.Error(), "rejected": append(append([]routing.Rejection{}, pre...), nr.Rejected...),
+			"error": app.ExplainRefusal(err, pre).Error(), "rejected": append(append([]routing.Rejection{}, pre...), nr.Rejected...),
 		})
 		return
 	case err != nil && (rep == nil || len(rep.Attempts) == 0):

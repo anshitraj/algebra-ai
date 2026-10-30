@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/project-algebra/algebra/internal/app"
+	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/econ"
 )
 
@@ -27,12 +28,15 @@ import (
 // Approval is a person's: it lives under /me, session only.
 
 type economicSpecRequest struct {
-	Capability     string              `json:"capability"`
-	Input          json.RawMessage     `json:"input"`
-	Quantity       int                 `json:"quantity"`
-	Window         string              `json:"window"`
-	Currency       string              `json:"currency"`
-	BudgetMaxMinor int64               `json:"budget_max_minor"`
+	Capability     string          `json:"capability"`
+	Input          json.RawMessage `json:"input"`
+	Quantity       int             `json:"quantity"`
+	Window         string          `json:"window"`
+	Currency       string          `json:"currency"`
+	BudgetMaxMinor int64           `json:"budget_max_minor"`
+	// MaxUSD is the same ceiling in dollars, as a decimal string ("0.05"): a first call needs no micro-USDC
+	// arithmetic. Send it or budget_max_minor; a JSON number is refused, so an amount is never read as a float.
+	MaxUSD         string              `json:"max_usd"`
 	Constraints    econ.Constraints    `json:"constraints"`
 	ProviderPolicy econ.ProviderPolicy `json:"provider_policy"`
 	TTLSeconds     int                 `json:"ttl_seconds"`
@@ -42,6 +46,25 @@ type economicSpecRequest struct {
 	// RequireApproval asks for the person's yes before paying, whatever the
 	// pass allows (the console's chat sets it when "ask me first" is on).
 	RequireApproval bool `json:"require_approval"`
+}
+
+// validate settles max_usd into BudgetMaxMinor once the body is decoded (decodeJSON calls it).
+func (req *economicSpecRequest) validate() error {
+	if strings.TrimSpace(req.MaxUSD) == "" {
+		return nil
+	}
+	minor, err := chain.ParseUnits(req.MaxUSD, chain.USDCDecimals)
+	if err != nil || minor <= 0 {
+		return badRequest(`max_usd must be a positive amount of dollars as a decimal string, such as "0.05" (at most 6 decimals)`)
+	}
+	if c := strings.TrimSpace(req.Currency); c != "" && !strings.EqualFold(c, "USDC") {
+		return badRequest("max_usd is an amount of USDC: leave currency out or set it to USDC, or send budget_max_minor")
+	}
+	if req.BudgetMaxMinor != 0 && req.BudgetMaxMinor != minor {
+		return badRequest("max_usd and budget_max_minor name different amounts: send one of them")
+	}
+	req.BudgetMaxMinor = minor
+	return nil
 }
 
 func (req economicSpecRequest) spec() econ.Spec {
@@ -60,16 +83,16 @@ func writeEconError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &rej):
 		writeJSON(w, http.StatusConflict, map[string]any{
-			"error": err.Error(), "reason": rej.Reason, "intent_state": rej.State,
+			"error": app.ExplainRefusal(err, nil).Error(), "reason": rej.Reason, "intent_state": rej.State,
 			"duplicate_prevented": rej.Duplicate, "reason_codes": rej.ReasonCodes,
 		})
 	case errors.As(err, &denied):
-		writeJSON(w, http.StatusForbidden, map[string]any{"error": err.Error(), "reason_codes": denied.ReasonCodes})
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": app.ExplainRefusal(err, nil).Error(), "reason_codes": denied.ReasonCodes})
 	case errors.Is(err, app.ErrExecutionFrozen):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "reason": app.RejectUnknown})
 	case errors.Is(err, app.ErrNoRoute):
 		var nr *app.NoRoute
-		body := map[string]any{"error": err.Error()}
+		body := map[string]any{"error": app.ExplainRefusal(err, nil).Error()}
 		if errors.As(err, &nr) {
 			body["rejected"] = nr.Rejected
 		}
@@ -98,7 +121,7 @@ func (a *API) createEconomicIntent(w http.ResponseWriter, r *http.Request) {
 	}
 	var req economicSpecRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		writeError(w, err)
 		return
 	}
 	v, created, err := a.b.Economic.CreateIntent(r.Context(), ag.ID, req.spec())

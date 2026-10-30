@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -328,43 +327,8 @@ func toMap(v any) (map[string]any, error) {
 	return m, nil
 }
 
-// describeExecutionError says what to do next in terms an agent can act on.
+// describeExecutionError says what to do next in terms an agent can act on: the
+// same words REST answers with (app.ExplainRefusal).
 func describeExecutionError(err error, rejected []routing.Rejection) error {
-	var rej *app.ReservationRejected
-	var denied *app.AuthorityDenied
-	var nr *app.NoRoute
-	switch {
-	case errors.As(err, &rej):
-		switch rej.Reason {
-		case app.RejectApproval:
-			return fmt.Errorf("the person has to approve this first: it is waiting in their Algebra console. Ask them to approve it, then call algebra_execute again with the same request")
-		case app.RejectCommitted:
-			return fmt.Errorf("already_committed: this exact request was already paid for, and its answer is no longer kept (or you asked for it not to be). Algebra never charges twice. Use the result you were given, call algebra_status in case it is still there, or pass a new `window` to buy it again")
-		case app.RejectUnknown, app.RejectExecuting, app.RejectHeld:
-			return fmt.Errorf("%s: an earlier attempt at this request may still be settling. Do not retry; call algebra_status later", rej.Reason)
-		case app.RejectClosed:
-			return fmt.Errorf("this request has expired or was cancelled")
-		}
-		return err
-	case errors.As(err, &denied):
-		return fmt.Errorf("the person's limits don't allow this (%s). Algebra will not pay it", strings.Join(denied.ReasonCodes, ", "))
-	case errors.As(err, &nr):
-		all := append(append([]routing.Rejection{}, rejected...), nr.Rejected...)
-		parts := make([]string, 0, len(all))
-		for _, r := range all {
-			p := r.Code
-			if r.Provider != "" {
-				p = r.Provider + ": " + r.Code
-			}
-			if r.Detail != "" {
-				p += " (" + r.Detail + ")"
-			}
-			parts = append(parts, p)
-		}
-		if len(parts) == 0 {
-			parts = append(parts, "no provider is configured for this capability; pass `providers` or `candidates`")
-		}
-		return fmt.Errorf("no provider could do this within the limits: %s", strings.Join(parts, "; "))
-	}
-	return err
+	return app.ExplainRefusal(err, rejected)
 }

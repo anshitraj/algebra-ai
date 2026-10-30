@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/routing"
 )
 
@@ -113,10 +114,14 @@ type ExecutionOutcome struct {
 	PendingReconciliation bool   `json:"pending_reconciliation"`
 	Stopped               string `json:"stopped"`
 	// Summary is the plain-language state of the intent.
-	Summary  string              `json:"summary"`
-	Intent   *IntentView         `json:"intent,omitempty"`
-	Attempts []AttemptOutcome    `json:"attempts"`
-	Rejected []routing.Rejection `json:"rejected,omitempty"`
+	Summary string `json:"summary"`
+	// BudgetMaxUSD and PaidUSD are the intent's ceiling and what settled, in dollars as decimal strings: the same
+	// amounts as intent.budget_max_minor and intent.committed_minor, for a USDC intent.
+	BudgetMaxUSD string              `json:"budget_max_usd,omitempty"`
+	PaidUSD      string              `json:"paid_usd,omitempty"`
+	Intent       *IntentView         `json:"intent,omitempty"`
+	Attempts     []AttemptOutcome    `json:"attempts"`
+	Rejected     []routing.Rejection `json:"rejected,omitempty"`
 	// Routing says how the provider was chosen: the strategy and every offer
 	// that was priced and ranked, with the reasons.
 	Routing *RoutingSummary `json:"routing,omitempty"`
@@ -154,6 +159,10 @@ func OutcomeOf(created *bool, rep *PlanReport) ExecutionOutcome {
 	o.Intent, o.Rejected = rep.Intent, rep.Rejected
 	if rep.Intent != nil {
 		o.Summary, o.Receipt = rep.Intent.Summary, rep.Intent.Receipt
+		if rep.Intent.Currency == "USDC" {
+			o.BudgetMaxUSD = chain.FormatUnits(rep.Intent.BudgetMaxMinor, chain.USDCDecimals)
+			o.PaidUSD = chain.FormatUnits(rep.Intent.CommittedMinor, chain.USDCDecimals)
+		}
 	}
 	for _, a := range rep.Attempts {
 		o.Attempts = append(o.Attempts, AttemptOutcome{Result: a.Result, Quality: a.Quality})

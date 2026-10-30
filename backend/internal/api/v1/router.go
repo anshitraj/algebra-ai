@@ -472,11 +472,17 @@ func decodeJSON(r *http.Request, v any) error {
 	defer r.Body.Close()
 	err := json.NewDecoder(r.Body).Decode(v)
 	var tooBig *http.MaxBytesError
+	var wrongType *json.UnmarshalTypeError
 	switch {
 	case err == nil:
+		if c, ok := v.(interface{ validate() error }); ok {
+			return c.validate()
+		}
 		return nil
 	case errors.As(err, &tooBig):
 		return requestTooLargeError{}
+	case errors.As(err, &wrongType) && (wrongType.Field == "max_usd" || strings.HasSuffix(wrongType.Field, ".max_usd")):
+		return badRequest(`max_usd must be a decimal string such as "0.05", not a number`)
 	default:
 		return badRequestError{msg: "invalid request body"}
 	}

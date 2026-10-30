@@ -33,7 +33,7 @@ func (a *API) simulatePolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := decodeJSON(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		writeError(w, err)
 		return
 	}
 	capability, err := econ.NormalizeCapability(req.Capability)

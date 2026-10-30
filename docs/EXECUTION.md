@@ -105,7 +105,7 @@ or reshapes the class's fields into its own. `GET /api/v1/classes` and `/classes
 
 | | |
 |---|---|
-| `POST /api/v1/execute` | Ask for an outcome and have it done. Body: the intent spec (`capability`, `input`, `budget_max_minor`, `window`, `provider_policy.strategy`, `constraints`, …) plus `providers`, `candidates` (endpoints the agent found) and `store_result`. |
+| `POST /api/v1/execute` | Ask for an outcome and have it done. Body: the intent spec (`capability`, `input`, `max_usd` or `budget_max_minor`, `window`, `provider_policy.strategy`, `constraints`, …) plus `providers`, `candidates` (endpoints the agent found) and `store_result`. |
 | `POST /api/v1/policy/simulate` | The dry run: takes what `/execute` takes plus `live_quotes`, answers ALLOW / REQUIRE_APPROVAL / DENY with the reasons, the plan and what each provider would meet. Creates nothing, pays nothing. |
 | `POST /api/v1/economic-intents/{id}/execute` | Run an intent that already exists (for example one the person just approved). |
 | `GET /api/v1/economic-intents/{id}/executions` | Attempts with cost, latency, payment, delivery and quality. |
@@ -122,6 +122,21 @@ being established (do not retry); `502` every provider tried failed and nothing 
 `409`/`403` the intent can't be attempted (held, committed with nothing kept, approval needed, denied); `429` too many web searches.
 
 Configuration: `ECONOMIC_SANDBOX`, `ECONOMIC_PROVIDERS`, `RESULT_RETENTION`, `RESULT_MAX_BYTES`, the catalog and Solana settings below (all in `.env.example`).
+
+### The request contract: dollars, and a key that makes a retry safe
+
+**Dollars.** The most a request may cost is `max_usd`, a decimal string of dollars with at most 6 decimals (`"0.05"`), or `budget_max_minor` in micro-USDC (50000):
+send one, and when both are sent they must agree. A JSON number for `max_usd` is refused, so an amount is never read as a float. It works on `/execute`, `/policy/simulate`
+and the intent routes. The answer says both: `budget_max_usd` and `paid_usd` next to `intent.budget_max_minor` and `intent.committed_minor`.
+
+**`Idempotency-Key`.** A header of 1 to 255 printable characters (a UUID will do) on `POST /api/v1/execute` makes the request's identity the key: it replaces
+`window`, so a retry that changes the window by accident can't buy twice. Send the same key and the same request again, after a timeout or a dropped connection, and
+the answer is the first one (`replayed: true`, nothing paid). The same key with a different request (another input, capability or amount; the way the amount is
+spelled doesn't count) is refused with `409` and `reason: idempotency_key_reused`, and keys are kept apart per person. A request refused as malformed doesn't use its key
+up. `window` stays for the cases without a key. Over MCP the `window` is still the identity. `TestIdempotencyKeyOverHTTP_*`, `TestMaxUSDOverHTTP_*`.
+
+**One wording.** The `error` of a refusal (needs approval, already committed, may still be settling, outside the person's limits, no provider could do it) is the same
+sentence over REST and over MCP (`app.ExplainRefusal`): `TestRefusalsReadTheSameOverRESTAndMCP`.
 
 ### Results are kept so that asking again works
 
