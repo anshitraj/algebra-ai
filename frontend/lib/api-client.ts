@@ -3,33 +3,14 @@
 // authenticated by the HttpOnly session cookie; no token ever lives in
 // JavaScript.
 
-import type {
-  AuthProviders,
-  EconIntent,
-  EconStats,
-  IssuedPass,
-  KeptResult,
-  NewPass,
-  NotificationSettings,
-  OnboardingAnswers,
-  PassConnect,
-  ProviderDetail,
-  ProviderListing,
-  RailStatus,
-  ReceiptVerification,
-  SessionInfo,
-  SpendPass,
-  User,
-  FaucetDrop,
-  FaucetStatus,
-  WalletsView,
-} from "./types";
+import type { AuthProviders, EconIntent, EconStats, IssuedPass, KeptResult, NewPass, NotificationSettings, OnboardingAnswers, PassConnect, ProviderDetail, ProviderListing, RailStatus, ReceiptVerification, SessionInfo, SpendPass, User, JobPass, AgentPnL, ReplayReport, ToolKey } from "./types";
 import type {
   APIKey,
   Environment,
   IntelChange,
   IntelEndpoint,
   IntelEndpointDetail,
+  IntelProviderFace,
   IntelQuery,
   IntelStatus,
   IssuedKey,
@@ -137,9 +118,14 @@ export function signIn(email: string, password: string) {
   return apiFetch<{ user: User }>("/api/v1/auth/login", { method: "POST", body: { email, password } });
 }
 
-/** Trades the identity token Privy issued at sign-in for an Algebra session. */
-export function signInWithPrivy(identityToken: string) {
-  return apiFetch<{ user: User }>("/api/v1/auth/privy", { method: "POST", body: { identity_token: identityToken } });
+/** Emails a six-digit sign-in code to an address. resend_in is the seconds before another may be asked for. */
+export function sendLoginCode(email: string) {
+  return apiFetch<{ ok: boolean; resend_in: number }>("/api/v1/auth/code/send", { method: "POST", body: { email } });
+}
+
+/** Signs in with the code emailed to an address, making the account the first time. */
+export function verifyLoginCode(email: string, code: string) {
+  return apiFetch<{ user: User }>("/api/v1/auth/code/verify", { method: "POST", body: { email, code } });
 }
 
 /** One click, no signup: a fresh demo account that pays on a simulated rail. */
@@ -226,6 +212,55 @@ export function revokePass(id: string) {
   return apiFetch<{ ok: boolean }>(`/api/v1/me/passes/${encodeURIComponent(id)}/revoke`, { method: "POST" });
 }
 
+// --- Job Passes: a task's budget inside a Spend Pass ---
+
+export function listJobs(passId?: string, limit = 20) {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (passId) q.set("spend_pass_id", passId);
+  return apiFetch<{ jobs: JobPass[] }>(`/api/v1/me/jobs?${q}`);
+}
+
+/** Records what a task is worth (null clears it): the other side of its P&L. */
+export function setJobValue(id: string, valueMinor: number | null) {
+  return apiFetch<JobPass>(`/api/v1/me/jobs/${encodeURIComponent(id)}/value`, { method: "POST", body: { value_minor: valueMinor } });
+}
+
+/** An agent's money over the last days. */
+export function getPassPnL(passId: string, days = 30) {
+  return apiFetch<AgentPnL>(`/api/v1/me/passes/${encodeURIComponent(passId)}/pnl?days=${days}`);
+}
+
+// --- web tools run with the person's own API keys ---
+
+/** Every vendor, and whether a key is saved for it. The key itself never comes back. */
+export function listToolKeys() {
+  return apiFetch<{ tools: ToolKey[] }>("/api/v1/me/tool-keys");
+}
+
+/** Saves (or replaces) the key for a vendor. It is sealed on the server and sent only to that vendor. */
+export function saveToolKey(vendor: string, key: string) {
+  return apiFetch<{ tools: ToolKey[] }>(`/api/v1/me/tool-keys/${encodeURIComponent(vendor)}`, { method: "PUT", body: { key } });
+}
+
+export function deleteToolKey(vendor: string) {
+  return apiFetch<{ tools: ToolKey[] }>(`/api/v1/me/tool-keys/${encodeURIComponent(vendor)}`, { method: "DELETE" });
+}
+
+/** The task's purchases run again on paper against misbehaving sellers. Nothing is paid. */
+export function replayJob(id: string) {
+  return apiFetch<ReplayReport>(`/api/v1/me/jobs/${encodeURIComponent(id)}/replay`, { method: "POST" });
+}
+
+/** "Test this pass": the pass's rules against sellers that misbehave, on paper. Nothing is paid. */
+export function replayPass(id: string) {
+  return apiFetch<ReplayReport>(`/api/v1/me/passes/${encodeURIComponent(id)}/replay`, { method: "POST" });
+}
+
+/** Stops a job and every job beneath it; what they didn't use goes back to the Spend Pass. */
+export function revokeJob(id: string) {
+  return apiFetch<JobPass>(`/api/v1/me/jobs/${encodeURIComponent(id)}/revoke`, { method: "POST" });
+}
+
 // --- the catalogs of paid APIs (public) ---
 
 export function listProviders(params: { q?: string; category?: string; source?: string; network?: string; limit?: number; offset?: number } = {}) {
@@ -245,24 +280,118 @@ export function getProvider(id: string) {
   return apiFetch<ProviderDetail>(`/api/v1/providers/${id.split("/").map(encodeURIComponent).join("/")}`);
 }
 
-/** Whether this server has a devnet faucet, what a drop is, and the wallet it would go to. */
-export function getFaucet() {
-  return apiFetch<FaucetStatus>("/api/v1/me/faucet");
-}
-
-/** Tops up one of the person's own wallets (default: the one a drop would go to) with devnet SOL and USDC. */
-export function requestFaucet(address?: string) {
-  return apiFetch<{ drop: FaucetDrop }>("/api/v1/me/faucet", { method: "POST", body: address ? { address } : {} });
-}
-
-/** The signed-in person's own wallets and what each holds on a cluster. force skips the server's few-second cache. */
-export function myWallets(network: string, force = false) {
-  return apiFetch<WalletsView>(`/api/v1/me/wallets?network=${encodeURIComponent(network)}${force ? "&refresh=1" : ""}`);
-}
-
 /** Mainnet and devnet: whether Algebra can pay on each, from which wallet, with what balance. */
 export function listRails() {
   return apiFetch<{ rails: RailStatus[]; sandbox: boolean }>("/api/v1/rails");
+}
+
+/** The account's Testnet credits (404 when the server runs no Testnet). */
+export type TestCredits = {
+  network: string;
+  usdc_granted_minor: number;
+  usdc_used_minor: number;
+  usdc_left_minor: number;
+  sol_lamports: number;
+};
+
+export function getTestCredits() {
+  return apiFetch<TestCredits>("/api/v1/me/credits");
+}
+
+// --- the owner's vault (docs/WALLET.md): public addresses, balances, signed transactions only ---
+
+export type VaultRecord = { solana_address: string; evm_address: string; created_at: string; updated_at: string };
+export type VaultChainInfo = { id: string; name: string; kind: "solana" | "evm"; test: boolean; chain_id?: number; usdc: string; native_symbol: string; native_decimals: number; deposits: boolean; available: boolean };
+export type VaultBalance = { chain: string; address: string; usdc_minor: string; native_minor: string; native_symbol: string; ok: boolean };
+export type WithdrawParams = {
+  chain: string;
+  blockhash?: string;
+  recipient_has_token_account?: boolean;
+  evm?: { chain_id: number; nonce: number; max_priority_fee_per_gas: number; max_fee_per_gas: number; gas_limit: number };
+};
+
+export function getVault() {
+  return apiFetch<{ vault: VaultRecord | null; chains: VaultChainInfo[] }>("/api/v1/me/vault");
+}
+
+export function registerVault(proof: { solana_address: string; evm_address: string; message: string; solana_signature: string; evm_signature: string }) {
+  return apiFetch<{ vault: VaultRecord }>("/api/v1/me/vault", { method: "POST", body: proof });
+}
+
+export function getVaultBalances(network: "testnet" | "mainnet", force = false) {
+  return apiFetch<{ balances: VaultBalance[] }>(`/api/v1/me/vault/balances?network=${network}${force ? "&force=1" : ""}`);
+}
+
+export function prepareWithdraw(req: { chain: string; to: string; amount_minor: string }) {
+  return apiFetch<WithdrawParams>("/api/v1/me/vault/withdraw/prepare", { method: "POST", body: req });
+}
+
+export function broadcastVault(req: { chain: string; raw: string }) {
+  return apiFetch<{ hash: string }>("/api/v1/me/vault/broadcast", { method: "POST", body: req });
+}
+
+/**
+ * What agents may spend from the vault on one network: an SPL allowance to
+ * Algebra's payer (the delegate). left_minor is what the token program still
+ * lets it move, read from the chain; active is the owner's choice that
+ * payments there come from the vault.
+ */
+export type VaultAllowance = {
+  network: string;
+  cluster: string;
+  delegate: string;
+  mint: string;
+  token_account: string;
+  active: boolean;
+  approved_minor: number;
+  left_minor: number;
+  balance_minor: number;
+  read: boolean;
+  has_token_account: boolean;
+  other_delegate?: string;
+  signature?: string;
+  updated_at?: string;
+  max_minor: number;
+};
+export type AllowanceParams = {
+  network: string;
+  fee_payer: string;
+  delegate: string;
+  mint: string;
+  decimals: number;
+  token_account: string;
+  blockhash: string;
+  compute_unit_limit: number;
+  compute_unit_price: number;
+  max_minor: number;
+};
+
+export function getVaultAllowances() {
+  return apiFetch<{ allowances: VaultAllowance[] }>("/api/v1/me/vault/allowances");
+}
+
+/** What a USDC permit on Base or Arc needs: the browser signs it, Algebra submits it and pays the gas. */
+export type PermitParams = {
+  network: string;
+  chain_id: number;
+  token: string;
+  name: string;
+  version: string;
+  owner: string;
+  spender: string;
+  nonce: string;
+  deadline: number;
+  max_minor: number;
+};
+
+/** Solana answers with a transaction to build; Base and Arc with a permit to sign. */
+export function prepareAllowance(network: string) {
+  return apiFetch<AllowanceParams | { kind: "permit"; permit: PermitParams }>("/api/v1/me/vault/allowance/prepare", { method: "POST", body: { network } });
+}
+
+/** An approve or revoke the vault signed (Solana), or a permit (Base, Arc); Algebra checks it, pays its fee and sends it. */
+export function submitAllowance(req: { network: string; transaction: string } | { network: string; value_minor: number; deadline: number; signature: string }) {
+  return apiFetch<{ signature: string; pending: boolean; allowance: VaultAllowance }>("/api/v1/me/vault/allowance", { method: "POST", body: req });
 }
 
 // --- economic intents ---
@@ -413,7 +542,7 @@ export function getIntelStatus() {
 export function listIntelEndpoints(q: IntelQuery = {}) {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") qs.set(k, String(v));
-  return apiFetch<{ endpoints: IntelEndpoint[]; total: number }>(`/api/v1/intel/endpoints?${qs}`);
+  return apiFetch<{ endpoints: IntelEndpoint[]; total: number; providers?: Record<string, IntelProviderFace> }>(`/api/v1/intel/endpoints?${qs}`);
 }
 
 export function getIntelEndpoint(id: string) {

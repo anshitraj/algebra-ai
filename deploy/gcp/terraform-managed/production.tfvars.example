@@ -1,0 +1,15 @@
+# Public identifiers only. Secrets already exist in Secret Manager.
+project_id               = "your-project"
+region                   = "asia-south1"
+domain                   = "app.yourdomain.com"
+api_image                = "asia-south1-docker.pkg.dev/your-project/algebra/api@sha256:REPLACE"
+web_image                = "asia-south1-docker.pkg.dev/your-project/algebra/web@sha256:REPLACE"
+api_url                  = "https://REPLACE.run.app"
+database_url_secret      = "algebra-database-url"
+resend_key_secret        = "algebra-resend-key"
+master_ciphertext_secret = "algebra-master-ciphertext"
+mainnet_rpc_secret       = "algebra-mainnet-rpc"
+email_from               = "Algebra <no-reply@yourdomain.com>"
+alert_email              = "ops@yourdomain.com"
+privy_app_id             = "REPLACE"
+web_secrets              = { GEMINI_API_KEY = "algebra-web-gemini" }

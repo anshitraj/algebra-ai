@@ -120,6 +120,9 @@ export type IntelEndpoint = {
   levels: IntelLevels;
 };
 
+/** How its catalog presents an endpoint's provider (third-party text). */
+export type IntelProviderFace = { fqn: string; name: string; description?: string; website?: string; logo_url?: string };
+
 export type IntelChange = {
   id: string;
   endpoint_id: string;

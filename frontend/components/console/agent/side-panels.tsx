@@ -7,11 +7,8 @@ import type { EconIntent, RailStatus, SpendPass } from "@/lib/types";
 import { formatUSDC } from "@/lib/money";
 import { networkLabel } from "@/lib/network";
 import { approvalRule } from "@/lib/pass-rules";
-import { IconGauge, IconLock, IconShield, IconTag, IconWallet } from "@/components/icons";
+import { IconGauge, IconShield, IconTag } from "@/components/icons";
 import { ComingSoonChains, PoweredBySolana } from "@/components/chain-logos";
-import { useNetwork } from "@/lib/network";
-import { useSession } from "@/lib/session";
-import { getOnchainPass, type OnchainPassView } from "@/lib/onchain-pass";
 
 function PanelHeading({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -63,7 +60,7 @@ export function PassPanel({
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <PanelHeading action={<Link href="/console/passes" className="text-xs font-medium text-primary hover:underline">Passes</Link>}>
+      <PanelHeading action={<Link href="/console/firewall" className="text-xs font-medium text-primary hover:underline">Passes</Link>}>
         Spend Pass
       </PanelHeading>
       {pass === undefined ? (
@@ -124,9 +121,12 @@ export function PassPanel({
         </>
       ) : (
         <>
-          <PanelHeading>{`Your wallet · ${networkLabel(network)}`}</PanelHeading>
-          <YourWallet />
-          {pass && <VaultRow passId={pass.id} network={network} />}
+          <PanelHeading>{networkLabel(network)}</PanelHeading>
+          <p className="border-y border-border px-5 py-3 text-xs leading-relaxed text-muted">
+            {network === "solana-devnet"
+              ? "Algebra pays from its own test wallet on Solana's test network, inside this pass's limits. Test USDC: nothing real moves."
+              : "Mainnet is read-only for now: Algebra can find and price providers, but it doesn't make real payments yet."}
+          </p>
         </>
       )}
 
@@ -206,112 +206,5 @@ export function RecentCallsPanel({ refreshKey }: { refreshKey: number }) {
         </ul>
       )}
     </div>
-  );
-}
-
-const shortAddr = (a: string) => (a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a);
-
-/** The person's own wallet (the one Privy made at sign-in) and what it holds here. */
-function YourWallet() {
-  const { user } = useSession();
-  const { wallets } = useNetwork();
-  const mine = user?.wallets?.find((w) => w.chain === "solana" && w.kind === "embedded") ?? user?.wallets?.find((w) => w.chain === "solana");
-  const held = mine ? wallets?.wallets.find((w) => w.address === mine.address) : undefined;
-  return (
-    <div className="flex gap-3 border-y border-border px-5 py-3">
-      <span className="mt-0.5 text-muted">
-        <IconWallet size={16} />
-      </span>
-      {!mine ? (
-        <p className="text-xs leading-relaxed text-muted">No wallet on your account yet. Sign out and sign in again with your email, or with an external wallet, to get one.</p>
-      ) : (
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="font-mono text-xs text-foreground" title={mine.address}>
-              {shortAddr(mine.address)}
-            </span>
-            <span className="shrink-0 font-mono text-sm text-primary tabular-nums">{held?.ok ? formatUSDC(held.usdc_minor) : "…"}</span>
-          </div>
-          <p className="mt-1 text-xs leading-snug text-muted">
-            {held?.ok ? `${(held.sol_lamports / 1e9).toLocaleString("en-US", { maximumFractionDigits: 4 })} SOL for fees · ` : ""}
-            {mine.kind === "embedded" ? "Privy wallet" : "your wallet"}. Hover it at the top right to fund it.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** The pass's vault on Solana: the USDC locked in the program, which only the pass's limits can release. */
-function VaultRow({ passId, network }: { passId: string; network: string }) {
-  const [view, setView] = useState<OnchainPassView | null | undefined>(undefined);
-  // A pass with no vault is read once, and again when the tab is looked at: polling a
-  // vault that doesn't exist every 20 seconds only spent the session's request limit.
-  // While a vault exists its balance moves with each payment, so that one is kept fresh.
-  const hasVault = view?.exists === true;
-  useEffect(() => {
-    let live = true;
-    const read = () =>
-      getOnchainPass(passId)
-        .then((v) => live && setView(v))
-        .catch(() => live && setView((cur) => cur ?? null));
-    void read();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void read();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    const id = hasVault ? setInterval(() => void (document.visibilityState === "visible" && read()), 30_000) : undefined;
-    return () => {
-      live = false;
-      document.removeEventListener("visibilitychange", onVisible);
-      if (id) clearInterval(id);
-    };
-  }, [passId, hasVault]);
-  const here = view && view.binding.network === network;
-  return (
-    <>
-      <PanelHeading>Solana vault</PanelHeading>
-      <div className="flex gap-3 border-y border-border px-5 py-3">
-        <span className="mt-0.5 text-muted">
-          <IconLock size={16} />
-        </span>
-        {view === undefined ? (
-          <div className="h-8 flex-1 animate-pulse rounded-lg bg-border/60" />
-        ) : !here || !view.exists ? (
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-foreground">No vault yet</p>
-            <p className="mt-0.5 text-xs leading-snug text-muted">
-              Lock USDC from your wallet in a Solana program, so this pass can only spend it within its limits.{" "}
-              <Link href={`/console/passes#pass-${encodeURIComponent(passId)}`} className="font-medium text-primary hover:underline">
-                Create the vault
-              </Link>
-            </p>
-          </div>
-        ) : view.agent_changed ? (
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-foreground">Made for an earlier Algebra payer key</p>
-            <p className="mt-0.5 text-xs leading-snug text-muted">
-              This vault can&apos;t fund payments any more. Your USDC is safe: withdraw it and make a new vault.{" "}
-              <Link href="/console/passes" className="font-medium text-primary hover:underline">
-                Open the pass
-              </Link>
-            </p>
-          </div>
-        ) : (
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline justify-between gap-3">
-              <a href={view.explorer} target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-foreground hover:underline" title={view.binding.address}>
-                {shortAddr(view.binding.address)}
-              </a>
-              <span className="shrink-0 font-mono text-sm text-primary tabular-nums">{formatUSDC(view.vault_minor ?? 0)}</span>
-            </div>
-            <p className="mt-1 text-xs leading-snug text-muted">
-              {view.state?.revoked ? "Revoked on chain" : view.state?.frozen ? "Frozen on chain" : "Live on chain"} ·{" "}
-              {formatUSDC(view.state?.spent ?? 0)} spent of {formatUSDC(view.state?.total_budget ?? 0)}
-            </p>
-          </div>
-        )}
-      </div>
-    </>
   );
 }

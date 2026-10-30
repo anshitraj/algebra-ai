@@ -7,14 +7,15 @@
   color-scheme: light;
   --color-surface: #ffffff;
   --color-foreground: #171717;
-  --color-muted: #666666;
+  --color-muted: #777b8e;
   --color-primary: #171717;
-  --color-primary-tint: #f0f0eb;
-  --color-border: #deded7;
-  --color-border-strong: #c9c9c2;
+  --color-primary-tint: #f4f4f8;
+  --color-border: #eeedf3;
+  --color-border-strong: #dcdde6;
+  position: relative;
   container-type: inline-size;
   width: 100%;
-  max-width: 720px;
+  max-width: 920px;
   margin-inline: auto;
   border: 1px solid var(--color-border-strong);
   background: var(--color-surface);
@@ -31,15 +32,15 @@
 .input {
   display: block;
   width: 100%;
-  min-height: 80px;
+  min-height: 48px;
   max-height: min(200px, 25dvh);
   resize: none;
-  padding: 16px;
+  padding: 14px 16px 6px;
   border: 0;
   border-radius: 10px 10px 0 0;
   background: transparent;
   color: var(--color-foreground);
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -59,8 +60,7 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 8px;
-  border-top: 1px solid var(--color-border);
+  padding: 4px 8px 8px;
 }
 
 .controls {
@@ -77,11 +77,13 @@
   max-width: 100%;
 }
 
+.controls button { min-height: 32px; }
+
 .pass {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 44px;
+  height: 32px;
   padding-inline: 8px;
   border-radius: 8px;
   color: var(--color-muted);
@@ -93,7 +95,7 @@
 
 .pass select {
   min-width: 0;
-  max-width: 200px;
+  max-width: 160px;
 }
 
 .hint {
@@ -110,8 +112,8 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   background: var(--color-primary);
   color: var(--color-surface);
@@ -127,7 +129,7 @@
 }
 
 .note {
-  max-width: 720px;
+  max-width: 920px;
   margin: 8px auto 0;
   padding-inline: 4px;
   color: var(--color-muted);
@@ -142,6 +144,6 @@
 }
 
 @media (min-width: 640px) {
-  .dock { padding: 0 20px 20px; }
-  .note { font-size: 12px; }
+  .dock { padding: 0 28px 12px; }
+  .note { font-size: 10px; }
 }

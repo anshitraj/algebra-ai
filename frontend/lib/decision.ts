@@ -19,6 +19,7 @@ export const DECISION_WORDS: Record<Decision, { label: string; sentence: string 
 
 const REASONS: Record<string, string> = {
   ASKED_FOR_APPROVAL: "you asked to approve every payment",
+  REPEAT_PURCHASE: "the same thing was bought 5 times in 10 minutes, which looks like a loop",
   PASS_FROZEN: "the pass is frozen by the kill switch",
   PASS_RATE_LIMITED: "the pass made as many paid calls this minute as it may",
   PASS_NEW_PROVIDER_NEEDS_APPROVAL: "a provider you've never paid needs your approval",
@@ -35,6 +36,9 @@ const REASONS: Record<string, string> = {
   NETWORK_NOT_ALLOWED: "the call isn't allowed on that network",
   ENVIRONMENT_NETWORK_MISMATCH: "the network isn't one this project's environment may use",
   MAINNET_EXECUTION_DISABLED: "real-money mainnet payments are switched off on this server",
+  TEST_MONEY_ACCOUNT_LIMIT: "you've used today's Testnet payments; they come back within 24 hours",
+  TEST_CREDITS_EXHAUSTED: "your 10 USDC of Testnet credits are used up",
+  TEST_MONEY_DAY_LIMIT: "Algebra's shared test wallet has made all its payments for today; try again later",
   ONCHAIN_PASS_REQUIRED: "payments on this network come from a Spend Pass vault, and this pass has none",
   ONCHAIN_PASS_MISSING: "the pass's vault is gone: its owner closed it on Solana",
   ONCHAIN_PASS_OTHER_NETWORK: "the pass's vault is on another network",
@@ -43,6 +47,8 @@ const REASONS: Record<string, string> = {
   ONCHAIN_PASS_EXPIRED: "the pass has expired on Solana",
   ONCHAIN_PASS_LIMIT: "over a limit the pass enforces on Solana",
   ONCHAIN_PASS_UNFUNDED: "the vault holds less than this costs",
+  VAULT_ALLOWANCE_LOW: "what agents may still spend from your Vault is less than this costs",
+  VAULT_UNFUNDED: "your Vault holds less USDC than this costs",
   ONCHAIN_PASS_AGENT_CHANGED: "the vault was made for an earlier Algebra payer key, so it can't fund payments any more",
   PROVIDER_BLOCKED: "the provider is blocked",
   PAYEE_CHANGED: "the provider asked to be paid at a different address than the one pinned for it",
@@ -64,12 +70,14 @@ export function reasonLine(raw: string): { code: string; text: string } {
 export function vaultFix(reasons: string[], passId?: string): { text: string; action: string; href: string } | null {
   const codes = reasons.map((r) => r.split(":")[0].trim());
   const has = (...c: string[]) => codes.find((x) => c.includes(x));
-  // The Spend passes page, scrolled to this pass when it is known.
-  const href = passId ? `/console/passes#pass-${encodeURIComponent(passId)}` : "/console/passes";
+  // The Spend firewall page, scrolled to this pass when it is known.
+  const href = passId ? `/console/firewall#pass-${encodeURIComponent(passId)}` : "/console/firewall";
   if (has("ONCHAIN_PASS_REQUIRED", "ONCHAIN_PASS_MISSING", "ONCHAIN_PASS_OTHER_NETWORK")) {
     return { text: "Payments on this network come from a Spend Pass vault, and this pass has none yet.", action: "Create the vault", href };
   }
   if (has("ONCHAIN_PASS_UNFUNDED")) return { text: "The vault holds less than this costs.", action: "Add USDC to the vault", href };
+  if (has("VAULT_ALLOWANCE_LOW")) return { text: "What agents may still spend from your Vault is less than this costs.", action: "Raise the limit", href: "/console/vault" };
+  if (has("VAULT_UNFUNDED")) return { text: "Your Vault holds less USDC than this costs.", action: "Deposit USDC", href: "/console/vault" };
   if (has("ONCHAIN_PASS_AGENT_CHANGED")) {
     return { text: "This vault was made for an earlier Algebra payer key and can't fund payments. Your USDC is safe: withdraw it and make a new vault.", action: "Open the pass", href };
   }

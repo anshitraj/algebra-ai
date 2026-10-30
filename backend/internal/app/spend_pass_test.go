@@ -282,7 +282,7 @@ func TestSpendPass_RefusesWhatThePassDoesntAllow(t *testing.T) {
 // fakeEconSpend is what economic intents have used, by pass.
 type fakeEconSpend map[string]int64
 
-func (f fakeEconSpend) PassSpend(_ context.Context, passID string, _ time.Time) (int64, error) {
+func (f fakeEconSpend) PassSpend(_ context.Context, passID string, _, _ time.Time) (int64, error) {
 	return f[passID], nil
 }
 

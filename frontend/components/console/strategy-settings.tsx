@@ -311,7 +311,7 @@ export function CompareStrategies({
         <div className={styles.noPass}>
           <IconShield size={20} />
           <p>A USDC Spend Pass is needed to test your route.</p>
-          <Link href="/console/passes">
+          <Link href="/console/firewall">
             Create a Spend Pass <IconArrowRight size={13} />
           </Link>
         </div>

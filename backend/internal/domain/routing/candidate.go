@@ -122,7 +122,10 @@ type History struct {
 	// SuccessRate is the share of attempts that ended in a verified delivery.
 	SuccessRate float64 `json:"success_rate"`
 	// ValidRate is the share of deliveries that passed schema validation.
-	ValidRate    float64   `json:"valid_rate"`
+	ValidRate float64 `json:"valid_rate"`
+	// WastedRate is the share of attempts that were paid for and brought back
+	// nothing usable: money spent for no answer (see accepted.go).
+	WastedRate   float64   `json:"wasted_rate"`
 	P50LatencyMS int       `json:"p50_latency_ms"`
 	P95LatencyMS int       `json:"p95_latency_ms"`
 	AvgQuality   float64   `json:"avg_quality"` // 0-100
@@ -135,7 +138,7 @@ func (h History) Validate() error {
 	switch {
 	case h.Calls < 0:
 		return errors.New("history calls can't be negative")
-	case !unit(h.SuccessRate) || !unit(h.ValidRate):
+	case !unit(h.SuccessRate) || !unit(h.ValidRate) || !unit(h.WastedRate) || h.SuccessRate+h.WastedRate > 1+1e-9:
 		return errors.New("history rates must be between 0 and 1")
 	case math.IsNaN(h.AvgQuality) || h.AvgQuality < 0 || h.AvgQuality > 100:
 		return errors.New("history quality must be between 0 and 100")

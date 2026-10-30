@@ -19,6 +19,8 @@
   background: var(--paper);
   overflow: hidden;
   isolation: isolate;
+  contain: layout paint;
+  box-shadow: inset 0 1px 0 var(--paper-raised);
 }
 .stage {
   position: absolute;
@@ -31,6 +33,15 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+  background: radial-gradient(
+    ellipse at 70% 10%,
+    var(--paper-raised),
+    transparent 70%
+  );
+  transition: opacity 200ms ease;
+}
+.figure:has([data-renderer="webgl"]) .fallback {
+  opacity: 0;
 }
 .fallbackGrid {
   position: absolute;
@@ -43,28 +54,107 @@
     linear-gradient(90deg, var(--hairline) 1px, transparent 1px);
   background-size: 27px 27px;
   transform: perspective(340px) rotateX(52deg) rotateZ(-13deg);
-  opacity: 0.55;
+  opacity: 0.32;
+}
+.terrain {
+  position: absolute;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  width: 65%;
+  aspect-ratio: 1;
+  left: 18%;
+  bottom: -16%;
+  transform: perspective(650px) rotateX(53deg) rotateZ(-28deg);
+  transform-style: preserve-3d;
+}
+.terrain > span {
+  border-radius: 9px;
+  background: color-mix(
+    in srgb,
+    var(--glass-accent) var(--tile-tone),
+    var(--glass-peach)
+  );
+  border: 1px solid color-mix(in srgb, var(--glass-inner) 16%, transparent);
+  box-shadow:
+    1px 3px 0 color-mix(in srgb, var(--glass-inner) 65%, var(--glass-peach)),
+    3px 7px 8px color-mix(in srgb, var(--glass-inner) 16%, transparent);
+  transform: translateZ(var(--tile-height));
+}
+.ballShadow {
+  position: absolute;
+  width: 36%;
+  height: 15%;
+  left: 34%;
+  top: 64%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse,
+    color-mix(in srgb, var(--glass-inner) 35%, transparent),
+    transparent 70%
+  );
 }
 .fallbackBall {
   position: absolute;
-  width: 145px;
-  height: 145px;
+  width: 36%;
+  aspect-ratio: 1;
   border-radius: 50%;
-  top: 25%;
-  left: calc(50% - 72.5px);
+  top: 26%;
+  left: 32%;
   border: 1px solid color-mix(in srgb, var(--glass-inner) 25%, transparent);
   background:
-    radial-gradient(circle at 32% 20%, var(--paper-raised), transparent 28%),
-    linear-gradient(
-      125deg,
-      var(--glass-peach) 0 48%,
-      var(--glass-accent) 49% 77%,
-      var(--glass-inner)
+    radial-gradient(
+      ellipse 8% 5% at 31% 24%,
+      var(--paper-raised) 15%,
+      transparent 100%
+    ),
+    radial-gradient(
+      circle at 65% 68%,
+      color-mix(in srgb, var(--glass-accent) 65%, var(--glass-inner)),
+      var(--glass-inner) 64%,
+      var(--glass-accent) 88%,
+      var(--glass-peach) 100%
     );
   box-shadow:
     8px 20px 24px -12px color-mix(in srgb, var(--ink) 26%, transparent),
     inset -8px -10px 20px
       color-mix(in srgb, var(--glass-inner) 18%, transparent);
+  animation: float 7s ease-in-out infinite;
+  animation-play-state: paused;
+}
+.fallbackBall::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 1px 1px 2px var(--glass-peach),
+    inset -2px -1px 3px color-mix(in srgb, var(--paper-raised) 75%, transparent);
+}
+.orbit {
+  position: absolute;
+  width: 43%;
+  height: 18%;
+  top: 44%;
+  left: 28.5%;
+  border: 1px solid color-mix(in srgb, var(--glass-peach) 85%, transparent);
+  border-radius: 50%;
+  transform: rotate(-25deg);
+}
+/* Only animate on intentional hover; nothing ticks during a normal scroll. */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .figure[data-state="preview"]:hover .fallbackBall {
+    animation-play-state: running;
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
 }
 .caption {
   pointer-events: none;
@@ -102,24 +192,54 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  min-height: 30px;
-  padding: 5px 8px;
-  font-size: 9px;
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 10px;
   border: 1px solid var(--hairline);
   border-radius: 5px;
   background: color-mix(in srgb, var(--paper-raised) 85%, transparent);
   color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease;
 }
 .pauseButton:hover {
   color: var(--ink);
+  border-color: var(--ink-soft);
+  background: var(--paper-raised);
+}
+.pauseButton:focus-visible,
+.resetButton:focus-visible {
+  outline: 2px solid var(--glass-inner);
+  outline-offset: 3px;
+}
+.resetButton {
+  position: absolute;
+  bottom: 15px;
+  right: 15px;
+  padding: 5px 7px;
+  min-height: 30px;
+  font-size: 10px;
+  color: var(--ink-soft);
+  background: var(--paper-raised);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  cursor: pointer;
 }
 .pauseButton:disabled {
   cursor: default;
   opacity: 0.65;
 }
-.figure:has([data-renderer="fallback"]) .pauseButton,
-.figure:has([data-renderer="fallback"]) .hint {
-  display: none;
+@media (prefers-reduced-motion: reduce) {
+  .fallbackBall {
+    animation: none;
+  }
+  .fallback,
+  .pauseButton {
+    transition: none;
+  }
 }
 @media (max-width: 1000px) {
   .closing {
@@ -155,3 +275,8 @@
     font-size: 9px;
   }
 }
+.figure:has([data-renderer="fallback"]) .pauseButton,
+.figure:has([data-renderer="fallback"]) .hint {
+  display: none;
+}
+

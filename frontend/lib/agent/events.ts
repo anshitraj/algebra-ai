@@ -3,7 +3,8 @@
 // can show each tool call as a live step instead of a spinner.
 
 import type { Decision, Recommendation, Simulation } from "../routing-types";
-import type { ProviderTrust } from "../types";
+import type { JobPass, ProviderTrust } from "../types";
+import type { CrossCheckInfo } from "./cross-check";
 
 export type StepStatus = "running" | "done" | "error" | "blocked" | "waiting";
 
@@ -27,6 +28,15 @@ export type AgentEvent =
   | { type: "options"; group: OptionGroup }
   /** A paid call's receipt: what was paid, where, the transaction and the PDF. */
   | { type: "receipt"; receipt: ReceiptInfo }
+  /**
+   * The task's Job Pass: opened with the most the chosen cards could cost set aside
+   * from the Spend Pass, then closed with what was paid and what went back. "short":
+   * the pass hadn't that much left, so nothing was paid.
+   */
+  | { type: "job"; phase: "opened" | "closed"; job: JobPass; pass: string }
+  | { type: "job"; phase: "short"; leftMinor: number; wantedMinor: number; pass: string }
+  /** Several providers were paid for the same question: whether their answers agree. */
+  | { type: "crosscheck"; check: CrossCheckInfo }
   /** USDC paid for a delivered call (micro-USDC). */
   | { type: "spend"; amount: { minor_units: number; currency: string }; intentId: string; provider: string; network?: string }
   | { type: "done"; reply: string; history: unknown[]; provider: string; model: string }
@@ -93,6 +103,8 @@ export type OptionGroup = {
   recommendations: Recommendation[];
   /** Every offer, ranked balanced; at most 10. */
   compared: Recommendation[];
+  /** The same request was paid for recently enough: paying hands that answer back for nothing. */
+  reuse?: import("../routing-types").ReusedPurchase;
   /** Providers left out, and why (down, overcharging, blocked, not allowed by the pass). */
   refused: { provider: string; reason: string }[];
 };
@@ -106,6 +118,8 @@ export type Choice = {
   provider: string;
   strategy?: "cheapest" | "balanced" | "fastest";
   label: string;
+  /** Pay for a new answer even though a fresh one was already paid for. */
+  fresh?: boolean;
 };
 
 /** A delivered, paid call as the receipt card shows it. */
@@ -124,6 +138,13 @@ export type ReceiptInfo = {
   pageUrl: string;
   test?: boolean;
   at: string;
+  /** The answer is one already paid for, handed back while fresh: nothing was paid this time. */
+  reused?: { ageSeconds: number };
+  /** The delivered provider response, kept as data for the result cards. */
+  result?: unknown;
+  work?: string;
+  stepId?: string;
+  elapsedMs?: number;
 };
 
 export type EmitFn = (e: AgentEvent) => void;

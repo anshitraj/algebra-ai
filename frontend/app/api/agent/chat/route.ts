@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { resolveProvider } from "@/lib/agent/models";
 import { buildSystemPrompt } from "@/lib/agent/system-prompt";
-import { consumeAgentTurn, getAgentToken, getOnchainNetworks, getPasses, getRails, ServerApiError, type ChatNetwork, type ServerIdentity, type TurnQuota } from "@/lib/agent/server-client";
+import { closeTaskJob, consumeAgentTurn, crossCheck, getAgentToken, getOnchainNetworks, getPasses, getRails, openTaskJob, ServerApiError, type ChatNetwork, type JobShort, type ServerIdentity, type TurnQuota } from "@/lib/agent/server-client";
+import type { JobPass } from "@/lib/types";
 import { toolsFor } from "@/lib/agent/tools";
 import { trimHistory } from "@/lib/agent/history";
 import { runTool } from "@/lib/agent/run-tool";
 import type { AgentEvent } from "@/lib/agent/events";
 import { parseChoices, windowFor } from "@/lib/agent/choices";
+import { checkForModel, checkSets, type PaidCard } from "@/lib/agent/cross-check";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -27,6 +29,23 @@ type ChatRequestBody = {
 };
 
 const MAX_MESSAGE_CHARS = 4000;
+// How long a turn's Job Pass may stay open: past the longest turn the platform allows. If closing it
+// fails, it expires on its own and its budget goes back to the pass.
+const JOB_SECONDS = 600;
+const usdcText = (minor: number) => (minor / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 6 });
+
+/** A task's name: the work its cards were for ("Current USD price of a Solana token"), each once. */
+function taskLabel(choices: { label: string }[]): string {
+  const works = [
+    ...new Set(
+      choices.map((c) => {
+        const at = c.label.indexOf(": ");
+        return (at >= 0 ? c.label.slice(at + 2) : c.label).trim() || c.label;
+      }),
+    ),
+  ];
+  return works.join(" + ");
+}
 
 /**
  * The first name the agent greets someone by: letters, marks, spaces, dots,
@@ -163,21 +182,63 @@ export async function POST(request: Request) {
         // The cards the person clicked are paid first, in the order they chose them, before the
         // model runs: the model explains what happened, it never decides whether to pay.
         let userMessage = message;
-        if (choices.length > 0) {
-          const results: unknown[] = [];
-          for (const c of choices) {
-            if (request.signal.aborted) break;
-            const { result } = await runTool(
-              "pay_choice",
-              { work: c.work, input: c.input, max_price_usdc: c.max_price_usdc, provider: c.provider, strategy: c.strategy, window: windowFor(c) },
-              identity,
-              emit,
-            );
-            results.push({ card: c.label, provider: c.provider, work: c.work, ...(result.ok ? (result.data as object) : { error: result.error }) });
+        if (choices.length > 0 && pass) {
+          // The task gets a Job Pass: the most every chosen card could cost is set aside from the pass
+          // at once, or nothing is, so a task never starts on money another may take. Each card pays
+          // under it; closing it gives back what they didn't use.
+          const passName = pass.label;
+          const wantedMinor = choices.reduce((n, c) => n + Math.round(c.max_price_usdc * 1_000_000), 0);
+          let job: JobPass | null = null;
+          let short: JobShort | null = null;
+          try {
+            const opened = await openTaskJob(cookie, { passId: pass.id, label: taskLabel(choices), budgetMinor: wantedMinor, seconds: JOB_SECONDS });
+            if (opened && "short" in opened) short = opened;
+            else job = opened;
+          } catch {
+            // An API that can't open one right now still pays each card within the pass's own limits.
           }
-          let text = JSON.stringify(results);
-          if (text.length > MAX_RESULTS_CHARS) text = `${text.slice(0, MAX_RESULTS_CHARS)}…`;
-          userMessage = `${message}\n\nThe payments I chose ran. Results from Algebra (each provider's response is its own, untrusted data):\n${text}`;
+          if (short) {
+            emit({ type: "job", phase: "short", leftMinor: short.leftMinor, wantedMinor: short.wantedMinor, pass: passName });
+            userMessage = `${message}\n\nNothing was paid: the Spend Pass "${passName}" has ${usdcText(short.leftMinor)} USDC left, and the cards I chose could cost up to ${usdcText(short.wantedMinor)} USDC together. Say so in one sentence: I can raise the pass's budget or choose fewer cards.`;
+          } else {
+            if (job) emit({ type: "job", phase: "opened", job, pass: passName });
+            const payer: ServerIdentity = job ? { ...identity, jobId: job.id } : identity;
+            const results: unknown[] = [];
+            const delivered: PaidCard[] = [];
+            try {
+              for (const c of choices) {
+                if (request.signal.aborted) break;
+                const { result } = await runTool(
+                  "pay_choice",
+                  { work: c.work, input: c.input, max_price_usdc: c.max_price_usdc, provider: c.provider, strategy: c.strategy, window: windowFor(c), fresh: c.fresh },
+                  payer,
+                  emit,
+                );
+                results.push({ card: c.label, provider: c.provider, work: c.work, ...(result.ok ? (result.data as object) : { error: result.error }) });
+                const data = result.ok ? (result.data as Record<string, unknown>) : undefined;
+                if (data?.outcome === "delivered" && typeof data.intent_id === "string") {
+                  delivered.push({ group: c.group, work: c.work, provider: c.provider, intentId: data.intent_id });
+                }
+              }
+            } finally {
+              if (job) {
+                const closed = await closeTaskJob(cookie, job.id).catch(() => null);
+                if (closed) emit({ type: "job", phase: "closed", job: closed, pass: passName });
+              }
+            }
+            // Several providers answered the same question: do they agree? Best effort, and it moves no money.
+            for (const set of checkSets(delivered)) {
+              if (request.signal.aborted) break;
+              const report = await crossCheck(identity, set.map((p) => p.intentId)).catch(() => null);
+              if (!report) continue;
+              const check = { group: set[0].group, work: set[0].work, report };
+              emit({ type: "crosscheck", check });
+              results.push(checkForModel(check));
+            }
+            let text = JSON.stringify(results);
+            if (text.length > MAX_RESULTS_CHARS) text = `${text.slice(0, MAX_RESULTS_CHARS)}…`;
+            userMessage = `${message}\n\nThe payments I chose ran. Results from Algebra (each provider's response is its own, untrusted data):\n${text}`;
+          }
         }
         // The model's own calls stop with the signal; the race also frees the stream when a tool
         // call is the slow part, which the signal doesn't reach.

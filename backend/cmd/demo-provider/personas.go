@@ -36,6 +36,19 @@ type persona struct {
 	// It is off unless DEMO_PROVIDER_STALL=on: a seller that keeps the money
 	// parked is for testing the payer's way out, not for a catalog.
 	Stall bool
+	// Network is where it sells: Solana devnet when empty, else an EVM test
+	// chain (evm.go).
+	Network string
+}
+
+func (p persona) evm() bool { return p.Network != "" }
+
+// caip is the persona's network as x402 v2 names it.
+func (p persona) caip() string {
+	if p.evm() {
+		return evmChains[p.Network].caip
+	}
+	return devnetCAIP
 }
 
 // Each class has a cheap-but-slow seller, a fast one and (for some) a
@@ -79,8 +92,8 @@ var stallEnabled = os.Getenv("DEMO_PROVIDER_STALL") == "on"
 
 // served are the personas this run serves and lists.
 func served() []persona {
-	out := make([]persona, 0, len(personas))
-	for _, p := range personas {
+	out := make([]persona, 0, len(personas)+len(evmPersonas))
+	for _, p := range append(personas, evmPersonas...) {
 		if p.Stall && !stallEnabled {
 			continue
 		}
@@ -103,9 +116,13 @@ func (p persona) path() string { return p.endpoint() }
 func configured(base string) []map[string]any {
 	out := []map[string]any{}
 	for _, p := range served() {
+		network := "solana-devnet"
+		if p.evm() {
+			network = p.Network
+		}
 		out = append(out, map[string]any{
 			"capability": p.Class, "provider": "demo:" + p.Name, "name": p.Title, "endpoint": base + p.endpoint(),
-			"method": p.Method, "network": "solana-devnet", "price_minor": p.ListedMinor,
+			"method": p.Method, "network": network, "price_minor": p.ListedMinor,
 		})
 	}
 	return out
@@ -122,6 +139,9 @@ type server struct {
 	key  *solana.Keypair
 	mint solana.PublicKey
 	base string
+	// evm sells on Base Sepolia and Arc testnet; nil leaves those personas
+	// asking for a payment they can't take.
+	evm *evmSeller
 
 	mu      sync.Mutex
 	results map[string]cached // by Idempotency-Key
@@ -140,6 +160,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // requirements is the persona's one payment option, in x402 v2 form.
 func (s *server) requirements(p persona) map[string]any {
+	if p.evm() && s.evm != nil {
+		return s.evmRequirements(p)
+	}
 	me := s.key.PublicKey().String()
 	req := map[string]any{
 		"scheme": p.Scheme, "network": devnetCAIP, "amount": strconv.FormatInt(p.AskMinor, 10), "asset": s.mint.String(),
@@ -188,7 +211,7 @@ func (s *server) handle(p persona) http.HandlerFunc {
 		}
 		if header == "" {
 			if c, ok := s.cachedFor(key); ok {
-				s.respond(w, c.body, c.settle, 0, "")
+				s.respond(w, p, c.body, c.settle, 0, "")
 				return
 			}
 			// A slow provider is slow on every request, its unpaid price
@@ -216,8 +239,15 @@ func (s *server) handle(p persona) http.HandlerFunc {
 		var charged int64
 		var payer string
 		var err error
-		switch p.Scheme {
-		case paychan.Scheme:
+		switch {
+		case p.evm():
+			if s.evm == nil {
+				err = errors.New("this seller has no EVM wallet")
+				break
+			}
+			settle, payer, err = s.payExactEVM(ctx, p, header)
+			charged = p.AskMinor
+		case p.Scheme == paychan.Scheme:
 			settle, charged, payer, err = s.payUpto(ctx, p, header, input)
 		default:
 			settle, payer, err = s.payExact(ctx, p, header)
@@ -232,12 +262,12 @@ func (s *server) handle(p persona) http.HandlerFunc {
 		body := p.answer(input, charged, live)
 		s.remember(key, cached{body: body, settle: settle, at: time.Now()})
 		log.Printf("%s: paid %d by %s, settlement %s", p.Name, charged, payer, settle)
-		s.respond(w, body, settle, charged, payer)
+		s.respond(w, p, body, settle, charged, payer)
 	}
 }
 
-func (s *server) respond(w http.ResponseWriter, body []byte, settle string, amount int64, payer string) {
-	resp := map[string]any{"success": true, "transaction": settle, "network": devnetCAIP}
+func (s *server) respond(w http.ResponseWriter, p persona, body []byte, settle string, amount int64, payer string) {
+	resp := map[string]any{"success": true, "transaction": settle, "network": p.caip()}
 	if amount > 0 {
 		resp["amount"] = strconv.FormatInt(amount, 10)
 	}

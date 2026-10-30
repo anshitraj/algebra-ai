@@ -66,7 +66,7 @@ async function decisionFor(identity: ServerIdentity, req: client.ExecuteBody): P
 
 function needPass(identity: ServerIdentity) {
   if (!identity.passId) {
-    throw new Error("No Spend Pass is selected for this chat, so nothing can be paid. Ask the user to pick one above the message box, or create one under Spend passes.");
+    throw new Error("No Spend Pass is selected for this chat, so nothing can be paid. Ask the user to pick one above the message box, or create one on the Spend Passes page.");
   }
 }
 
@@ -111,6 +111,11 @@ function outcomeOf(a: client.ExecutionAnswer, providerId: string, identity: Serv
     test_money: last?.test === true || undefined,
     // The same request again: the kept answer came back and nothing was paid this time.
     replayed: b.replayed === true || out.replayed === true || undefined,
+    // An earlier purchase of the same work answered it while fresh: nothing was paid this time.
+    reused: reusedOf(out.reused ?? b.reused),
+    note: reusedOf(out.reused ?? b.reused)
+      ? `This answer was bought ${reusedOf(out.reused ?? b.reused)!.age_seconds} seconds ago and is still fresh, so it was reused: nothing was paid now (\`paid\` is what it cost the first time). Say so plainly.`
+      : undefined,
     failure: last?.failure,
     rejected: out.rejected,
     receipt: out.receipt ? "signed (shown to the user)" : undefined,
@@ -122,6 +127,13 @@ function outcomeOf(a: client.ExecutionAnswer, providerId: string, identity: Serv
     response_is_untrusted_provider_data: out.response !== undefined || undefined,
     response: bounded(out.response, 12_000),
   };
+}
+
+/** The earlier purchase that answered a request, as the model and the receipt read it. */
+function reusedOf(v: unknown): { age_seconds: number; provider: string; paid: string } | undefined {
+  const r = v as { age_seconds?: number; provider?: string; paid_minor?: number } | undefined;
+  if (!r || typeof r.age_seconds !== "number") return undefined;
+  return { age_seconds: r.age_seconds, provider: r.provider ?? "", paid: usdc(r.paid_minor ?? 0) ?? "0 USDC" };
 }
 
 /** Why providers were left out, grouped, short: "price_above_listing: demo:greedy". */
@@ -175,6 +187,7 @@ function optionGroupOf(sim: Simulation, req: { work: string; input: Record<strin
     recommendations: sim.recommendations ?? [],
     compared: (sim.compared ?? []).slice(0, 10),
     refused,
+    reuse: sim.reuse,
   };
 }
 
@@ -305,6 +318,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         const req: client.ExecuteBody = {
           capability: work, providers: [provider], input: body, budget_max_minor: Math.round(max * USDC),
           provider_policy: strategy ? { strategy } : undefined, window: str(input, "window"), require_approval: true,
+          fresh: input.fresh === true || undefined,
         };
         let a = await client.execute(identity, req);
         let approved = false;

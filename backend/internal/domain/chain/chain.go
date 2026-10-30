@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 )
 
 // Canonical network names. Algebra pays on Solana. Base and Arc are named
@@ -26,7 +27,14 @@ const (
 	ArcTestnet = "arc-testnet"
 	// Sandbox is Algebra's simulated network (providers/sandboxpay): no chain.
 	Sandbox = "sandbox"
+	// Keyed is no network at all: a tool called with the person's own API key
+	// (providers/keyed), which its vendor bills to their account. Algebra moves
+	// no money for it, so no environment's network limits apply to it.
+	Keyed = "keyed"
 )
+
+// IsKeyed reports whether a "network" is a vendor's own billing, not a chain.
+func IsKeyed(network string) bool { return NormalizeNetwork(network) == Keyed }
 
 // caip2 maps CAIP-2 chain IDs to canonical names. Solana's reference is the
 // first 32 characters of the genesis hash and is case-sensitive base58, so
@@ -62,6 +70,27 @@ func IsTestNetwork(network string) bool {
 	}
 	return false
 }
+
+// Payable reports whether Algebra has a payment rail for a network today.
+// Catalogs list endpoints on Base and Arc too; those are shown and tracked,
+// but offered to the router only while a rail can pay there (SetPayable).
+func Payable(network string) bool {
+	switch n := NormalizeNetwork(network); n {
+	case Solana, SolanaDevnet, Sandbox, Keyed:
+		return true
+	default:
+		on, _ := payable.Load(n)
+		return on == true
+	}
+}
+
+// payable holds the networks whose rails are ready now, beyond Solana's.
+var payable sync.Map
+
+// SetPayable says whether a rail can pay on a network right now: set by the
+// wiring for the EVM rails, on while their payer holds USDC, so a chain whose
+// wallet is empty isn't offered to the router to fail on.
+func SetPayable(network string, on bool) { payable.Store(NormalizeNetwork(network), on) }
 
 // NormalizeAsset upper-cases a token symbol ("usdc" becomes "USDC").
 func NormalizeAsset(raw string) string {

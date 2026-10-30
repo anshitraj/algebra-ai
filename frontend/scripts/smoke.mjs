@@ -34,7 +34,6 @@ const CONSOLE_PAGES = [
   "/console",
   "/console/agent",
   "/console/providers",
-  "/console/passes",
   "/console/firewall",
   "/console/routing",
   "/console/intelligence",
@@ -46,17 +45,11 @@ const CONSOLE_PAGES = [
   "/onboarding",
 ];
 
-// Origins the browser must reach, each with the code that calls it. The scan
+// Origins the browser must reach, each with the code that calls it. The page
+// calls none besides the site itself (the API is proxied through it); the scan
 // of the client source below adds any Solana RPC, Jupiter or Privy origin
 // written there, so a new one can't ship without the CSP allowing it.
-const MUST_CONNECT = [
-  ["https://api.devnet.solana.com", "components/console/account-wallet-signer.tsx (devnet RPC)"],
-  ["wss://api.devnet.solana.com", "components/console/account-wallet-signer.tsx (devnet subscriptions)"],
-  ["https://api.mainnet-beta.solana.com", "components/console/account-wallet-signer.tsx (mainnet RPC)"],
-  ["wss://api.mainnet-beta.solana.com", "components/console/account-wallet-signer.tsx (mainnet subscriptions)"],
-  ["https://lite-api.jup.ag", "components/console/convert-sol.tsx (Jupiter Swap API)"],
-  ["https://auth.privy.io", "sign-in with Privy"],
-];
+const MUST_CONNECT = [];
 const CALLED_HOST = /^(api\.[a-z0-9-]+\.solana\.com|[a-z0-9-]+\.jup\.ag|[a-z0-9-]+\.privy\.io)$/;
 
 const failures = [];
@@ -181,26 +174,12 @@ async function run() {
   const called = new Map(MUST_CONNECT);
   for (const [origin, file] of calledOrigins()) if (!called.has(origin)) called.set(origin, file);
   for (const [origin, why] of called) check(`connect-src allows ${origin}`, cspAllows(csp, "connect-src", origin), `blocked in production; called from ${why}. Add it in next.config.ts`);
-  // Privy's own list (docs.privy.io, "Content Security Policy"): the sign-in frame, WalletConnect's
-  // relay and verifier, Coinbase's wallet link, Privy's RPC and Cloudflare's bot check. Privy's
-  // dashboard asks for these before an app goes to production.
-  for (const [directive, origin] of [
-    ["frame-src", "https://auth.privy.io"],
-    ["frame-src", "https://verify.walletconnect.com"],
-    ["frame-src", "https://verify.walletconnect.org"],
-    ["frame-src", "https://challenges.cloudflare.com"],
-    ["child-src", "https://auth.privy.io"],
-    ["script-src", "https://challenges.cloudflare.com"],
-    ["connect-src", "wss://relay.walletconnect.com"],
-    ["connect-src", "wss://relay.walletconnect.org"],
-    ["connect-src", "wss://www.walletlink.org"],
-    ["connect-src", "https://solana-mainnet.rpc.privy.systems"],
-    ["connect-src", "https://explorer-api.walletconnect.com"],
-  ]) {
-    check(`${directive} allows ${origin} (Privy)`, cspAllows(csp, directive, origin));
+  // Nothing third-party is let in beyond Razorpay's checkout: no sign-in provider, no wallet relay.
+  for (const host of ["privy.io", "walletconnect", "walletlink", "cloudflare.com", "jup.ag"]) {
+    check(`the CSP lets in nothing from ${host}`, !csp.includes(host));
   }
   for (const d of ["object-src 'none'", "base-uri 'self'", "form-action 'self'", "worker-src 'self'", "manifest-src 'self'"]) {
-    check(`the CSP sets ${d} (Privy)`, csp.split(";").some((x) => x.trim() === d));
+    check(`the CSP sets ${d}`, csp.split(";").some((x) => x.trim() === d));
   }
 
   // 4. The console is closed without a session, and renders with one.

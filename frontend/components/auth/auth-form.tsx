@@ -1,25 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import * as api from "@/lib/api-client";
 import type { AuthProviders, User } from "@/lib/types";
 import { IconReceipt, IconShield, IconStore, Spinner } from "@/components/icons";
+import EmailCodeSignIn from "./email-code-sign-in";
 import { AuthInput, FormError, PasswordInput, SubmitButton } from "./fields";
-
-// Privy's SDK is large and needs the browser: loaded only when this server
-// offers Privy sign-in.
-const PrivySignIn = dynamic(() => import("./privy-sign-in"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-11 w-full items-center justify-center gap-2.5 rounded-xl bg-primary/70 text-[0.95rem] font-medium text-primary-tint">
-      <Spinner size={16} />
-    </div>
-  ),
-});
 
 type Mode = "login" | "signup";
 /** Which way in: a one-click demo account, or a real (production) account. */
@@ -38,7 +27,8 @@ export function safeNext(next: string | null): string | null {
 
 export function destinationFor(user: User, next: string | null) {
   if (!user.onboarded) return "/onboarding";
-  return safeNext(next) ?? "/console";
+  // The agent chat is where a signed-in person starts; the overview is one click away.
+  return safeNext(next) ?? "/console/agent";
 }
 
 export function AuthForm({ mode }: { mode: Mode }) {
@@ -55,6 +45,8 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [error, setError] = useState<string | null>(params.get("error"));
   // Someone sent here from a protected page (?next=) already has an account.
   const [entry, setEntry] = useState<Entry>(params.get("mode") === "production" || next ? "production" : "demo");
+  // A server that has both an emailed code and a password offers the code first; this is the other way in.
+  const [withPassword, setWithPassword] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
 
   const fetchProviders = useCallback(() => {
@@ -113,8 +105,8 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   const isSignup = mode === "signup";
   const passwordOn = providers?.password !== false;
-  // Privy carries real sign-ins (an email code or a Solana wallet) when the server has it.
-  const privyAppId = providers?.privy ? (providers.privy_app_id ?? "") : "";
+  // Real accounts sign in with a code emailed to them when the server can send one: no password, no wallet.
+  const emailCode = providers?.email_code === true;
   // The chooser shows on sign-in only, and only when this server offers the demo.
   const showChooser = !isSignup && providers?.demo === true;
   const showDemo = showChooser && entry === "demo";
@@ -181,25 +173,32 @@ export function AuthForm({ mode }: { mode: Mode }) {
               <div className="h-11 animate-pulse rounded-xl bg-primary-tint/60" />
               <div className="h-11 animate-pulse rounded-xl bg-primary-tint/60" />
             </div>
-          ) : privyAppId ? (
-            // Real accounts: an email code or a Solana wallet, no password.
+          ) : emailCode && !(withPassword && passwordOn) ? (
+            // Real accounts: a code emailed to them, no password.
             <div className={showChooser ? "mt-6" : "mt-8"}>
-              <PrivySignIn
-                appId={privyAppId}
-                initialError={error}
-                onSignedIn={(user) => router.replace(destinationFor(user, next))}
-              />
+              <EmailCodeSignIn initialError={error} onSignedIn={(user) => router.replace(destinationFor(user, next))} />
               <p className="mt-6 text-xs leading-relaxed text-muted">
-                {isSignup ? "Signing in later with the same email or wallet opens this account. " : "New here? Your first sign-in makes your account. "}
-                Algebra never sees a wallet&apos;s key.
+                {isSignup ? "Signing in later with the same email opens this account." : "New here? Your first sign-in makes your account."}
               </p>
+              {passwordOn && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWithPassword(true);
+                    setError(null);
+                  }}
+                  className="mt-3 text-xs font-medium text-muted hover:text-foreground"
+                >
+                  Use a password instead
+                </button>
+              )}
             </div>
           ) : !passwordOn ? (
             <div className={showChooser ? "mt-6" : "mt-8"}>
               <FormError>{error ?? "No sign-in method is turned on for this server."}</FormError>
             </div>
           ) : (
-            // No Privy on this server (local development, say): email and password.
+            // No emailed codes on this server, or the person chose a password: email and password.
             <form onSubmit={handleSubmit} className={`${showChooser ? "mt-6" : "mt-8"} space-y-4`} noValidate={false}>
               {isSignup && (
                 <AuthInput
@@ -248,6 +247,18 @@ export function AuthForm({ mode }: { mode: Mode }) {
               )}
               {error && <FormError>{error}</FormError>}
               <SubmitButton busy={busy}>{isSignup ? "Create account" : "Sign in"}</SubmitButton>
+              {emailCode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWithPassword(false);
+                    setError(null);
+                  }}
+                  className="w-full text-center text-xs font-medium text-muted hover:text-foreground"
+                >
+                  Use an emailed code instead
+                </button>
+              )}
             </form>
           )}
 

@@ -12,6 +12,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/account"
 	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/econ"
+	"github.com/project-algebra/algebra/internal/domain/jobpass"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 	"github.com/project-algebra/algebra/internal/domain/spendpass"
 	"github.com/project-algebra/algebra/internal/domain/tenancy"
@@ -60,7 +61,12 @@ type ReservationRejected struct {
 }
 
 func (e *ReservationRejected) Error() string {
-	return fmt.Sprintf("reservation rejected: %s (intent %s)", e.Reason, e.State)
+	s := fmt.Sprintf("reservation rejected: %s (intent %s)", e.Reason, e.State)
+	// Why the pass or the job refused is what a caller needs to act on.
+	if len(e.ReasonCodes) > 0 {
+		s += ": " + strings.Join(e.ReasonCodes, ", ")
+	}
+	return s
 }
 
 // ErrExecutionFrozen: the intent may already have committed; nothing new
@@ -217,6 +223,51 @@ func evaluate(p *spendpass.Pass, provider string, amount, spent int64, currency 
 	})
 }
 
+// usage is what a reservation is measured against: the pass's exposure
+// (shopping included), or, under a Job Pass, the job's.
+type usage struct {
+	// passMinor is what evaluate is given as the pass's spend: everything used
+	// in its window, or 0 under a job, whose budget the pass already counts.
+	passMinor int64
+	// minor is the exposure the hold is added to: the pass's, or the job's.
+	minor int64
+	job   *jobpass.Job
+	// code, when set, is why the job can't authorize anything now.
+	code string
+}
+
+// used reads the exposure a hold is checked against, inside a unit that holds
+// the pass's lock.
+func (s *EconomicService) used(u EconUnit, p *spendpass.Pass, jobID string, ordersSpent int64, now time.Time) (usage, error) {
+	if jobID == "" {
+		exposure, err := u.PassExposure(p.ID, p.WindowStart(now), now)
+		if err != nil {
+			return usage{}, err
+		}
+		return usage{passMinor: ordersSpent + exposure, minor: ordersSpent + exposure}, nil
+	}
+	j, err := u.Job(jobID)
+	if errors.Is(err, shared.ErrNotFound) {
+		return usage{code: jobpass.ReasonClosed}, nil
+	}
+	if err != nil {
+		return usage{}, err
+	}
+	// Never another pass's job: the caller resolved it, but a mismatch here is
+	// refused rather than trusted.
+	if j.PassID != p.ID || j.UserID != p.UserID {
+		return usage{code: jobpass.ReasonClosed}, nil
+	}
+	if code := j.Refusal(now); code != "" {
+		return usage{job: j, code: code}, nil
+	}
+	used, err := u.JobExposure(j.ID, now)
+	if err != nil {
+		return usage{}, err
+	}
+	return usage{minor: used, job: j}, nil
+}
+
 // ordersSpent is the pass's spend through the shopping flow in its window.
 func (s *EconomicService) ordersSpent(ctx context.Context, p *spendpass.Pass) (int64, error) {
 	if s.ledger == nil {
@@ -362,6 +413,11 @@ func (s *EconomicService) create(ctx context.Context, p *spendpass.Pass, agentID
 		d.Decision = policy.RequireApproval
 		d.ReasonCodes = append(d.ReasonCodes, ReasonAskedFirst)
 	}
+	// The same thing bought over and over looks like a loop: the next one waits.
+	if d.Decision == policy.Allow && s.repeated(ctx, in) {
+		d.Decision = policy.RequireApproval
+		d.ReasonCodes = append(d.ReasonCodes, ReasonRepeatPurchase)
+	}
 	if d.Decision == policy.RequireApproval {
 		in.RequiresApproval = true
 		in.State = econ.StateAwaitingApproval
@@ -459,6 +515,9 @@ type ReserveRequest struct {
 	// FoundOnWeb is set by the coordinator, never read from a request body: the
 	// plan step's endpoint was found only on the open web and has no record here.
 	FoundOnWeb bool `json:"-"`
+	// JobID is the Job Pass the attempt is made under. The coordinator sets it
+	// from the caller's credentials, never from a request body.
+	JobID string `json:"-"`
 }
 
 // Reserve grants the executor the intent's single live reservation, or
@@ -567,15 +626,28 @@ func (s *EconomicService) Reserve(ctx context.Context, agentID, intentID string,
 		} else if reason != "" {
 			return reject(reason, false, codes, "")
 		}
-		exposure, err := u.PassExposure(p.ID, p.WindowStart(now))
+		// Under a Job Pass the hold must fit what the job has left. The job's
+		// whole budget is already set aside in the pass, so the pass's own
+		// budget isn't counted again; every other rule of the pass still is.
+		used, err := s.used(u, p, req.JobID, spent, now)
 		if err != nil {
 			return err
 		}
-		d := evaluate(p, req.ProviderID, hold, spent+exposure, in.Currency, now)
-		if err := u.AppendEvent(s.newEvent(EconEvent{IntentID: in.ID, AgentID: agentID, Event: "authority.evaluated", Data: map[string]any{
+		if used.code != "" {
+			return reject(RejectAuthorityDenied, false, []string{used.code}, "")
+		}
+		if used.job != nil && used.minor+hold > used.job.BudgetMinor {
+			return reject(RejectAuthorityDenied, false, []string{jobpass.ReasonBudgetExceeded}, "")
+		}
+		d := evaluate(p, req.ProviderID, hold, used.passMinor, in.Currency, now)
+		ev := map[string]any{
 			"decision": string(d.Decision), "reason_codes": d.ReasonCodes, "policy_version": d.PolicyVersion,
-			"spend_pass_id": p.ID, "hold_minor": hold, "exposure_minor": spent + exposure,
-		}})); err != nil {
+			"spend_pass_id": p.ID, "hold_minor": hold, "exposure_minor": used.minor,
+		}
+		if used.job != nil {
+			ev["job_pass_id"] = used.job.ID
+		}
+		if err := u.AppendEvent(s.newEvent(EconEvent{IntentID: in.ID, AgentID: agentID, Event: "authority.evaluated", Data: ev})); err != nil {
 			return err
 		}
 		switch {
@@ -587,7 +659,7 @@ func (s *EconomicService) Reserve(ctx context.Context, agentID, intentID string,
 		}
 
 		r := &econ.Reservation{
-			ID: newID("rsv"), IntentID: in.ID, ExecutorAgentID: agentID, ExecutorPassID: p.ID,
+			ID: newID("rsv"), IntentID: in.ID, ExecutorAgentID: agentID, ExecutorPassID: p.ID, JobID: req.JobID,
 			Attempt: in.Attempts + 1, State: econ.ReservationReserved, HoldMinor: hold,
 			ProviderID: req.ProviderID, Rail: req.Rail, QuoteMinor: req.QuoteMinor, Semantics: req.Semantics,
 			IdempotencyKey: econ.IdempotencyKeyFor(in.ID, in.Attempts+1), PolicyVersion: d.PolicyVersion,
@@ -665,12 +737,21 @@ func (s *EconomicService) Begin(ctx context.Context, agentID, intentID, reservat
 			denied = fmt.Errorf("%w: the reservation's lease expired before execution began; reserve again", shared.ErrConflict)
 			return nil
 		}
-		exposure, err := u.PassExposure(p.ID, p.WindowStart(now))
+		used, err := s.used(u, p, r.JobID, spent, now)
 		if err != nil {
 			return err
 		}
-		// Exposure already counts this attempt's hold.
-		d := evaluate(p, r.ProviderID, r.HoldMinor, spent+exposure-r.HoldMinor, in.Currency, now)
+		// Exposure already counts this attempt's hold (in the pass, or in its job).
+		var d *policy.PolicyDecision
+		switch {
+		case used.code != "":
+			// The job was closed, revoked or ran out of time since the reservation.
+			d = &policy.PolicyDecision{Decision: policy.Deny, ReasonCodes: []string{used.code}, PolicyVersion: "job-pass", EvaluatedAt: now}
+		case used.job != nil:
+			d = evaluate(p, r.ProviderID, r.HoldMinor, 0, in.Currency, now)
+		default:
+			d = evaluate(p, r.ProviderID, r.HoldMinor, used.passMinor-r.HoldMinor, in.Currency, now)
+		}
 		if d.Decision == policy.Deny || (d.Decision == policy.RequireApproval && in.ApprovedAt == nil) {
 			if err := s.releaseActive(u, in, "policy_recheck_denied", now); err != nil {
 				return err
@@ -744,6 +825,16 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 		if r.Evidence.AuthorityIssued {
 			return fmt.Errorf("%w: this attempt already has its payment authority; a second payment needs a new attempt", shared.ErrConflict)
 		}
+		// A job closed or revoked since the attempt began releases nothing.
+		if r.JobID != "" {
+			j, err := u.Job(r.JobID)
+			if err != nil {
+				return err
+			}
+			if code := j.Refusal(s.now()); code != "" {
+				return &AuthorityDenied{ReasonCodes: []string{code}}
+			}
+		}
 		snapshot = *r
 		networks = slices.Clone(in.Constraints.AllowedNetworks)
 		return nil
@@ -790,7 +881,7 @@ func (s *EconomicService) AuthorizePayment(ctx context.Context, agentID, intentI
 	// The intent's network limit holds here too, not only when the router picks
 	// a provider: an executor that reserved a rail itself still gets nothing
 	// signed on a network the intent excludes.
-	if len(networks) > 0 && !slices.Contains(networks, chain.NormalizeNetwork(auth.Evidence.Network)) {
+	if len(networks) > 0 && !chain.IsKeyed(auth.Evidence.Network) && !slices.Contains(networks, chain.NormalizeNetwork(auth.Evidence.Network)) {
 		return nil, &AuthorityDenied{ReasonCodes: []string{DenyNetworkNotAllowed}}
 	}
 	// Real money on mainnet only where the deployment has turned it on.
@@ -974,7 +1065,9 @@ func (s *EconomicService) commit(u EconUnit, in *econ.Intent, r *econ.Reservatio
 	r.Evidence = mergeEvidence(r.Evidence, econ.Evidence{
 		Transaction: st.Transaction, AmountMinor: st.AmountMinor, Network: st.Network, Asset: st.Asset, Payer: st.Payer, PayTo: st.PayTo, ResultHash: resultHash, Test: st.Test,
 	})
-	if st.AmountMinor > 0 {
+	// A tool its vendor bills itself (a keyed call) settles for what the vendor
+	// charged, which may be nothing: the hold is then not the intent's ceiling.
+	if st.AmountMinor > 0 || chain.IsKeyed(st.Network) {
 		r.HoldMinor = st.AmountMinor // unused authority is released
 		// What the rail proved moved is the amount, not the ceiling that was
 		// authorized: a usage-based payment settles for less and refunds the rest.
@@ -1475,6 +1568,12 @@ func mergeEvidence(base, add econ.Evidence) econ.Evidence {
 	}
 	if base.ValidUntilHeight == 0 {
 		base.ValidUntilHeight = add.ValidUntilHeight
+	}
+	if base.ValidBefore == 0 {
+		base.ValidBefore = add.ValidBefore
+	}
+	if base.FromBlock == 0 {
+		base.FromBlock = add.FromBlock
 	}
 	if add.AuthorityIssued && !base.AuthorityIssued {
 		base.AuthorityIssued, base.AuthorityIssuedAt = true, add.AuthorityIssuedAt

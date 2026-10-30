@@ -81,6 +81,7 @@ func main() {
 	go func() {
 		t := time.NewTicker(15 * time.Second)
 		defer t.Stop()
+		evmChecked := time.Now()
 		for {
 			select {
 			case <-ctx.Done():
@@ -99,6 +100,36 @@ func main() {
 					logger.Warn("on-chain pass reconcile", "error", err)
 				} else if n > 0 {
 					logger.Info("on-chain pass reconcile", "changed", n)
+				}
+			}
+			// EVM chains are offered to the router while their payer holds USDC.
+			if len(bundle.EVMRails) > 0 && time.Since(evmChecked) > 2*time.Minute {
+				wiring.RefreshEVMReadiness(ctx, bundle.EVMRails)
+				evmChecked = time.Now()
+			}
+			// Job Passes past their time: written as EXPIRED. They already
+			// authorize nothing; this keeps the console's word for them right.
+			if bundle.JobPasses != nil {
+				if n, err := bundle.JobPasses.Sweep(ctx); err != nil {
+					logger.Warn("job pass sweep", "error", err)
+				} else if n > 0 {
+					logger.Info("job pass sweep", "expired", n)
+				}
+			}
+			// Pulls from owners' vaults on Base and Arc: the same.
+			if bundle.EVMAllowances != nil {
+				if n, err := bundle.EVMAllowances.Reconcile(ctx); err != nil {
+					logger.Warn("evm vault allowance reconcile", "error", err)
+				} else if n > 0 {
+					logger.Info("evm vault allowance reconcile", "changed", n)
+				}
+			}
+			// Pulls from owners' vaults, through their allowances: the same.
+			if bundle.VaultAllowances != nil {
+				if n, err := bundle.VaultAllowances.Reconcile(ctx); err != nil {
+					logger.Warn("vault allowance reconcile", "error", err)
+				} else if n > 0 {
+					logger.Info("vault allowance reconcile", "changed", n)
 				}
 			}
 		}

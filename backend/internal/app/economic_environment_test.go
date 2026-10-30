@@ -52,8 +52,12 @@ func TestEconomic_AProjectPassPaysOnlyInItsEnvironment(t *testing.T) {
 	denied(t, err, DenyEnvironmentNetwork)
 
 	v, _, err = rig.svc.CreateIntent(ctx, "dev", networkSpec("e-3"))
-	if err != nil || !slices.Equal(v.Constraints.AllowedNetworks, []string{"solana-devnet"}) {
+	// Testnet is every test network Algebra pays on.
+	if err != nil || !slices.Equal(v.Constraints.AllowedNetworks, []string{"arc-testnet", "base-sepolia", "solana-devnet"}) {
 		t.Fatalf("devnet pass: %v %v", v, err)
+	}
+	if v, _, err := rig.svc.CreateIntent(ctx, "dev", networkSpec("e-3b", "base-sepolia")); err != nil || !slices.Equal(v.Constraints.AllowedNetworks, []string{"base-sepolia"}) {
+		t.Fatalf("a Testnet pass may pay on Base Sepolia alone: %v %v", v, err)
 	}
 	_, _, err = rig.svc.CreateIntent(ctx, "dev", networkSpec("e-4", "solana"))
 	denied(t, err, DenyEnvironmentNetwork)

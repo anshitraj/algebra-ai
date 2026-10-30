@@ -63,3 +63,33 @@ test("zero on a pass means ask before every call, not never", () => {
   assert.deepEqual(approvalRule({ approve_above_minor_units: 0 }), { kind: "always" });
   assert.deepEqual(approvalRule({ approve_above_minor_units: 50_000 }), { kind: "above", minor: 50_000 });
 });
+
+// Provider names: catalogs that only know a host get a readable name, never a deployment hash.
+import { nameFromHost, providerTitle, shortHost } from "../lib/provider-presentation.ts";
+
+test("a host becomes the brand it names", () => {
+  assert.equal(nameFromHost("api.bentcrypto.com"), "Bentcrypto");
+  assert.equal(nameFromHost("x402.browserbase.com"), "Browserbase");
+  assert.equal(nameFromHost("example.co.uk"), "Example");
+});
+
+test("a hosting platform's subdomain is the app's name, without its deployment hash", () => {
+  assert.equal(nameFromHost("token-lemon-eta.vercel.app"), "Token Lemon Eta");
+  assert.equal(nameFromHost("softbot-screenshot-mainnet.softbot.workers.dev"), "Softbot Screenshot");
+  assert.equal(nameFromHost("blockrun-sol-vbsbhh7lea-uc.a.run.app"), "Blockrun");
+  assert.equal(nameFromHost("myapp-git-main-team.vercel.app"), "Myapp");
+  assert.equal(nameFromHost("1mpixels-one.vercel.app"), "1mpixels One");
+});
+
+test("UUID projects and tunnels have no name to show", () => {
+  assert.equal(nameFromHost("01a046b2-7104-74c2-8a02-04715d7235e1-1aw0hwejp-xai-org.vercel.app"), "");
+  assert.equal(nameFromHost("adenological-kenya-emphatically.ngrok-free.dev"), "");
+});
+
+test("a provider listed by host is titled by its description when the host has no name", () => {
+  const host = "01a046b2-7104-74c2-8a02-04715d7235e1-1aw0hwejp-xai-org.vercel.app";
+  assert.equal(providerTitle({ name: host, host, description: "Claude inference. GET this URL → HTTP 402" }), "Claude inference");
+  assert.equal(providerTitle({ name: host, host, description: "" }), "Independent API");
+  assert.equal(providerTitle({ name: "DKIM key lookup", host: "dkim.example.com", description: "" }), "DKIM key lookup");
+  assert.equal(shortHost(host), "…-1aw0hwejp-xai-org.vercel.app");
+});

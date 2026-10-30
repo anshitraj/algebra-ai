@@ -8,23 +8,14 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { solscanTx } from "@/lib/explorer";
 import { useNotifications, type AppNotification, type TxKind } from "@/lib/notifications";
-import { IconBell, IconExternal, IconLock, IconReceipt, IconRefresh, IconShield, IconUnlock, IconWallet } from "@/components/icons";
+import { IconBell, IconExternal, IconReceipt } from "@/components/icons";
 import { timeAgo } from "./ui";
 
 const ICONS: Record<TxKind, (p: { size?: number }) => React.ReactNode> = {
-  vault: (p) => <IconShield {...p} />,
-  deposit: (p) => <IconWallet {...p} />,
-  withdraw: (p) => <IconWallet {...p} />,
-  close: (p) => <IconWallet {...p} />,
-  faucet: (p) => <IconWallet {...p} />,
-  freeze: (p) => <IconLock {...p} />,
-  unfreeze: (p) => <IconUnlock {...p} />,
-  revoke: (p) => <IconLock {...p} />,
-  swap: (p) => <IconRefresh {...p} />,
   payment: (p) => <IconReceipt {...p} />,
 };
 
-const where = (n: AppNotification) => (n.network === "solana" ? "Mainnet" : n.network === "solana-devnet" ? "Devnet" : "");
+const where = (n: AppNotification) => (n.network === "solana" ? "Mainnet" : n.network === "solana-devnet" ? "Testnet" : "");
 
 export function NotificationBell() {
   const { items, unread, seenAt, markAllRead, clear } = useNotifications();

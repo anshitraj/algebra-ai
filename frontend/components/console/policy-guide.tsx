@@ -14,10 +14,12 @@ import type { SpendPass } from "@/lib/types";
 import type { NewProviderRule, UnverifiedRule, WebFoundRule } from "@/lib/routing-types";
 import { formatUSDC } from "@/lib/money";
 import { hasOwnRules } from "@/lib/policy-check";
-import { IconArrowLeft, IconArrowRight, IconBan, IconCheck, IconGauge, IconShield, IconStore, IconTag, IconX, Spinner } from "@/components/icons";
-import { Button, StatusBadge } from "./ui";
+import { IconArrowLeft, IconArrowRight, IconCheck, IconGauge, IconShield, IconStore, IconTag, IconX, Spinner } from "@/components/icons";
+import { Button } from "./ui";
 import GlassFolder, { hashString } from "@/components/ui/glass-folder-cards";
 import styles from "./policy-guide.module.css";
+import { PassTasks } from "./pass-tasks";
+import { PassTestPanel } from "./task-pnl";
 
 const USDC = 1_000_000;
 const toMinor = (v: string) => Math.round(Number(v) * USDC);
@@ -114,11 +116,37 @@ function sentences(d: Draft, p: SpendPass): { icon: React.ReactNode; text: strin
 
 const STEPS = ["Approval", "Per call", "Providers", "Speed", "Review"] as const;
 
-/** One pass: its rules as sentences, and "Change rules" opens the guide. */
+/** When this pass asks the person, in a few words: the cover of its folder. */
+export function askLine(p: SpendPass) {
+  const a = p.approve_above_minor_units;
+  return a == null ? "Never asks" : a === 0 ? "Asks every time" : `Asks at ${formatUSDC(a)}+`;
+}
+
+/** Each rule in a word or two: the papers inside a pass's folder. */
+function ruleFiles(d: Draft): { name: string; meta: string }[] {
+  return [
+    { name: "Approval", meta: d.ask === "every" ? "Every payment" : d.ask === "above" ? `From ${d.askAbove} USDC` : "Never asks" },
+    { name: "Per call", meta: d.cap ? `Up to ${d.cap} USDC` : "No cap" },
+    { name: "Providers", meta: d.providers === "picked" && d.picked.length ? `${d.picked.length} picked` : "Any" },
+    { name: "Speed", meta: SPEEDS[d.speed].label },
+  ];
+}
+
+const ENVIRONMENTS: Record<string, string> = { sandbox: "Demo", devnet: "Testnet", mainnet: "Mainnet" };
+
+/** An amount without its unit, where the unit was just said. */
+const bare = (minor: number) => formatUSDC(minor).replace(/\s*USDC$/, "");
+
+/**
+ * One agent's Spend Pass as a folder: its rules are the papers inside, a
+ * switch turns it on and off like an extension, and the bar shows what it
+ * has spent of its limit. Opening the folder shows the rules in sentences;
+ * a paper, or "Edit rules", opens the guide at that rule.
+ */
 export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () => void }) {
   const detailsId = useId();
   const folderRef = useRef<HTMLDivElement>(null);
-  const [folderWidth, setFolderWidth] = useState(240);
+  const [folderWidth, setFolderWidth] = useState(220);
   const [expanded, setExpanded] = useState(false);
   const [open, setOpen] = useState(false);
   const [startAt, setStartAt] = useState(0);
@@ -126,13 +154,24 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
   const [msg, setMsg] = useState<string | null>(null);
   const frozen = !!pass.frozen_at;
   const own = hasOwnRules(pass);
-  const summary = useMemo(() => sentences(draftOf(pass), pass), [pass]);
+  const draft = useMemo(() => draftOf(pass), [pass]);
+  const summary = useMemo(() => sentences(draft, pass), [draft, pass]);
+  const files = useMemo(() => ruleFiles(draft), [draft]);
+  const env = pass.environment ? ENVIRONMENTS[pass.environment] : undefined;
+  // Running tasks hold part of the limit: not spent, but not free either until they end.
+  const aside = pass.set_aside_minor_units ?? 0;
+  const spent = Math.max(0, pass.budget_minor_units - pass.remaining_minor_units - aside);
+  const taken = Math.max(0, pass.budget_minor_units - pass.remaining_minor_units);
+  const used = pass.budget_minor_units > 0 ? Math.min(1, taken / pass.budget_minor_units) : 0;
+  const spentShare = pass.budget_minor_units > 0 ? Math.min(1, spent / pass.budget_minor_units) : 0;
+  const level = used >= 1 ? "out" : used >= 0.8 ? "low" : "ok";
+  const period = pass.budget_period !== "total" ? ` a ${pass.budget_period}` : "";
 
   useEffect(() => {
     const el = folderRef.current;
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
-      setFolderWidth(Math.min(280, entry.contentRect.width));
+      setFolderWidth(Math.min(240, entry.contentRect.width));
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -151,7 +190,22 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
     setOpen(true);
   }
 
-  async function freeze() {
+  async function remove() {
+    if (!window.confirm(`Delete "${pass.label}"? The agent loses access at once, and a deleted pass can't be turned back on.`)) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.revokePass(pass.id);
+      onSaved();
+    } catch (e) {
+      // Deleting is how a person stops an agent spending: a failure must never be silent.
+      setMsg(`${e instanceof Error ? e.message : "Couldn't reach Algebra"}. The pass is still on.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleOn() {
     setBusy(true);
     setMsg(null);
     try {
@@ -165,18 +219,40 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
   }
 
   return (
-    <article className={`${styles.card} ${expanded ? styles.expanded : ""}`}>
+    <article id={`pass-${pass.id}`} className={`${styles.card} ${expanded ? styles.expanded : ""} ${frozen ? styles.off : ""}`}>
       <div className={styles.cover}>
-        <div className={styles.eyebrow}>
-          <span><IconShield size={13} /> Spending policy</span>
-          {frozen ? <StatusBadge status="DENIED" label="Frozen" /> : <span className={styles.live}>Active</span>}
-        </div>
+        <header className={styles.head}>
+          <div className={styles.name}>
+            <h3>{pass.label}</h3>
+            <p>
+              {env && (
+                <span className={styles.env} data-env={pass.environment}>
+                  {env}
+                </span>
+              )}
+              {frozen ? "Off: nothing is paid" : "On"}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!frozen}
+            aria-label={`${pass.label}: ${frozen ? "off" : "on"}`}
+            title={frozen ? "Turn on: the agent can spend again" : "Turn off: nothing is paid until you turn it back on"}
+            className={styles.switch}
+            onClick={toggleOn}
+            disabled={busy}
+          >
+            <span className={styles.thumb}>{busy && <Spinner size={10} />}</span>
+          </button>
+        </header>
+
         <div ref={folderRef} className={styles.folder}>
           <GlassFolder
-            label={pass.label}
-            meta="4 spending rules"
+            label={frozen ? "Off" : askLine(pass)}
+            meta={draft.cap ? `Up to ${draft.cap} USDC a call` : "No cap per call"}
             tone="dark"
-            art="aurora"
+            art={frozen ? "glacier" : "aurora"}
             seed={hashString(pass.id) % 997}
             action="none"
             width={folderWidth}
@@ -185,64 +261,87 @@ export function PolicyGuide({ pass, onSaved }: { pass: SpendPass; onSaved: () =>
             closeOnOutside={false}
             ariaControls={detailsId}
             appear={false}
-            files={[
-              { name: "Approval", meta: "01" },
-              { name: "Per call", meta: "02" },
-              { name: "Providers", meta: "03" },
-              { name: "Speed", meta: "04" },
-            ]}
+            files={files}
             onFileSelect={(_, index) => editRule(index)}
             className={styles.glass}
           />
         </div>
-        <div className={styles.balance}>
-          <span>Available to spend</span>
-          <strong>{formatUSDC(pass.remaining_minor_units)}</strong>
-          <span>of {formatUSDC(pass.budget_minor_units)}{pass.budget_period !== "total" ? ` per ${pass.budget_period}` : " total budget"}</span>
+
+        <div className={styles.limit} data-level={level}>
+          <div className={styles.limitText}>
+            <span>
+              <strong>{formatUSDC(spent)}</strong> spent
+            </span>
+            <span>
+              {bare(pass.remaining_minor_units)} left of {bare(pass.budget_minor_units)}
+              {period}
+            </span>
+            {aside > 0 && <span className={styles.held}>{bare(aside)} held by running tasks</span>}
+          </div>
+          <div
+            className={styles.track}
+            role="meter"
+            aria-label="Spent of the pass's limit"
+            aria-valuemin={0}
+            aria-valuemax={pass.budget_minor_units}
+            aria-valuenow={taken}
+            aria-valuetext={`${formatUSDC(spent)} spent${aside > 0 ? ` and ${formatUSDC(aside)} held by running tasks` : ""} of ${formatUSDC(pass.budget_minor_units)}`}
+          >
+            {aside > 0 && <span className={styles.aside} style={{ transform: `scaleX(${used})` }} />}
+            <span style={{ transform: `scaleX(${spentShare})` }} />
+          </div>
         </div>
-        <button type="button" className={styles.openButton} aria-expanded={expanded} aria-controls={detailsId} onClick={() => toggleExpanded(!expanded)} disabled={open}>
-          {expanded ? "Close policy" : "Open spending policy"}
-          {expanded ? <IconX size={14} /> : <IconArrowRight size={14} />}
-        </button>
-        {!expanded && msg && <p role="status" className="mt-3 text-xs text-muted">{msg}</p>}
+
+        <footer className={styles.actions}>
+          <button type="button" onClick={() => editRule()} disabled={open}>
+            <IconShield size={13} /> {own ? "Edit rules" : "Set up rules"}
+          </button>
+          <button type="button" className={styles.delete} onClick={remove} disabled={busy}>
+            <IconX size={13} /> Delete
+          </button>
+        </footer>
+        {!expanded && msg && (
+          <p role="status" className={styles.msg}>
+            {msg}
+          </p>
+        )}
       </div>
 
       <div id={detailsId} hidden={!expanded} className={styles.details}>
-        <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5">
-          <div className="min-w-0">
-            <h3 className="text-base font-semibold text-foreground">{pass.label}</h3>
-            <p className="mt-0.5 text-xs text-muted">Your rules, checked before every payment.</p>
-          </div>
-          <div className="flex gap-2">
-            {!open && (
-              <Button onClick={() => editRule()}>
-                <IconShield size={14} /> {own ? "Change rules" : "Set up rules"}
-              </Button>
-            )}
-            <Button variant={frozen ? "secondary" : "danger"} onClick={freeze} disabled={busy}>
-              {busy ? <Spinner size={14} /> : frozen ? <IconCheck size={14} /> : <IconBan size={14} />} {frozen ? "Unfreeze" : "Freeze"}
-            </Button>
-          </div>
+        <div className={styles.detailsHead}>
+          <h4>{open ? "Edit rules" : "Rules"}</h4>
+          {!open && (
+            <button type="button" onClick={() => toggleExpanded(false)} aria-label="Close the rules">
+              <IconX size={14} />
+            </button>
+          )}
         </div>
 
         {!open ? (
-          <div className="px-5 pt-3 pb-5">
+          <div className="px-5 pt-1 pb-5">
             {!own && (
               <p className="mb-3 rounded-xl bg-accent-tint/50 px-3.5 py-2.5 text-xs leading-relaxed text-foreground">
-                No rules of your own yet: only the budget and Algebra&apos;s defaults stand between this agent and a payment. Set them up in four short steps.
+                No rules of your own yet: only the limit and Algebra&apos;s defaults stand between this agent and a payment.
               </p>
             )}
             <ul className="space-y-2">
               {summary.map((s, i) => (
                 <li key={i} className="flex items-start gap-2.5 text-sm text-foreground">
-                  <span className="mt-0.5 text-primary">{s.icon}</span>
+                  <span className="mt-0.5 text-muted">{s.icon}</span>
                   {s.text}
                 </li>
               ))}
             </ul>
-            {msg && <p role="status" className="mt-3 text-sm text-muted">{msg}</p>}
+            {msg && (
+              <p role="status" className="mt-3 text-sm text-muted">
+                {msg}
+              </p>
+            )}
           </div>
-        ) : (
+        ) : null}
+        {expanded && !open && <PassTasks passId={pass.id} heldMinor={aside} onChanged={onSaved} />}
+        {expanded && !open && <PassTestPanel passId={pass.id} off={frozen} />}
+        {!open ? null : (
           <Guide
             pass={pass}
             startAt={startAt}

@@ -37,6 +37,7 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/routing"
 	"github.com/project-algebra/algebra/internal/platform/bankoffers"
 	"github.com/project-algebra/algebra/internal/platform/config"
+	"github.com/project-algebra/algebra/internal/platform/evm"
 	"github.com/project-algebra/algebra/internal/platform/gcpkms"
 	"github.com/project-algebra/algebra/internal/platform/identity"
 	"github.com/project-algebra/algebra/internal/platform/payersigner"
@@ -50,6 +51,7 @@ import (
 	"github.com/project-algebra/algebra/providers/arcium"
 	"github.com/project-algebra/algebra/providers/bazaar"
 	"github.com/project-algebra/algebra/providers/catalog"
+	"github.com/project-algebra/algebra/providers/evmx402"
 	"github.com/project-algebra/algebra/providers/jupiter"
 	"github.com/project-algebra/algebra/providers/monid"
 	"github.com/project-algebra/algebra/providers/paymentdemo"
@@ -109,8 +111,13 @@ type Bundle struct {
 	Receipts    *app.ReceiptService
 
 	// --- Economic coordination (internal/domain/econ) ---
-	Economic       *app.EconomicService
+	Economic *app.EconomicService
+	// JobPasses are task budgets set aside from a Spend Pass (internal/domain/jobpass).
+	JobPasses      *app.JobPassService
 	IntentReceipts *app.IntentReceiptService
+	// ToolKeys holds a person's own API keys for web tools (providers/keyed);
+	// nil when the server has no database.
+	ToolKeys *app.ToolKeys
 	// SandboxProvider is the SANDBOX x402 provider, nil unless
 	// ECONOMIC_SANDBOX is on (see config.Config.EconomicSandbox).
 	SandboxProvider *sandboxpay.Provider
@@ -156,6 +163,20 @@ type Bundle struct {
 	// DevnetFaucet gives a signed-in person devnet SOL and USDC; nil when no
 	// funded faucet wallet is configured.
 	DevnetFaucet *app.DevnetFaucet
+	// TestCredits is every account's Testnet money; nil when no devnet rail
+	// runs.
+	TestCredits *app.TestCredits
+	// OwnerVaults is the owner's own wallet: addresses, balances, withdrawals
+	// the browser signed (docs/WALLET.md).
+	OwnerVaults *app.OwnerVaultService
+	// EVMRails pay x402 on Base Sepolia and Arc testnet (providers/evmx402).
+	EVMRails []*evmx402.Rail
+	// EVMAllowances lets agents spend from owners' vaults there, through
+	// USDC permits to the EVM payer.
+	EVMAllowances *app.EVMAllowanceService
+	// VaultAllowances lets agents spend from the owner's vault through the
+	// capped allowance it gave the payer; nil where no Solana rail runs.
+	VaultAllowances *app.VaultAllowanceService
 	// MCPPublicURL: see config.Config.MCPPublicURL.
 	MCPPublicURL string
 	// MCPLegacyTools: see config.Config.MCPLegacyTools.
@@ -163,9 +184,7 @@ type Bundle struct {
 	// OAuthProviders holds only the providers with credentials configured,
 	// keyed by name ("google", "github").
 	OAuthProviders map[string]identity.Provider
-	// Privy verifies Privy sign-ins; nil unless PRIVY_APP_ID is set.
-	Privy      *identity.Privy
-	AuthConfig config.AuthConfig
+	AuthConfig     config.AuthConfig
 	// OAuthStateKey signs the short-lived OAuth state/PKCE cookie. Derived
 	// from the master key, never used for anything else.
 	OAuthStateKey []byte
@@ -406,6 +425,9 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	econRepo := postgres.NewEconRepo(db)
 	spendPassSvc.CountEconomicSpend(econRepo)
 	econSvc := app.NewEconomicService(econRepo, agents, passRepo, passRepo)
+	// Job Passes set a task's budget aside under the same pass lock reservations take.
+	jobSvc := app.NewJobPassService(postgres.NewJobPassRepo(db), passRepo, passRepo)
+	jobSvc.SetPnL(econRepo)
 	// Demo sign-ins are free and open to anyone: they pay in the sandbox only.
 	econSvc.SetAccountModes(accountSvc)
 	// Real-money mainnet payments only when the operator turned them on.
@@ -437,7 +459,12 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		db.Close()
 		return nil, fmt.Errorf("wiring: %w", err)
 	}
-	execSvc, execProviders, solanaRails, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db), signers)
+	evmRails, err := buildEVMRails(ctx, cfg, db, masterKey)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("wiring: %w", err)
+	}
+	execSvc, execProviders, solanaRails, err := buildExecution(ctx, cfg, econSvc, postgres.NewExecutionRepo(db), signers, evmRails)
 	var intelSources []app.IntelSource
 	if err == nil && sandboxPersonas != nil {
 		if port := listenPort(cfg.HTTPAddr); port > 0 {
@@ -468,8 +495,13 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		}
 		execSvc.SetResults(app.NewResultVault(postgres.NewResultRepo(db), resultEnc, cfg.Results.Retention, cfg.Results.MaxBytes))
 	}
+	toolKeys, err := buildKeyedTools(db, masterKey, econSvc, execSvc, passRepo, accountSvc, cfg.WebTools, accountSvc)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 	directory := buildDirectory(cfg)
-	candidates := app.CandidateResolver{Configured: execProviders}
+	candidates := app.CandidateResolver{Configured: execProviders, Keyed: toolKeys}
 	var classIndex *catalog.ClassIndex
 	if directory != nil {
 		candidates.Catalog = catalogSource{directory}
@@ -527,16 +559,16 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	if cfg.Auth.GitHubClientID != "" && cfg.Auth.GitHubClientSecret != "" {
 		oauthProviders["github"] = identity.NewGitHub(cfg.Auth.GitHubClientID, cfg.Auth.GitHubClientSecret)
 	}
-	var privy *identity.Privy
-	if cfg.Auth.PrivyAppID != "" {
-		if privy, err = identity.NewPrivy(cfg.Auth.PrivyAppID, cfg.Auth.PrivyVerificationKey); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("wiring: %w", err)
-		}
-	}
 	stateMAC := hmac.New(sha256.New, masterKey)
 	stateMAC.Write([]byte("algebra:oauth-state:v1"))
 	oauthStateKey := stateMAC.Sum(nil)
+	// Sign-in codes are stored as hashes under a key derived from the master
+	// key and used for nothing else.
+	if cfg.Auth.EmailCodeLogin {
+		codeMAC := hmac.New(sha256.New, masterKey)
+		codeMAC.Write([]byte("algebra:login-code:v1"))
+		accountSvc.SetLoginCodes(accountRepo, codeMAC.Sum(nil))
+	}
 	webhookSvc := app.NewWebhookService(postgres.NewWebhookRepo(db), auditRepo, envWebhookSecret)
 	auditSvc := app.NewAuditService(auditRepo, agents)
 	confidentialProvider := arcium.NewLocalEncryptedProvider(encryptor)
@@ -588,12 +620,44 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 		db.Close()
 		return nil, fmt.Errorf("wiring: %w", err)
 	}
+	allowances, err := buildVaultAllowances(cfg, solanaRails, db, passRepo, econRepo, signers, limiter)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("wiring: %w", err)
+	}
+	onchainPasses.SetAllowances(allowances)
+	// Who funds a payment, in order: the pass's on-chain vault when it has
+	// one; the owner's own vault, through its allowance, when the owner chose
+	// that; and otherwise the shared devnet wallet, inside the test-money
+	// guard and the account's Testnet credits.
+	var funders app.FunderChain
 	if onchainPasses != nil {
-		econSvc.SetFunder(onchainPasses)
+		funders = append(funders, onchainPasses)
 		execSvc.SetVaults(onchainPasses)
 		intentReceiptSvc.SetFunding(onchainPasses)
 	}
-	mainnet := app.MainnetFacts{ExecutionEnabled: cfg.MainnetExecution, PassesRequired: cfg.OnchainPasses.Required["mainnet"]}
+	if allowances != nil {
+		funders = append(funders, allowances)
+		if onchainPasses == nil {
+			execSvc.SetVaults(allowances)
+			intentReceiptSvc.SetFunding(allowances)
+		}
+	}
+	evmAllowances := buildEVMAllowances(cfg, evmRails, db, passRepo, econRepo, limiter)
+	if evmAllowances != nil {
+		funders = append(funders, evmAllowances)
+	}
+	if guard := buildTestMoneyGuard(cfg, solanaRails, evmRails, passRepo, limiter); guard != nil {
+		funders = append(funders, guard)
+	}
+	credits := buildTestCredits(cfg, solanaRails, evmRails, passRepo, econRepo)
+	if credits != nil {
+		funders = append(funders, credits)
+	}
+	if len(funders) > 0 {
+		econSvc.SetFunder(funders)
+	}
+	mainnet := app.MainnetFacts{ExecutionEnabled: cfg.MainnetExecution, PassesRequired: !cfg.OnchainPasses.Disabled && cfg.OnchainPasses.Required["mainnet"]}
 	for _, r := range solanaRails {
 		if r.Network() == chain.Solana {
 			mainnet.RailConfigured, mainnet.Payer = true, r.Address().String()
@@ -608,6 +672,7 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 	}
 
 	walletRPCs := map[string]app.WalletRPC{}
+	vaultSolana := map[string]app.VaultSolanaRPC{}
 	for _, c := range []struct{ cluster, network string }{{"devnet", chain.SolanaDevnet}, {"mainnet", chain.Solana}} {
 		url := defaultSolanaRPC[c.cluster]
 		for _, sc := range cfg.SolanaRails {
@@ -619,20 +684,33 @@ func Build(ctx context.Context, cfg *config.Config, migrationsDir string) (*Bund
 				url = sc.RPCURL
 			}
 		}
-		walletRPCs[c.network] = solana.NewRPC(url, nil)
+		rpc := solana.NewRPC(url, nil)
+		walletRPCs[c.network], vaultSolana[c.network] = rpc, rpc
+	}
+	vaultEVM := map[string]app.VaultEVMRPC{}
+	for network, url := range cfg.Vault.EVMRPC {
+		vaultEVM[network] = evm.NewRPC(url)
+	}
+	if cfg.Vault.MainnetDeposits {
+		log.Printf("wiring: VAULT_MAINNET_DEPOSITS is on: mainnet deposit addresses are shown")
 	}
 
 	return &Bundle{
-		Mainnet:        mainnet,
-		WalletBalances: app.NewWalletBalanceService(accountSvc, walletRPCs),
-		DevnetFaucet:   buildDevnetFaucet(ctx, cfg, accountSvc, limiter, postgres.NewFaucetRepo(db)),
-		DB:             db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
+		Mainnet:         mainnet,
+		WalletBalances:  app.NewWalletBalanceService(accountSvc, walletRPCs),
+		DevnetFaucet:    buildDevnetFaucet(ctx, cfg, accountSvc, limiter, postgres.NewFaucetRepo(db)),
+		TestCredits:     credits,
+		VaultAllowances: allowances,
+		EVMRails:        evmRails,
+		EVMAllowances:   evmAllowances,
+		OwnerVaults:     app.NewOwnerVaultService(postgres.NewOwnerVaultRepo(db), vaultSolana, vaultEVM, cfg.Vault.MainnetDeposits, limiter),
+		DB:              db, Agents: agents, AgentSvc: agentSvc, Integrators: integrators, IntegratorSvc: integratorSvc, TransactionPolicy: transactionPolicySvc,
 		Users: userSvc, Intents: intentSvc, Discovery: discoverySvc, Quotes: quoteSvc,
 		Policy: policySvc, Approvals: approvalSvc, Orders: orderSvc, Payments: paymentSvc,
 		Privacy: privacyResolver, Connectors: connectors, Idempotency: idempotency, Audit: auditRepo,
 		CommerceProfiles: commerceProfiles, CommerceProfileSvc: commerceProfileSvc,
 		Billing: billingSvc, Plugins: pluginSvc, Accounts: accountSvc, Activity: activitySvc, Onboarding: onboardingSvc, Demo: demoSvc, SpendPasses: spendPassSvc, Receipts: receiptSvc, Tenancy: tenancySvc, Leads: leadSvc, Notifications: notificationSvc,
-		Economic: econSvc, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, Signers: signers, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders, Privy: privy,
+		Economic: econSvc, JobPasses: jobSvc, ToolKeys: toolKeys, IntentReceipts: intentReceiptSvc, SandboxProvider: sandboxProvider, SandboxPersonas: sandboxPersonas, Execution: execSvc, Candidates: candidates, Classes: classIndex, Health: health, Intel: intelSvc, Directory: directory, SolanaRails: solanaRails, OnchainPasses: onchainPasses, Signers: signers, MCPPublicURL: cfg.MCPPublicURL, MCPLegacyTools: cfg.MCPLegacyTools, OAuthProviders: oauthProviders,
 		AuthConfig: cfg.Auth, OAuthStateKey: oauthStateKey,
 		Redis: redisClient, Limiter: limiter,
 		Webhooks: webhookSvc, AuditSvc: auditSvc, Confidential: confidentialProvider,
@@ -657,7 +735,7 @@ func envWebhookSecret(provider string) string {
 // buildExecution wires the executor: the x402 runner over an HTTP client that
 // can only reach public addresses (plus the sandbox provider's own port in
 // sandbox mode), the capability catalog, and the providers an agent can name.
-func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.EconomicService, store app.ExecutionStore, signers map[string]*payersigner.Signer) (*app.ExecutionService, map[string][]routing.Candidate, []*solanax402.Rail, error) {
+func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.EconomicService, store app.ExecutionStore, signers map[string]*payersigner.Signer, evmRails []*evmx402.Rail) (*app.ExecutionService, map[string][]routing.Candidate, []*solanax402.Rail, error) {
 	var solanaRails []*solanax402.Rail
 	caps := app.DefaultCapabilities()
 	if cfg.Jupiter.Enabled {
@@ -703,6 +781,10 @@ func buildExecution(ctx context.Context, cfg *config.Config, econSvc *app.Econom
 			networks[rail.Network()] = rail.Name()
 			solanaRails = append(solanaRails, rail)
 		}
+	}
+	for _, rail := range evmRails {
+		econSvc.RegisterRail(rail)
+		networks[rail.Network()] = rail.Name()
 	}
 	exec := app.NewExecutionService(econSvc, store)
 	exec.SetCapabilities(catalog)
@@ -885,16 +967,101 @@ var defaultSolanaRPC = map[string]string{
 	"mainnet": "https://api.mainnet-beta.solana.com",
 }
 
-// buildOnchainPasses turns on on-chain Spend Passes for every Solana rail that
-// runs: each rail's own payer is the agent of every pass on its cluster, so a
-// pull lands where the rail pays from.
+// buildTestMoneyGuard counts the payments the shared devnet wallet makes (see
+// app.TestMoneyGuard). Nil where no devnet rail runs, or when it is switched off.
+func buildTestMoneyGuard(cfg *config.Config, rails []*solanax402.Rail, evmRails []*evmx402.Rail, passes app.PassOwners, limiter app.RateLimiter) *app.TestMoneyGuard {
+	names := testRailNames(rails, evmRails)
+	if len(names) == 0 {
+		return nil
+	}
+	if cfg.TestMoney.Off {
+		log.Printf("wiring: the test-money guard is OFF: nothing limits what the devnet wallet pays out")
+		return nil
+	}
+	counted := "in memory (set REDIS_ADDR to share the counts between instances)"
+	if limiter != nil {
+		counted = "in Redis"
+	}
+	log.Printf("wiring: test-money guard on %v: each account up to %d payments a day, everyone up to %d, counted %s", names, cfg.TestMoney.PerAccountPerDay, cfg.TestMoney.PerDay, counted)
+	return app.NewTestMoneyGuard(names, passes, limiter, cfg.TestMoney.PerAccountPerDay, cfg.TestMoney.PerDay)
+}
+
+// buildTestCredits gives every account its Testnet credits on the devnet
+// rails (see app.TestCredits). Nil where no devnet rail runs, or when off.
+func buildTestCredits(cfg *config.Config, rails []*solanax402.Rail, evmRails []*evmx402.Rail, passes app.PassOwners, spend app.TestCreditSpend) *app.TestCredits {
+	names := testRailNames(rails, evmRails)
+	if len(names) == 0 || cfg.TestMoney.CreditsOff {
+		return nil
+	}
+	log.Printf("wiring: Testnet credits on %v: each account starts with %s USDC and %s SOL", names,
+		chain.FormatUnits(cfg.TestMoney.CreditsUSDCMinor, chain.USDCDecimals), chain.FormatUnits(cfg.TestMoney.CreditsSOLLamports, 9))
+	return app.NewTestCredits(names, chain.SolanaDevnet, passes, spend, cfg.TestMoney.CreditsUSDCMinor, cfg.TestMoney.CreditsSOLLamports)
+}
+
+// buildVaultAllowances lets agents spend from owners' vaults on every Solana
+// rail that runs: the rail's payer is the delegate of each allowance and pays
+// the fee of approves and revokes. On mainnet only once mainnet deposits are
+// on (VAULT_MAINNET_DEPOSITS), which waits for an independent review.
+func buildVaultAllowances(cfg *config.Config, rails []*solanax402.Rail, db *postgres.DB, passes app.PassOwners, reservations app.ReservationReader, signers map[string]*payersigner.Signer, limiter app.RateLimiter) (*app.VaultAllowanceService, error) {
+	var nets []*app.OnchainNetwork
+	for _, rail := range rails {
+		cluster := "mainnet"
+		if rail.Network() == chain.SolanaDevnet {
+			cluster = "devnet"
+		}
+		if cluster == "mainnet" && !cfg.Vault.MainnetDeposits {
+			continue
+		}
+		var sc *config.SolanaConfig
+		for i := range cfg.SolanaRails {
+			c := strings.ToLower(cfg.SolanaRails[i].Cluster)
+			if c == cluster || (cluster == "mainnet" && c == "mainnet-beta") {
+				sc = &cfg.SolanaRails[i]
+			}
+		}
+		sig := signers[cluster]
+		if sc == nil || sig == nil {
+			continue
+		}
+		if sig.Key.PublicKey() != rail.Address() {
+			return nil, fmt.Errorf("vault allowances: the %s wallet doesn't match its rail", cluster)
+		}
+		mint, _ := chain.AssetAddress(rail.Network(), "USDC")
+		nets = append(nets, &app.OnchainNetwork{
+			Network: rail.Network(), Cluster: cluster, RailName: rail.Name(), RPC: solana.NewRPC(solanaRPCURL(*sc), nil),
+			Payer: sig.Key, Mint: solana.MustPublicKey(mint), Rail: rail,
+			PriorityMicroLamports: cfg.OnchainPasses.PriorityMicroLamports, SignerMode: string(sig.Mode),
+		})
+		log.Printf("wiring: vault allowances on %s: delegate %s", cluster, sig.Key.PublicKey())
+	}
+	if len(nets) == 0 {
+		return nil, nil
+	}
+	return app.NewVaultAllowanceService(postgres.NewVaultAllowanceRepo(db), postgres.NewOwnerVaultRepo(db), passes,
+		postgres.NewOnchainPassRepo(db), reservations, nets, cfg.Vault.AllowanceMaxMinor, limiter), nil
+}
+
+// buildOnchainPasses turns on on-chain Spend Passes (ONCHAIN_PASSES=on) for
+// every Solana rail that runs: each rail's own payer is the agent of every pass
+// on its cluster, so a pull lands where the rail pays from.
 func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgres.DB, passes *app.SpendPassService, wallets app.UserWalletStore, reservations app.ReservationReader, signers map[string]*payersigner.Signer) (*app.OnchainPassService, error) {
 	if cfg.OnchainPasses.Disabled || len(rails) == 0 {
+		if cfg.OnchainPasses.Disabled && (cfg.OnchainPasses.ProgramID != "" || len(cfg.OnchainPasses.Required) > 0 || len(cfg.OnchainPasses.AnyOwner) > 0) {
+			log.Printf("wiring: the SPEND_PASS_* settings are ignored: on-chain Spend Passes are off (set ONCHAIN_PASSES=on to use them)")
+		}
 		return nil, nil
 	}
 	program, err := spendpass.New(cfg.OnchainPasses.ProgramID)
 	if err != nil {
 		return nil, err
+	}
+	// Passes made on any deployment of the program keep working: the same
+	// program on Anchor and on Pinocchio, with the same bytes and rules.
+	accepted := []spendpass.Program{program}
+	for _, id := range spendpass.KnownProgramIDs {
+		if p, err := spendpass.New(id); err == nil && p.ID != program.ID {
+			accepted = append(accepted, p)
+		}
 	}
 	var nets []*app.OnchainNetwork
 	anyOwner := map[string]bool{}
@@ -950,7 +1117,7 @@ func buildOnchainPasses(cfg *config.Config, rails []*solanax402.Rail, db *postgr
 		}
 		mintStr, _ := chain.AssetAddress(rail.Network(), "USDC")
 		net := &app.OnchainNetwork{
-			Network: rail.Network(), Cluster: cluster, RailName: rail.Name(), Program: program,
+			Network: rail.Network(), Cluster: cluster, RailName: rail.Name(), Program: program, Accepted: accepted,
 			RPC: rpc, Payer: kp, Mint: solana.MustPublicKey(mintStr), Rail: rail,
 			PriorityMicroLamports: cfg.OnchainPasses.PriorityMicroLamports, Required: cfg.OnchainPasses.Required[cluster],
 			AuthorityKnown: authErr == nil, Immutable: authErr == nil && authority == nil,

@@ -32,6 +32,14 @@ type Score struct {
 	LatencyMS     int    `json:"latency_ms,omitempty"`
 	LatencySource string `json:"latency_source,omitempty"`
 	Calls         int    `json:"calls,omitempty"`
+	// AcceptRate is the expected share of attempts that end in an accepted
+	// answer, WasteRate the share paid for with nothing usable, and
+	// CostPerAcceptedMinor what one accepted answer is expected to cost with
+	// failed paid attempts and retries counted (accepted.go). The cost
+	// component and CHEAPEST rank on it, not on the offer's price.
+	AcceptRate           float64 `json:"accept_rate"`
+	WasteRate            float64 `json:"waste_rate"`
+	CostPerAcceptedMinor int64   `json:"cost_per_accepted_minor"`
 }
 
 // PlanStep is one ranked option: a live quote, how far its provider is

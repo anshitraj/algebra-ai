@@ -66,6 +66,9 @@ type StepObservation struct {
 	// SettleTx is the transaction the provider's own settle header named.
 	SettleTx            string
 	ProviderOperationID string
+	// ChargedMinor is what a vendor reported charging for a call it bills
+	// itself (a keyed tool), when the payment authority named no amount.
+	ChargedMinor int64
 	// Class and Message say why nothing was delivered.
 	Class   routing.FailureClass
 	Message string
@@ -109,6 +112,9 @@ type PlanReport struct {
 	// Replayed: nothing ran. This is the answer that was kept when the outcome
 	// was paid for.
 	Replayed bool `json:"replayed,omitempty"`
+	// Reused is set when the answer is one already paid for, handed back while
+	// fresh (purchase_memory.go): nothing was paid this time.
+	Reused *ReusedPurchase `json:"reused,omitempty"`
 }
 
 // Final is the last attempt, or nil when none was made.
@@ -313,7 +319,7 @@ func screen(view *IntentView, c routing.Candidate, q routing.Quote) *routing.Rej
 		return reject(routing.RejectExcluded, "the intent only allows "+strings.Join(p, ", "))
 	}
 	cons := view.Constraints
-	if n := cons.AllowedNetworks; len(n) > 0 && !slices.Contains(n, chain.NormalizeNetwork(q.Network)) {
+	if n := cons.AllowedNetworks; len(n) > 0 && !chain.IsKeyed(q.Network) && !slices.Contains(n, chain.NormalizeNetwork(q.Network)) {
 		return reject(routing.RejectNetwork, "pays on "+q.Network)
 	}
 	if q.Asset != "" && !strings.EqualFold(q.Asset, view.Currency) {
@@ -358,6 +364,25 @@ type CandidatesRequest struct {
 	Candidates []routing.Candidate
 	// DiscardResult: the caller asked for the answer not to be kept.
 	DiscardResult bool
+	// JobID: every attempt is made under this Job Pass of the agent's pass.
+	// Set from the caller's credentials, never from a request body alone.
+	JobID string
+}
+
+type jobKey struct{}
+
+// withJob carries the Job Pass a plan runs under down to each reservation.
+func withJob(ctx context.Context, jobID string) context.Context {
+	if jobID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, jobKey{}, jobID)
+}
+
+// jobOf is the Job Pass ctx runs under, or "".
+func jobOf(ctx context.Context) string {
+	id, _ := ctx.Value(jobKey{}).(string)
+	return id
 }
 
 const (
@@ -386,6 +411,7 @@ func (s *ExecutionService) ExecuteCandidates(ctx context.Context, req Candidates
 	if req.DiscardResult {
 		ctx = WithoutKeepingResult(ctx)
 	}
+	ctx = withJob(ctx, req.JobID)
 	view, err := s.agentView(ctx, req.AgentID, req.IntentID)
 	if err != nil {
 		return nil, err
@@ -606,6 +632,15 @@ type DoRequest struct {
 	Candidates []routing.Candidate
 	// DiscardResult: the caller asked for the answer not to be kept.
 	DiscardResult bool
+	// JobID: see CandidatesRequest.
+	JobID string
+	// Fresh: pay for a new answer even when a fresh one was already paid for
+	// (purchase_memory.go).
+	Fresh bool
+	// Named is the providers the request named, when it named any: only an answer
+	// one of them gave may be handed back as a reuse. Empty: any provider of the
+	// work may have given it.
+	Named []string
 }
 
 // DoResult is what Do returns.
@@ -625,6 +660,13 @@ type DoResult struct {
 // Do creates the intent for an outcome (or finds the one that already exists
 // for it) and runs it. It is the one call an agent needs.
 func (s *ExecutionService) Do(ctx context.Context, req DoRequest) (*DoResult, error) {
+	// The same work, asked again while an answer already paid for is fresh:
+	// that answer, for nothing, and no new intent.
+	if !req.Fresh {
+		if rep := s.reuse(ctx, req.AgentID, req.JobID, req.Spec, req.Named); rep != nil {
+			return &DoResult{Created: false, Report: rep, Intent: rep.Intent, Replayed: true}, nil
+		}
+	}
 	view, created, err := s.econ.CreateIntent(ctx, req.AgentID, req.Spec)
 	if err != nil {
 		return nil, err
@@ -636,7 +678,7 @@ func (s *ExecutionService) Do(ctx context.Context, req DoRequest) (*DoResult, er
 			return &DoResult{Created: false, Report: rep, Intent: view, Replayed: true}, nil
 		}
 	}
-	rep, err := s.ExecuteCandidates(ctx, CandidatesRequest{AgentID: req.AgentID, IntentID: view.ID, Candidates: req.Candidates, DiscardResult: req.DiscardResult})
+	rep, err := s.ExecuteCandidates(ctx, CandidatesRequest{AgentID: req.AgentID, IntentID: view.ID, Candidates: req.Candidates, DiscardResult: req.DiscardResult, JobID: req.JobID})
 	return &DoResult{Created: created, Report: rep, Intent: view}, err
 }
 
@@ -783,7 +825,7 @@ func (s *ExecutionService) Execute(ctx context.Context, req ExecuteRequest) (*Ex
 	}
 	rsv, err := s.econ.Reserve(ctx, req.AgentID, req.IntentID, ReserveRequest{
 		ProviderID: q.Provider, Rail: rail, QuoteMinor: q.Cost.Total(), Semantics: q.Semantics,
-		FoundOnWeb: req.Step.Trust == routing.TrustUnverified,
+		FoundOnWeb: req.Step.Trust == routing.TrustUnverified, JobID: jobOf(ctx),
 	})
 	if err != nil {
 		return nil, err
@@ -924,7 +966,7 @@ func (s *ExecutionService) evaluate(ctx context.Context, c routing.Capability, o
 // Success is only ever a claim here: the coordinator checks payment against
 // the rail before committing anything.
 func (s *ExecutionService) completion(obs StepObservation, res routing.ExecutionResult, valid bool) CompletionReport {
-	ev := econ.Evidence{Transaction: obs.SettleTx, RequestHash: obs.RequestHash, ResultHash: res.ResponseHash, ProviderOperationID: obs.ProviderOperationID}
+	ev := econ.Evidence{Transaction: obs.SettleTx, RequestHash: obs.RequestHash, ResultHash: res.ResponseHash, ProviderOperationID: obs.ProviderOperationID, AmountMinor: obs.ChargedMinor}
 	switch {
 	case obs.Delivered && obs.AuthorityReleased && valid:
 		return CompletionReport{Outcome: econ.OutcomeFulfilled, Evidence: ev}

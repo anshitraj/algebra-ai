@@ -16,7 +16,7 @@ import { isOnChain } from "./explorer";
 import { formatUSDC } from "./money";
 import type { EconIntent } from "./types";
 
-export type TxKind = "vault" | "deposit" | "withdraw" | "freeze" | "unfreeze" | "revoke" | "close" | "faucet" | "swap" | "payment";
+export type TxKind = "payment";
 
 export type AppNotification = {
   id: string;

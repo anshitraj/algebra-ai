@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"context"
-	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -158,62 +157,5 @@ func TestNotificationsOverHTTP_SignInAlertsAndAConfirmedAddress(t *testing.T) {
 		if strings.HasPrefix(e.subject, "Receipt") {
 			t.Fatalf("a sandbox call sent a receipt email: %+v", e)
 		}
-	}
-}
-
-func TestNotificationsOverHTTP_AWalletAccountIsAskedForAnEmail(t *testing.T) {
-	issuer, pemKey := newPrivyIssuer(t)
-	bundle, base := serveWith(t, map[string]string{"PRIVY_APP_ID": e2ePrivyApp, "PRIVY_VERIFICATION_KEY": pemKey})
-	box := &mailbox{}
-	bundle.Notifications.SetMailer(box)
-	signIn := func(tok string) (int, *http.Cookie, map[string]any) {
-		return browserCall(t, "POST", base+"/api/v1/auth/privy", nil, map[string]any{"identity_token": tok})
-	}
-
-	// A wallet and no email: nowhere to write to, and the account says so.
-	did, wallet := "did:privy:"+uuid.NewString(), randomSolanaAddress(t)
-	status, cookie, out := signIn(issuer.token(e2ePrivyApp, did, embeddedWallet(wallet)))
-	if status != 201 || cookie == nil {
-		t.Fatalf("wallet sign-in: %d %v", status, out)
-	}
-	if u := userOf(t, out); u["needs_notification_email"] != true || u["notification_email"] != "" {
-		t.Fatalf("a wallet account needs an email for notifications: %v", u)
-	}
-	bundle.Notifications.Wait()
-	box.mu.Lock()
-	n := len(box.sent)
-	box.mu.Unlock()
-	if n != 0 {
-		t.Fatalf("nothing is sent to a placeholder address, got %d emails", n)
-	}
-
-	// They add one and confirm it: the banner's reason is gone.
-	added := "wallet-owner-" + uuid.NewString() + "@example.test"
-	if status, _, out := browserCall(t, "POST", base+"/api/v1/me/notifications/email", cookie, map[string]any{"email": added}); status != 200 {
-		t.Fatalf("adding an address: %d %v", status, out)
-	}
-	token := confirmToken.FindStringSubmatch(box.to(added)[0].body)
-	if status, _, out := browserCall(t, "POST", base+"/api/v1/me/notifications/email/confirm", cookie, map[string]any{"token": token[1]}); status != 200 {
-		t.Fatalf("confirming: %d %v", status, out)
-	}
-	status, _, out = browserCall(t, "GET", base+"/api/v1/auth/session", cookie, nil)
-	if u := userOf(t, out); status != 200 || u["needs_notification_email"] != false || u["notification_email"] != added || u["email"] != "" {
-		t.Fatalf("notifications go to the added address; the account's own email is still none: %v", u)
-	}
-
-	// Another wallet account, whose person verified an email with Privy later:
-	// that address is used without a second confirmation, and the sign-in is emailed there.
-	did2, linked := "did:privy:"+uuid.NewString(), "linked-"+uuid.NewString()+"@example.com"
-	wallet2 := randomSolanaAddress(t)
-	if status, _, out := signIn(issuer.token(e2ePrivyApp, did2, embeddedWallet(wallet2))); status != 201 {
-		t.Fatalf("second wallet sign-in: %d %v", status, out)
-	}
-	status, _, out = signIn(issuer.token(e2ePrivyApp, did2, embeddedWallet(wallet2), map[string]any{"type": "email", "address": linked}))
-	if u := userOf(t, out); status != 200 || u["needs_notification_email"] != false || u["notification_email"] != linked {
-		t.Fatalf("a Privy-verified email is adopted: %d %v", status, out)
-	}
-	bundle.Notifications.Wait()
-	if got := box.to(linked); len(got) != 1 || got[0].subject != "New sign-in to Algebra" {
-		t.Fatalf("the sign-in alert goes to the adopted address: %+v", got)
 	}
 }

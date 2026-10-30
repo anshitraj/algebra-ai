@@ -105,30 +105,6 @@ func (s *NotificationService) SetReceiptPDF(fn func(v *IntentView, ver *IntentVe
 // SetMailer replaces the mailer (a test captures what would be sent).
 func (s *NotificationService) SetMailer(m Mailer) { s.mailer = m }
 
-// AdoptVerifiedEmail uses an address the sign-in provider verified (Privy's
-// email code) for an account that has none of its own: someone who signed in
-// with a wallet and linked an email there later. Only while the account has
-// never saved notification settings, so an address the person removed here
-// doesn't come back at the next sign-in.
-func (s *NotificationService) AdoptVerifiedEmail(ctx context.Context, u *account.User, email string) {
-	if u == nil || u.IsDemo() || account.Deliverable(u.Email) {
-		return
-	}
-	email, err := account.NormalizeEmail(email)
-	if err != nil || !account.Deliverable(email) {
-		return
-	}
-	if _, err := s.store.GetNotifySettings(ctx, u.ID); !errors.Is(err, shared.ErrNotFound) {
-		return
-	}
-	now := s.now().UTC()
-	st := account.DefaultNotifySettings(u.ID)
-	st.Email, st.EmailVerifiedAt = email, &now
-	if err := s.store.SaveNotifySettings(ctx, st, now); err != nil {
-		s.log.Warn("notifications: adopting a verified email", "user_id", u.ID, "err", err)
-	}
-}
-
 // Wait returns once every email started so far was handed to the mailer.
 func (s *NotificationService) Wait() { s.wg.Wait() }
 

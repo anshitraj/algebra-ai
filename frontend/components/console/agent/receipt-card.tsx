@@ -8,12 +8,15 @@
 // transactions sit under "Signing and funding details".
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import * as api from "@/lib/api-client";
 import type { ReceiptInfo } from "@/lib/agent/events";
+import { agoText } from "@/lib/agent/steps";
 import { explorerAddress, explorerTx, solscanTx } from "@/lib/explorer";
 import { networkLabel } from "@/lib/network";
 import type { IntentReceiptClaims } from "@/lib/types";
 import { IconCheck, IconChevronDown, IconExternal, IconReceipt } from "@/components/icons";
+import styles from "./delivery.module.css";
 
 function short(s: string, n = 8) {
   return s.length > n * 2 + 1 ? `${s.slice(0, n)}…${s.slice(-n)}` : s;
@@ -21,18 +24,18 @@ function short(s: string, n = 8) {
 
 /** The signed receipt's settlement, once it can be read: it names the vault that paid. Silent if it can't be. */
 function useSettlement(intentId: string, enabled: boolean) {
-  const [s, setS] = useState<IntentReceiptClaims["settlement"]>();
+  const [s, setS] = useState<IntentReceiptClaims["settlement"] | null>();
   useEffect(() => {
     if (!enabled) return;
     let live = true;
     (async () => {
       try {
         const i = await api.getMyEconomicIntent(intentId);
-        if (!i.receipt) return;
+        if (!i.receipt) { if (live) setS(null); return; }
         const v = await api.verifyReceipt(i.receipt);
-        if (live && v.valid) setS(v.claims?.settlement);
+        if (live) setS(v.valid ? v.claims?.settlement ?? null : null);
       } catch {
-        /* the card stands without the details */
+        if (live) setS(null);
       }
     })();
     return () => {
@@ -61,78 +64,78 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
 
 export function ReceiptCard({ receipt: r }: { receipt: ReceiptInfo }) {
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
   const [more, setMore] = useState(false);
   const net = r.network ? networkLabel(r.network) : "";
-  const testMoney = r.test || r.network === "solana-devnet";
+  const testMoney = r.test || r.network === "solana-devnet" || r.network === "sandbox";
   const onChain = r.network === "solana" || r.network === "solana-devnet";
-  const settled = useSettlement(r.intentId, onChain);
+  const settled = useSettlement(r.intentId, onChain && more);
   const funding = settled?.funding;
   return (
-    <section className="rounded-2xl border border-primary/30 bg-surface" aria-label="Receipt">
-      <div className="flex flex-wrap items-center gap-2.5 border-b border-border px-4 py-3">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-tint">
-          <IconCheck size={13} strokeWidth={3} />
+    <section className={styles.receipt} aria-label={`Receipt for ${r.provider}`}>
+      <div className={styles.receiptHeader}>
+        <span className={styles.receiptMark}>
+          <IconReceipt size={18} />
         </span>
-        <p className="text-sm text-foreground">
-          Paid <span className="font-mono font-semibold tabular-nums">{r.paid}</span> to <span className="font-mono">{r.provider}</span>
-          {net ? (r.network === "sandbox" ? " in demo mode" : ` on ${net}`) : ""}
+        <p>
+          {r.reused ? "Reused an answer that cost " : "Paid "}
+          <strong>{r.paid}</strong> {r.reused ? "from" : "to"} <Link href={`/console/providers/${encodeURIComponent(r.provider)}`}>{r.provider} <IconExternal size={10} /></Link>
+          {r.reused ? <small>Paid {agoText(r.reused.ageSeconds)}, still fresh · nothing paid now</small> : net && <small>{r.network === "sandbox" ? "in demo mode" : `on ${net}`}</small>}
         </p>
         {testMoney && (
-          <span className="ml-auto rounded-full border border-dashed border-border-strong px-2 py-0.5 text-[0.6875rem] text-muted">
-            {r.network === "sandbox" ? "play money" : "test money"}
+          <span className={styles.testBadge}>
+            {r.network === "sandbox" ? "Play money" : "Test money"}
           </span>
         )}
       </div>
-      <div className="space-y-2.5 px-4 py-3 text-sm">
+      <div className={styles.receiptBody}>
+        <div className={styles.receiptLinks}>
         {r.transaction ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="text-xs text-muted">Transaction</span>
+          <>
             <button
               type="button"
-              onClick={() => {
-                void navigator.clipboard?.writeText(r.transaction ?? "").then(() => {
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(r.transaction ?? "");
                   setCopied(true);
+                  setCopyError(false);
                   window.setTimeout(() => setCopied(false), 1500);
-                });
+                } catch { setCopyError(true); }
               }}
-              title="Copy the signature"
-              className="font-mono text-xs text-foreground hover:underline"
+              title={r.transaction}
+              aria-label="Copy transaction signature"
             >
-              {copied ? "Copied" : short(r.transaction)}
+              <IconReceipt size={12} />Tx {copied ? <><IconCheck size={12} />Copied</> : <>{short(r.transaction)}<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" aria-hidden="true"><rect x="5" y="2" width="8" height="9" rx="1.5" /><path d="M10 12v2H2V5h2" /></svg></>}
             </button>
             {r.solscanUrl && (
-              <a href={r.solscanUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+              <a href={r.solscanUrl} target="_blank" rel="noopener noreferrer">
                 Solscan <IconExternal size={11} />
               </a>
             )}
             {r.explorerUrl && (
-              <a href={r.explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+              <a href={r.explorerUrl} target="_blank" rel="noopener noreferrer">
                 Solana Explorer <IconExternal size={11} />
               </a>
             )}
-            {!r.explorerUrl && <span className="text-xs text-muted">simulated: no chain transaction</span>}
-          </div>
+          </>
         ) : null}
-        <div className="flex flex-wrap items-center gap-2">
           <a
             href={r.pdfUrl}
             download={`algebra-receipt-${r.intentId}.pdf`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-tint hover:opacity-90"
           >
-            <IconReceipt size={14} /> Download PDF receipt
+            <IconReceipt size={12} /> PDF receipt
           </a>
-          <a href={r.pdfUrl} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs font-medium text-foreground hover:bg-primary-tint">
-            Open PDF <IconExternal size={11} />
+          <a href={r.pdfUrl} target="_blank" rel="noopener noreferrer">
+            <IconExternal size={12} /> Open PDF
           </a>
-          <a href={r.pageUrl} className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs font-medium text-foreground hover:bg-primary-tint">
-            Signed receipt
+          <a href={r.pageUrl}>
+            <IconReceipt size={12} />Signed receipt
           </a>
         </div>
-        {funding && (
-          <div className="space-y-1.5">
-            <p className="text-xs text-foreground">
-              Paid from your Spend Pass vault, signed by Algebra. Anything unspent went back to the vault.
-            </p>
+        {r.network === "sandbox" && <p className={styles.source}>Simulated payment · No chain transaction</p>}
+        {copyError && <p className={styles.copyError} role="status">Couldn&apos;t copy. Transaction signature: <span>{r.transaction}</span></p>}
+        {onChain && (
+          <div className={styles.signing}>
             <button
               type="button"
               onClick={() => setMore((v) => !v)}
@@ -142,8 +145,10 @@ export function ReceiptCard({ receipt: r }: { receipt: ReceiptInfo }) {
               <IconChevronDown size={13} className={`transition-transform ${more ? "rotate-180" : ""}`} />
               Signing and funding details
             </button>
-            {more && (
+            {more && <>
+              {settled === undefined ? <p>Loading settlement details…</p> : !settled ? <p>Settlement details couldn&apos;t be loaded. The signed receipt is available above.</p> : null}
               <dl className="space-y-1.5 rounded-lg border border-border bg-primary-tint/40 px-3 py-2.5 text-[0.6875rem] leading-snug">
+                {funding && <>
                 <Detail label="Vault">
                   <span className="font-mono break-all">{funding.vault}</span>
                   <Ext href={explorerAddress(funding.vault, r.network)}>Explorer</Ext>
@@ -157,6 +162,7 @@ export function ReceiptCard({ receipt: r }: { receipt: ReceiptInfo }) {
                   <Ext href={solscanTx(funding.pull_signature, r.network)}>Solscan</Ext>
                   <Ext href={explorerTx(funding.pull_signature, r.network)}>Explorer</Ext>
                 </Detail>
+                </>}
                 {settled?.payer && (
                   <Detail label="Payment signed by">
                     <span className="font-mono break-all">{settled.payer}</span>
@@ -169,12 +175,9 @@ export function ReceiptCard({ receipt: r }: { receipt: ReceiptInfo }) {
                   </Detail>
                 )}
               </dl>
-            )}
+            </>}
           </div>
         )}
-        <p className="text-[0.6875rem] leading-relaxed text-muted">
-          Signed by Algebra (Ed25519). Anyone can check it at /verify. A receipt for this payment, not a tax invoice.
-        </p>
       </div>
     </section>
   );

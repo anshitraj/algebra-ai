@@ -1,0 +1,31 @@
+[Unit]
+Description=Algebra devnet demo sellers
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=algebra
+Group=algebra
+Environment=ALGEBRA_DATA_DIR=/var/lib/algebra
+ExecStart=/opt/algebra/bin/demo-provider -addr 127.0.0.1:8402
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/algebra
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

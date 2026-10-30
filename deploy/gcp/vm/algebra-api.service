@@ -1,0 +1,44 @@
+[Unit]
+Description=Algebra API
+After=network-online.target postgresql.service redis-server.service algebra-demo-provider.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+User=algebra
+Group=algebra
+# Runs as root (the + prefix): fetches the secrets into /run/algebra from this VM's own identity.
+ExecStartPre=+/usr/local/sbin/algebra-fetch-secrets
+ExecStart=/usr/local/sbin/algebra-api-start
+Restart=on-failure
+RestartSec=3
+# A hung start should not hold the unit forever; migrations run here.
+TimeoutStartSec=120
+
+# Sandboxing: the API reads its own folder and writes only its data directory.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/algebra
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Keep a runaway from starving the database that shares this machine.
+MemoryHigh=5G
+MemoryMax=6G
+
+[Install]
+WantedBy=multi-user.target

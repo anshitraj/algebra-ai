@@ -35,7 +35,7 @@ type PassSpendLedger interface {
 // shopping flow's check count this next to its orders; the coordinator reads
 // the same number under the pass's row lock when it grants a reservation.
 type PassEconomicSpend interface {
-	PassSpend(ctx context.Context, passID string, since time.Time) (int64, error)
+	PassSpend(ctx context.Context, passID string, since, now time.Time) (int64, error)
 }
 
 // PassGate is how policy and execution consult Spend Passes. A nil decision
@@ -76,13 +76,14 @@ func (s *SpendPassService) CountEconomicSpend(e PassEconomicSpend) { s.economic 
 // spent is everything the pass has used in its current window: orders, and
 // economic intents committed or still held.
 func (s *SpendPassService) spent(ctx context.Context, p spendpass.Pass) (int64, error) {
-	start := p.WindowStart(s.now())
+	now := s.now()
+	start := p.WindowStart(now)
 	total, err := s.ledger.SpentByAgentSince(ctx, p.AgentID, p.Currency, start)
 	if err != nil {
 		return 0, fmt.Errorf("app: reading the pass's spend: %w", err)
 	}
 	if s.economic != nil {
-		viaIntents, err := s.economic.PassSpend(ctx, p.ID, start)
+		viaIntents, err := s.economic.PassSpend(ctx, p.ID, start, now)
 		if err != nil {
 			return 0, fmt.Errorf("app: reading the pass's economic spend: %w", err)
 		}
@@ -94,10 +95,20 @@ func (s *SpendPassService) spent(ctx context.Context, p spendpass.Pass) (int64, 
 // PassView is a pass with where its budget stands right now.
 type PassView struct {
 	spendpass.Pass
-	Active          bool      `json:"active"`
-	SpentMinorUnits int64     `json:"spent_minor_units"`
-	RemainingMinor  int64     `json:"remaining_minor_units"`
-	WindowStartsAt  time.Time `json:"window_starts_at"`
+	Active bool `json:"active"`
+	// SpentMinorUnits is everything the window has used, the unused part of
+	// running Job Passes included: what is no longer free to spend.
+	SpentMinorUnits int64 `json:"spent_minor_units"`
+	RemainingMinor  int64 `json:"remaining_minor_units"`
+	// SetAsideMinorUnits is the part of SpentMinorUnits that running Job
+	// Passes hold and haven't used: it comes back when they end.
+	SetAsideMinorUnits int64     `json:"set_aside_minor_units"`
+	WindowStartsAt     time.Time `json:"window_starts_at"`
+}
+
+// PassSetAside is what a pass's running Job Passes hold and haven't used.
+type PassSetAside interface {
+	PassSetAside(ctx context.Context, passID string, now time.Time) (int64, error)
 }
 
 // IssuedPass is a new pass plus its agent token — shown exactly once.
@@ -218,5 +229,11 @@ func (s *SpendPassService) view(ctx context.Context, p spendpass.Pass) (*PassVie
 	if err != nil {
 		return nil, err
 	}
-	return &PassView{Pass: p, Active: p.Active(now), SpentMinorUnits: spent, RemainingMinor: p.Remaining(spent), WindowStartsAt: p.WindowStart(now)}, nil
+	v := &PassView{Pass: p, Active: p.Active(now), SpentMinorUnits: spent, RemainingMinor: p.Remaining(spent), WindowStartsAt: p.WindowStart(now)}
+	if a, ok := s.economic.(PassSetAside); ok {
+		if v.SetAsideMinorUnits, err = a.PassSetAside(ctx, p.ID, now); err != nil {
+			return nil, fmt.Errorf("app: reading what the pass's jobs set aside: %w", err)
+		}
+	}
+	return v, nil
 }

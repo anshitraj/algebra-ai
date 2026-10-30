@@ -19,7 +19,7 @@ import (
 // PolicyReader is what a dry run reads from the economic store without
 // taking a lock: the same numbers the coordinator checks under one.
 type PolicyReader interface {
-	PassSpend(ctx context.Context, passID string, since time.Time) (int64, error)
+	PassSpend(ctx context.Context, passID string, since, now time.Time) (int64, error)
 	PassAttemptsRecent(ctx context.Context, passID, provider string, since time.Time) (int, error)
 	ProviderPaidBy(ctx context.Context, principalID, provider string) (bool, error)
 }
@@ -64,6 +64,19 @@ type SimulateRequest struct {
 	// LiveQuotes asks each candidate for its price with an unpaid request.
 	// Without it, nothing leaves Algebra and listed prices stand in.
 	LiveQuotes bool
+	// Named is the providers the request named, as for DoRequest: the dry run says
+	// "would reuse" only for an answer one of them gave.
+	Named []string
+	// Chaos answers for some candidates as if they had been asked (Replay):
+	// a price they would quote, or the error they would fail with. Those
+	// candidates are never contacted.
+	Chaos map[string]ChaosQuote `json:"-"`
+}
+
+// ChaosQuote is what a simulated seller answers a price request with.
+type ChaosQuote struct {
+	ProviderMinor int64
+	Err           string
 }
 
 // Verdict is a dry run's overall answer.
@@ -139,14 +152,18 @@ type Recommendation struct {
 	LatencySource string `json:"latency_source,omitempty"`
 	// Reliability is the share of calls expected to deliver (0 to 1), from
 	// Calls of Algebra's own calls smoothed towards a prior when they are few.
-	Reliability float64  `json:"reliability"`
-	Calls       int      `json:"calls,omitempty"`
-	Score       float64  `json:"score"`
-	Decision    string   `json:"decision"`
-	Reasons     []string `json:"reasons,omitempty"`
-	Seller      Seller   `json:"seller"`
-	Notes       []string `json:"notes,omitempty"`
-	Test        bool     `json:"test,omitempty"`
+	Reliability float64 `json:"reliability"`
+	// CostPerAcceptedMinor is what one accepted answer from it is expected to
+	// cost: the price spread over how often answers are accepted, with the
+	// calls paid for nothing counted. Zero for an unlisted price.
+	CostPerAcceptedMinor int64    `json:"cost_per_accepted_minor"`
+	Calls                int      `json:"calls,omitempty"`
+	Score                float64  `json:"score"`
+	Decision             string   `json:"decision"`
+	Reasons              []string `json:"reasons,omitempty"`
+	Seller               Seller   `json:"seller"`
+	Notes                []string `json:"notes,omitempty"`
+	Test                 bool     `json:"test,omitempty"`
 }
 
 // recommendFor ranks the same options each way and keeps each way's winner.
@@ -182,10 +199,11 @@ func recommendationOf(st routing.PlanStep, cv CandidateVerdict) Recommendation {
 		Rank: st.Rank, Provider: st.Quote.Provider, CandidateID: st.Quote.CandidateID, Network: st.Quote.Network,
 		TotalMinor: cv.TotalMinor, PriceSource: cv.PriceSource, LatencyMS: st.Score.LatencyMS, LatencySource: st.Score.LatencySource,
 		Reliability: st.Score.Components[routing.ScoreReliability], Calls: st.Score.Calls, Score: st.Score.Total,
-		Decision: cv.Verdict.Decision(), Reasons: cv.Reasons, Seller: cv.Seller, Notes: st.Score.Notes, Test: st.Quote.Test,
+		CostPerAcceptedMinor: st.Score.CostPerAcceptedMinor,
+		Decision:             cv.Verdict.Decision(), Reasons: cv.Reasons, Seller: cv.Seller, Notes: st.Score.Notes, Test: st.Quote.Test,
 	}
 	if cv.PriceSource == "unlisted" {
-		r.TotalMinor = 0
+		r.TotalMinor, r.CostPerAcceptedMinor = 0, 0
 	}
 	return r
 }
@@ -210,6 +228,9 @@ type Simulation struct {
 	// strategy. They include offers that would wait for the person (HOLD).
 	Recommendations []Recommendation `json:"recommendations,omitempty"`
 	Compared        []Recommendation `json:"compared,omitempty"`
+	// Reuse is set when an answer to the same request was already paid for and
+	// is still fresh: paying would hand it back for nothing instead.
+	Reuse *ReusedPurchase `json:"reuse,omitempty"`
 	// Pass is what the Spend Pass looked like for this question.
 	Pass struct {
 		ID              string             `json:"id"`
@@ -290,7 +311,7 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 	reader, _ := s.econ.store.(PolicyReader)
 	var spent int64
 	if reader != nil {
-		if spent, err = reader.PassSpend(ctx, p.ID, p.WindowStart(now)); err != nil {
+		if spent, err = reader.PassSpend(ctx, p.ID, p.WindowStart(now), now); err != nil {
 			return nil, err
 		}
 		if sim.Pass.CallsLastMinute, err = reader.PassAttemptsRecent(ctx, p.ID, "", now.Add(-time.Minute)); err != nil {
@@ -313,6 +334,12 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 		return sim, nil
 	}
 	approvalAtCreate := whole.Decision == policy.RequireApproval
+	in.ProjectID = p.ProjectID
+	sim.Reuse = s.reusable(ctx, req.AgentID, in, req.Named)
+	if whole.Decision == policy.Allow && sim.Reuse == nil && s.econ.repeated(ctx, in) {
+		approvalAtCreate = true
+		whole.ReasonCodes = append(whole.ReasonCodes, ReasonRepeatPurchase)
+	}
 
 	// Every candidate: the pass, the router's guards, the pass's rules, with
 	// the same record of each provider the router ranks on.
@@ -400,7 +427,22 @@ func (s *ExecutionService) simulate(ctx context.Context, req SimulateRequest) (*
 			Method: c.Method, Cost: routing.Cost{ProviderMinor: c.PriceMinor}, Asset: c.Asset, Network: c.Network,
 			EstimatedLatencyMS: c.EstimatedLatencyMS, QuotedAt: now, ValidUntil: now.Add(s.quoteTTL), Test: c.Network != "" && strings.Contains(c.Network, "devnet"),
 		}
+		chaos, isChaos := req.Chaos[c.ID]
 		switch {
+		case isChaos:
+			if chaos.Err != "" {
+				deny(routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: routing.RejectUnquotable, Detail: chaos.Err})
+				continue
+			}
+			q.Cost.ProviderMinor = chaos.ProviderMinor
+			if q.Asset == "" {
+				q.Asset = in.Currency
+			}
+			cv.PriceSource, cv.PriceMinor, cv.TotalMinor = "live", chaos.ProviderMinor, q.Cost.Total()
+			if r := g.after(c, q); r != nil {
+				deny(*r)
+				continue
+			}
 		case live != nil:
 			if live[i].err != nil {
 				deny(routing.Rejection{CandidateID: c.ID, Provider: c.Provider, Code: routing.RejectUnquotable, Detail: briefly(live[i].err.Error())})

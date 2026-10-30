@@ -93,7 +93,7 @@ func (r *AccountRepo) UpdateUserProfile(ctx context.Context, id, name, avatarURL
 }
 
 func (r *AccountRepo) SetPassword(ctx context.Context, userID, hash string) error {
-	return r.exec(ctx, "setting password", `UPDATE users SET password_hash = $2 WHERE id = $1`, userID, hash)
+	return r.exec(ctx, "setting password", `UPDATE users SET password_hash = NULLIF($2,'') WHERE id = $1`, userID, hash)
 }
 
 func (r *AccountRepo) MarkEmailVerified(ctx context.Context, userID string, at time.Time) error {
@@ -267,7 +267,11 @@ func (r *AccountRepo) PurgeExpired(ctx context.Context, now time.Time) (int64, e
 	if err != nil {
 		return s.RowsAffected(), fmt.Errorf("postgres: purging reset tokens: %w", err)
 	}
-	return s.RowsAffected() + t.RowsAffected(), nil
+	c, err := r.db.Pool.Exec(ctx, `DELETE FROM login_codes WHERE expires_at < $1`, now)
+	if err != nil {
+		return s.RowsAffected() + t.RowsAffected(), fmt.Errorf("postgres: purging login codes: %w", err)
+	}
+	return s.RowsAffected() + t.RowsAffected() + c.RowsAffected(), nil
 }
 
 // EraseUser scrubs a user's personal data in one transaction: profile and
@@ -303,6 +307,7 @@ func (r *AccountRepo) EraseUser(ctx context.Context, userID string, at time.Time
 		{"commerce profile", `DELETE FROM commerce_profiles WHERE user_id = $1`},
 		{"guardrails", `DELETE FROM user_guardrails WHERE user_id = $1`},
 		{"plugin settings", `DELETE FROM user_plugins WHERE user_id = $1`},
+		{"tool keys", `DELETE FROM tool_keys WHERE user_id = $1`},
 		{"payment methods", `UPDATE payment_sources SET revoked_at = COALESCE(revoked_at, $2),
 			nickname = NULL, last4 = NULL, issuer_meta = NULL, expiry_meta = NULL WHERE user_id = $1`},
 		{"agents", `UPDATE agents SET revoked_at = COALESCE(revoked_at, $2) WHERE user_id = $1`},

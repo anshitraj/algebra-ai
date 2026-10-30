@@ -1,0 +1,9 @@
+# cargo audit (CI, "vulnerabilities" job). These two advisories (2026-10-23) reach the
+# workspace only through litesvm, the host-side test harness (a dev-dependency): the
+# timing variability is in crypto-bigint/ctutils as used by k256 and blake3 inside the
+# simulated validator. Neither crate is linked into the program that is deployed (the
+# BPF build uses the runtime's own syscalls), so there is no key or signature of ours for
+# them to leak. Remove the entries when litesvm moves to patched crates; `cargo tree -i
+# crypto-bigint` and `cargo tree -i ctutils` show the paths.
+[advisories]
+ignore = ["RUSTSEC-2026-0387", "RUSTSEC-2026-0385"]

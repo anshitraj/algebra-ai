@@ -22,6 +22,16 @@ func priceRequest(window string) map[string]any {
 	}
 }
 
+// freshPriceRequest is priceRequest paid for anew every time. The same work with
+// the same input, asked again while the earlier answer is fresh, is answered with
+// that answer for nothing (purchase memory): not a purchase, so not what a test
+// of the velocity limit or of how a purchase is routed is looking at.
+func freshPriceRequest(window string) map[string]any {
+	req := priceRequest(window)
+	req["fresh"] = true
+	return req
+}
+
 func rejectedCodes(out map[string]any) map[string]string {
 	codes := map[string]string{}
 	rej, _ := out["rejected"].([]any)
@@ -163,11 +173,11 @@ func TestVelocityOverHTTP_ALoopingAgentIsStopped(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 1; i <= 2; i++ {
-		if status, _, out := call(t, "POST", base+"/api/v1/execute", token, priceRequest(fmt.Sprintf("e2e-loop-%d-%s", i, uuid.NewString()))); status != 200 {
+		if status, _, out := call(t, "POST", base+"/api/v1/execute", token, freshPriceRequest(fmt.Sprintf("e2e-loop-%d-%s", i, uuid.NewString()))); status != 200 {
 			t.Fatalf("call %d: %d %v", i, status, out)
 		}
 	}
-	status, _, out := call(t, "POST", base+"/api/v1/execute", token, priceRequest("e2e-loop-3-"+uuid.NewString()))
+	status, _, out := call(t, "POST", base+"/api/v1/execute", token, freshPriceRequest("e2e-loop-3-"+uuid.NewString()))
 	if status != 409 || out["reason"] != "rate_limited" {
 		t.Fatalf("the third paid call in a minute must be refused: %d %v", status, out)
 	}

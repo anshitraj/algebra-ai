@@ -1,0 +1,54 @@
+.board { display: grid; gap: 20px; }
+.comparison { min-width: 0; }
+.groupHeading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin-bottom: 14px; }
+.groupHeading > span { font-size: 11px; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.cards:where(:has(> li:only-child)) { grid-template-columns: minmax(0, 1fr); max-width: 360px; }
+.cards:where(:has(> li:nth-child(2):last-child)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.card { --offer-accent: #626777; --offer-tint: #f5f6f8; --offer-border: #e8eaf0; border: 1px solid var(--offer-border); border-radius: 14px; background: linear-gradient(155deg, var(--offer-tint), var(--color-surface) 70%); transition: border-color 150ms, box-shadow 150ms; }
+.card[data-tone="cheapest"] { --offer-accent: #07844b; --offer-tint: #f0fcf5; --offer-border: #dcefe3; }
+.card[data-tone="balanced"] { --offer-accent: #5e55e7; --offer-tint: #f7f6ff; --offer-border: #c5c0fc; box-shadow: 0 3px 12px -8px #5e55e740; }
+.card[data-tone="fastest"] { --offer-accent: #c45a11; --offer-tint: #fff7ef; --offer-border: #f4e4d5; }
+.card[data-selected] { border-color: var(--offer-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--offer-accent) 14%, transparent); }
+.card[data-blocked] { --offer-accent: var(--color-danger); opacity: .7; }
+.card:has(.cardButton:hover:not(:disabled)) { border-color: var(--offer-accent); }
+.cardButton { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 16px; text-align: left; border-radius: inherit; }
+.cardButton:disabled { cursor: default; }
+.cardButton:focus-visible { outline-color: var(--offer-accent); outline-offset: 4px; }
+.cardTop { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 22px; color: var(--offer-accent); }
+.strategy { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; }
+.strategy > span { font-size: 20px; line-height: 1; }
+.badge { margin-left: auto; padding: 3px 6px; border: 1px solid color-mix(in srgb, var(--offer-accent) 16%, transparent); border-radius: 20px; background: color-mix(in srgb, var(--offer-accent) 5%, transparent); font-size: 9px; line-height: 1.25; white-space: nowrap; }
+.provider { display: flex; align-items: center; gap: 10px; margin-top: 17px; }
+.providerMark { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border: 1px solid var(--offer-border); border-radius: 9px; background: var(--color-surface); color: var(--offer-accent); font-size: 17px; font-weight: 650; }
+.provider strong { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 600; }
+.provider small { display: block; margin-top: 2px; font-size: 10px; color: var(--color-muted); }
+.price { margin-top: 13px; font-size: clamp(16px, 1.65vw, 23px); line-height: 1.25; font-weight: 750; letter-spacing: -.8px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.metrics { display: flex; flex-wrap: wrap; gap: 3px 5px; margin-top: 7px; font-size: 10px; color: var(--color-muted); font-variant-numeric: tabular-nums; }
+.select { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; margin-top: 15px; width: 100%; border-radius: 8px; background: color-mix(in srgb, var(--offer-accent) 10%, var(--color-surface)); color: var(--offer-accent); font-size: 11px; font-weight: 600; }
+.card[data-tone="balanced"] .select, .card[data-selected] .select { background: var(--offer-accent); color: #fff; }
+.facts { display: grid; gap: 6px; margin-top: 13px; font-size: 10px; color: var(--color-muted); }
+.facts > span { display: flex; align-items: center; gap: 7px; }
+.facts svg { flex-shrink: 0; color: var(--offer-accent); }
+.networkDot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin: 0 4px 1px 2px; background: var(--offer-accent); }
+.facts .testMoney { font-size: 9px; color: var(--color-muted); }
+.reason { color: var(--color-danger); }
+.comparison[data-sent] .card { opacity: .65; }
+.checkout { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 8px 0; border-top: 1px solid var(--color-border); background: var(--color-surface); }
+.moreOptions { font-size: 11px; color: var(--color-muted); }
+.moreOptions summary { cursor: pointer; padding-block: 6px; }
+.moreOptions label { margin-top: 8px; }
+.selectionSummary { margin-left: auto; font-size: 11px; color: var(--color-muted); }
+.pay { display: inline-flex; justify-content: center; align-items: center; min-height: 36px; padding: 0 16px; border-radius: 8px; background: var(--color-primary); color: var(--color-surface); font-size: 12px; font-weight: 600; }
+.pay:disabled { opacity: .35; cursor: not-allowed; }
+@media (max-width: 1199px) and (min-width: 1024px) { .cards { grid-template-columns: 1fr; } .provider { margin-top: 12px; } }
+@media (max-width: 600px) { .cards { grid-template-columns: 1fr; } .cardButton { padding: 16px 18px; } .provider { margin-top: 14px; } .price { font-size: 24px; } .facts { grid-template-columns: 1fr 1fr; } .selectionSummary { margin-left: 0; } .pay { margin-left: auto; } }
+
+/* What one accepted answer is expected to cost, when that is more than the price. */
+.perAnswer { margin-top: 2px; color: var(--color-muted); font-size: 11px; line-height: 1.4; font-variant-numeric: tabular-nums; }
+/* An answer already paid for and still fresh: paying hands it back for nothing. */
+.reuse { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-primary-tint); color: var(--color-foreground); font-size: 12px; line-height: 1.45; }
+.reuse > span { flex: 1; min-width: 200px; }
+.reuse svg { color: var(--color-success); }
+.reuse button { flex-shrink: 0; min-height: 30px; padding: 0 11px; border: 1px solid var(--color-border-strong); border-radius: 8px; background: var(--color-surface); color: var(--color-foreground); font-size: 12px; font-weight: 600; cursor: pointer; }
+.reuse button:hover { border-color: var(--color-foreground); }

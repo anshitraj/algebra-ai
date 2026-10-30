@@ -522,3 +522,16 @@ func TestEconomic_ExpiryNeverOverridesAmbiguity(t *testing.T) {
 		t.Fatal("an intent whose money may have moved can't simply expire")
 	}
 }
+
+// A refusal says why the pass or the job said no: the reason codes are what a
+// caller acts on (JOB_CLOSED, JOB_BUDGET_EXCEEDED, PASS_BUDGET_EXCEEDED).
+func TestReservationRejected_SaysWhy(t *testing.T) {
+	plain := (&ReservationRejected{Reason: RejectCommitted, State: econ.StateCommitted}).Error()
+	if want := fmt.Sprintf("reservation rejected: %s (intent %s)", RejectCommitted, econ.StateCommitted); plain != want {
+		t.Errorf("without codes the message is as it was: %q, want %q", plain, want)
+	}
+	got := (&ReservationRejected{Reason: "authority_denied", State: econ.StateOpen, ReasonCodes: []string{"JOB_CLOSED", "PASS_FROZEN"}}).Error()
+	if !strings.Contains(got, "(intent OPEN): JOB_CLOSED, PASS_FROZEN") {
+		t.Errorf("the codes follow the state: %q", got)
+	}
+}

@@ -63,7 +63,8 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("POST /api/v1/auth/login", api.signIn)
 	mux.HandleFunc("POST /api/v1/auth/logout", api.signOut)
 	mux.HandleFunc("POST /api/v1/auth/demo", api.startDemo)
-	mux.HandleFunc("POST /api/v1/auth/privy", api.privySignIn)
+	mux.HandleFunc("POST /api/v1/auth/code/send", api.sendLoginCode)
+	mux.HandleFunc("POST /api/v1/auth/code/verify", api.verifyLoginCode)
 	mux.HandleFunc("POST /api/v1/auth/password/forgot", api.forgotPassword)
 	mux.HandleFunc("POST /api/v1/auth/password/reset", api.resetPassword)
 	mux.HandleFunc("POST /api/v1/auth/agent-token", api.agentToken)
@@ -143,6 +144,26 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/receipt.pdf", api.getEconomicReceiptPDF)
 	// Execution: Algebra prices, pays, calls, verifies and signs.
 	mux.HandleFunc("POST /api/v1/execute", api.executeOutcome)
+	// Cross-check: do several providers' answers to one question agree? Moves no money.
+	mux.HandleFunc("POST /api/v1/cross-check", api.crossCheck)
+	// Job Passes: a task's budget inside a Spend Pass, shared by sub-agents.
+	mux.HandleFunc("POST /api/v1/jobs", api.openJob)
+	mux.HandleFunc("GET /api/v1/jobs/{id}", api.getJob)
+	mux.HandleFunc("POST /api/v1/jobs/{id}/close", api.closeJob)
+	mux.HandleFunc("GET /api/v1/me/jobs", api.listMyJobs)
+	mux.HandleFunc("POST /api/v1/me/jobs", api.openMyJob)
+	mux.HandleFunc("GET /api/v1/me/jobs/{id}", api.getMyJob)
+	mux.HandleFunc("POST /api/v1/me/jobs/{id}/close", api.closeMyJob)
+	mux.HandleFunc("POST /api/v1/me/jobs/{id}/revoke", api.revokeMyJob)
+	mux.HandleFunc("POST /api/v1/me/jobs/{id}/value", api.setMyJobValue)
+	mux.HandleFunc("POST /api/v1/me/jobs/{id}/replay", api.replayMyJob)
+	mux.HandleFunc("POST /api/v1/jobs/{id}/value", api.setJobValue)
+	mux.HandleFunc("GET /api/v1/me/passes/{id}/pnl", api.myPassPnL)
+	mux.HandleFunc("POST /api/v1/me/passes/{id}/replay", api.replayMyPass)
+	// Web tools run with the person's own API keys (TinyFish, Exa, Firecrawl, Tavily).
+	mux.HandleFunc("GET /api/v1/me/tool-keys", api.listToolKeys)
+	mux.HandleFunc("PUT /api/v1/me/tool-keys/{vendor}", api.saveToolKey)
+	mux.HandleFunc("DELETE /api/v1/me/tool-keys/{vendor}", api.deleteToolKey)
 	mux.HandleFunc("POST /api/v1/economic-intents/{id}/execute", api.executeEconomicIntent)
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/executions", api.listEconomicExecutions)
 	mux.HandleFunc("GET /api/v1/economic-intents/{id}/result", api.getEconomicResult)
@@ -238,6 +259,15 @@ func NewRouter(b *wiring.Bundle, limiter app.RateLimiter, allowedOrigins []strin
 	mux.HandleFunc("GET /api/v1/rails", api.listRails)
 	mux.HandleFunc("GET /api/v1/mainnet/readiness", api.mainnetReadiness)
 	mux.HandleFunc("GET /api/v1/me/wallets", api.myWallets)
+	mux.HandleFunc("GET /api/v1/me/credits", api.testCredits)
+	mux.HandleFunc("GET /api/v1/me/vault", api.vaultGet)
+	mux.HandleFunc("POST /api/v1/me/vault", api.vaultRegister)
+	mux.HandleFunc("GET /api/v1/me/vault/balances", api.vaultBalances)
+	mux.HandleFunc("POST /api/v1/me/vault/withdraw/prepare", api.vaultPrepare)
+	mux.HandleFunc("POST /api/v1/me/vault/broadcast", api.vaultBroadcast)
+	mux.HandleFunc("GET /api/v1/me/vault/allowances", api.vaultAllowances)
+	mux.HandleFunc("POST /api/v1/me/vault/allowance/prepare", api.vaultAllowancePrepare)
+	mux.HandleFunc("POST /api/v1/me/vault/allowance", api.vaultAllowanceSubmit)
 	mux.HandleFunc("GET /api/v1/me/faucet", api.faucetStatus)
 	mux.HandleFunc("POST /api/v1/me/faucet", api.faucetDrop)
 	mux.HandleFunc("GET /api/v1/intel/status", api.intelStatus)
@@ -442,11 +472,17 @@ func decodeJSON(r *http.Request, v any) error {
 	defer r.Body.Close()
 	err := json.NewDecoder(r.Body).Decode(v)
 	var tooBig *http.MaxBytesError
+	var wrongType *json.UnmarshalTypeError
 	switch {
 	case err == nil:
+		if c, ok := v.(interface{ validate() error }); ok {
+			return c.validate()
+		}
 		return nil
 	case errors.As(err, &tooBig):
 		return requestTooLargeError{}
+	case errors.As(err, &wrongType) && (wrongType.Field == "max_usd" || strings.HasSuffix(wrongType.Field, ".max_usd")):
+		return badRequest(`max_usd must be a decimal string such as "0.05", not a number`)
 	default:
 		return badRequestError{msg: "invalid request body"}
 	}

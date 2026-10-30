@@ -76,7 +76,7 @@ const CLIENTS: { id: McpClient; label: string; location: string }[] = [
 ];
 const ENV_COPY: Record<Environment, string> = {
   sandbox: "Test with simulated providers and USDC. No real funds are used.",
-  devnet: "Use Solana Devnet with test USDC. No real funds are used.",
+  devnet: "Testnet: Solana devnet with test USDC. No real funds are used.",
   mainnet:
     "Use real USDC on Solana. Spending follows your project’s Spend Pass limits.",
 };
@@ -803,7 +803,7 @@ function ProjectPanel({
                     Keys use Spend Passes in the same project and environment.
                   </p>
                 </div>
-                <Link className={styles.textLink} href="/console/passes">
+                <Link className={styles.textLink} href="/console/firewall">
                   Spend Passes <IconArrowRight size={14} />
                 </Link>
               </div>

@@ -3,9 +3,10 @@
 import { Suspense, useEffect, useState } from "react";
 import * as api from "@/lib/api-client";
 import { EmailNotifications } from "@/components/console/email-notifications";
+import { WebTools } from "@/components/console/web-tools";
 import { realEmail, useSession } from "@/lib/session";
 import type { SessionInfo } from "@/lib/types";
-import { GitHubMark, GoogleMark, IconCheck, IconExternal, IconMail, IconWallet, Spinner } from "@/components/icons";
+import { GitHubMark, GoogleMark, IconCheck, IconMail, Spinner } from "@/components/icons";
 import { Avatar } from "@/components/console/shell";
 import { ErrorNote, PageHeader, Skeleton, timeAgo } from "@/components/console/ui";
 
@@ -80,16 +81,12 @@ export default function SettingsPage() {
   }
 
   const methods = [
+    { id: "code", label: "Code emailed to you", icon: <IconMail size={18} />, on: true },
     { id: "password", label: "Email and password", icon: <IconMail size={18} />, on: user.has_password },
     // Google and GitHub sign-in are no longer offered; an account that linked one earlier still sees it.
     ...(user.linked_providers.includes("google") ? [{ id: "google", label: "Google", icon: <GoogleMark size={18} />, on: true }] : []),
     ...(user.linked_providers.includes("github") ? [{ id: "github", label: "GitHub", icon: <GitHubMark size={18} />, on: true }] : []),
-    // Privy is listed once used: whether this server offers it is on the sign-in page.
-    ...(user.linked_providers.includes("privy")
-      ? [{ id: "privy", label: "Privy (wallet or email code)", icon: <IconWallet size={18} />, on: true }]
-      : []),
   ];
-  const wallets = user.wallets ?? [];
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -157,44 +154,12 @@ export default function SettingsPage() {
         </ul>
       </section>
 
-      {wallets.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-[0.95rem] font-semibold text-foreground">Wallets</h2>
-          <p className="mt-1 text-sm text-muted">
-            Solana wallets you signed in with. Algebra knows their addresses only; it never holds their keys.
-          </p>
-          <ul className="mt-3 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
-            {wallets.map((w) => (
-              <li key={w.address} className="flex items-center gap-3.5 px-5 py-3.5">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-background text-foreground">
-                  <IconWallet size={18} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-mono text-sm text-foreground" title={w.address}>
-                    {w.address}
-                  </p>
-                  <p className="text-xs text-muted">
-                    {w.kind === "embedded" ? "Privy wallet, made for you at sign-in; Privy secures its key for you" : "Your own wallet"}
-                  </p>
-                </div>
-                <a
-                  href={`https://explorer.solana.com/address/${w.address}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted hover:text-foreground"
-                >
-                  Explorer <IconExternal size={12} />
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       {/* It reads the confirmation link's token from the address bar. */}
       <Suspense fallback={null}>
         <EmailNotifications />
       </Suspense>
+
+      <WebTools />
 
       <section className="mt-8">
         <h2 className="text-[0.95rem] font-semibold text-foreground">Where you&apos;re signed in</h2>

@@ -283,7 +283,7 @@ func TestEconRepo_PassSpendCountsCommittedAndHeld(t *testing.T) {
 	}
 	spend := func(since time.Time) int64 {
 		t.Helper()
-		n, err := f.repo.PassSpend(ctx, pass.ID, since)
+		n, err := f.repo.PassSpend(ctx, pass.ID, since, time.Now())
 		if err != nil {
 			t.Fatal(err)
 		}

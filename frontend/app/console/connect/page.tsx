@@ -261,7 +261,7 @@ export default function ConnectPage() {
             limits.
           </span>
         </div>
-        <Link href="/console/passes" className={styles.textLink}>
+        <Link href="/console/firewall" className={styles.textLink}>
           Manage Spend Passes <IconArrowRight size={15} />
         </Link>
       </section>

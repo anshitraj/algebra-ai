@@ -137,6 +137,18 @@ export type Simulation = {
   pass: { id: string; remaining_minor: number; calls_last_minute: number; controls: PassControls; frozen: boolean };
   live_quotes: boolean;
   at: string;
+  /** An answer to the same request was already paid for and is still fresh: paying hands it back for nothing. */
+  reuse?: ReusedPurchase;
+};
+
+/** An earlier purchase whose answer is handed back instead of paying again (purchase memory). */
+export type ReusedPurchase = {
+  intent_id: string;
+  provider: string;
+  paid_minor: number;
+  paid_at: string;
+  age_seconds: number;
+  fresh_for_seconds: number;
 };
 
 export type SimulateBody = {
@@ -161,6 +173,8 @@ export type Recommendation = {
   latency_ms?: number;
   latency_source?: string;
   reliability: number;
+  /** What one accepted answer is expected to cost: the price over how often answers are accepted, calls paid for nothing counted. */
+  cost_per_accepted_minor?: number;
   calls?: number;
   score: number;
   decision: Decision;

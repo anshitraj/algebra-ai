@@ -1,5 +1,12 @@
 # The Spend Pass program on Solana
 
+> **Optional, and off by default (2026-10-21).** The console no longer asks people
+> to make a vault, and sign-in no longer gives them a Solana wallet. The program,
+> the Go client and the service below are intact: set `ONCHAIN_PASSES=on` to use
+> them. Without it, devnet payments are test money from Algebra's own payer wallet,
+> inside the test-money guard; real money waits for a deposit ledger that covers
+> Solana and Base together. Statements below describe the vault when it is on.
+
 A Spend Pass is an agent's permission to spend: a budget, a cap per call, an
 expiry and a kill switch. Algebra has always enforced it on its server. With the
 **Spend Pass program**, the same limits also live on Solana, in a vault funded
@@ -230,6 +237,33 @@ Not deployed yet (the program account does not exist on mainnet: checked on
    immutable once it is settled (`solana program set-upgrade-authority --final`).
 3. Have the program reviewed: it is small and tested, but not audited.
 4. Set `SPEND_PASS_REQUIRED=mainnet`, so every mainnet payment is a pass's.
+
+## The Pinocchio version (smaller, cheaper to deploy)
+
+
+Not the default: new passes are made on the Anchor program above. Point `SPEND_PASS_PROGRAM_ID` at the Pinocchio address to use it; passes made on either keep working, because the backend accepts both deployments.
+[`solana-program/pinocchio`](../solana-program/pinocchio/src/lib.rs) is the same program rewritten without Anchor, on [Pinocchio](https://github.com/anza-xyz/pinocchio) 0.11. It takes the **same instruction bytes and accounts**, keeps the pass in the **same 252-byte layout**, returns the **same error numbers** (6000…) and logs the **same events**, so the backend, the CLI and the console work with it unchanged: point `SPEND_PASS_PROGRAM_ID` at it. The Anchor program is untouched; both exist side by side.
+
+| | Anchor | Pinocchio |
+|---|---|---|
+| Program size | 261,840 bytes | 53,904 bytes (−79%) |
+| Rent locked on mainnet (live `solana rent`) | 1.331 SOL | **0.275 SOL** |
+| `pull` compute | 20,007 CU | 10,805 CU |
+| `create_pass` / `deposit` / `refund` / `close_pass` | 40,969 / 18,178 / 19,951 / 23,527 CU | 28,366 / 9,965 / 10,630 / 14,191 CU |
+| Devnet address | `46gQDUuJCt6VdDMaguGPoD8SKEtFqvpG7ECtpC2F9tdS` | [`F1Uu8ynQUviLZHUgejHDMkKmFAJJ7ZKDwU3Svc7Xpj21`](https://explorer.solana.com/address/F1Uu8ynQUviLZHUgejHDMkKmFAJJ7ZKDwU3Svc7Xpj21?cluster=devnet) |
+
+How it was checked (`cargo build-sbf && cargo test` in `solana-program/pinocchio`, after building the Anchor program in `solana-program`):
+
+- **The Anchor program's own LiteSVM tests**, run against the Pinocchio binary with the Anchor crate's instruction builders and account type (`tests/mod.rs`): all 8 pass. The only difference is the error for a broken account constraint (Anchor's 2001/2015 are the runtime's `IncorrectAuthority` here).
+- **Side by side** (`tests/compare.rs`): the same transactions on both programs leave the same pass and the same balances; plus attacks the hand-written checks must stop: a forged pass owned by another program (`IllegalOwner`), a pass's bytes at the wrong address (`InvalidSeeds`), a second token account the pass owns that isn't its vault (`InvalidSeeds`), a fake token program (`IncorrectProgramId`), a pass address someone pre-funded to block creation (still created), unsigned and short instructions.
+- **7 unit tests** of the layout at the Anchor offsets and every limit.
+- **Devnet, CLI:** create, deposit, pull, a pull refused (`OverPerCallCap`), refund, freeze, a pull refused (`PassFrozen`), unfreeze, withdraw, close.
+- **Devnet, through Algebra's API** (`api-demo-pinocchio` launch configuration): a Spend Pass put on chain from the owner's wallet ([oVvabhso…](https://explorer.solana.com/tx/oVvabhsoYEYuV4kZMKN8kcaGNkkYAV3fBWoPSphvhw4a3PVesUz6utFPqyxS8jT7RZ63tHr2YdbeyxbH67jztnd?cluster=devnet)); `token.price` funded by a 0.001 pull ([2X2MW2cC…](https://explorer.solana.com/tx/2X2MW2cC5vmYRtBACKaf3mjdosE974inRy8vuX91xP53pYtcmjdxiLbqaQjTa36cRPnSH1RGKrJRfp9Ykj5N9DFY?cluster=devnet)) and delivered; frozen from the wallet, refused with 403; and a usage-based `llm.chat` whose 0.05 escrow pull ([3z8UZ7q6…](https://explorer.solana.com/tx/3z8UZ7q661uQrD9QUCSW2XH8SxvfTnhroeAzkoZfUG9ioVPB1gK9ReXnFxcQc1QM4ALtZziDxhVxauzGso9rNF6V?cluster=devnet)) settled at 0.00396, the other 0.04604 refunded to the vault automatically ([3ngADtHs…](https://explorer.solana.com/tx/3ngADtHsdL5xe9GBmfxFD4dxxYLfKRznFyRSH14SzfbVknrkDKsieMyq7b16Kujgmgu6ccLk1jTP8hwuLaQK8zfC?cluster=devnet)).
+
+One thing found on the way, worth knowing for any Pinocchio 0.11 program: its `Rent` reads only the sysvar's first field and treats it as lamports per byte (the newer rent model). Under the classic model (lamports per byte-year × an exemption threshold of 2.0), that is **half** the real minimum and the new account is refused. This program reads both fields itself (`rent_exempt_minimum`), so it is correct under either.
+
+Deploy cost on devnet, measured: 0.2758 SOL (rent plus fees). Deploying to mainnet needs about 0.56 SOL in the wallet for a moment (the upload buffer is returned), 0.275 SOL of it stays as the program's refundable rent.
+
 
 ## Limits, honestly
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/project-algebra/algebra/internal/domain/chain"
 	"github.com/project-algebra/algebra/internal/domain/intel"
 )
 
@@ -93,7 +94,7 @@ func listedOf(source string, d *Detail) []intel.Listed {
 			out = append(out, intel.Listed{
 				Source: source, ProviderID: d.ID, ProviderName: d.Name, Capability: e.Capability, Method: e.Method,
 				URL: e.URL, Network: pay.Network, Protocol: protocol, Asset: Currency, PriceMinor: pay.PriceMinor,
-				PayTo: pay.PayTo, Callable: e.Callable && billable,
+				PayTo: pay.PayTo, Callable: e.Callable && billable && (pay.Network == "" || chain.Payable(pay.Network)),
 			})
 		}
 	}

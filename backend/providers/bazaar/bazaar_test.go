@@ -173,6 +173,52 @@ func TestOneEndpointOnBothClusters(t *testing.T) {
 	}
 }
 
+func TestBaseAndArcListingsAreKeptButNotRouted(t *testing.T) {
+	multi := item(func(m map[string]any) {
+		m["accepts"] = []any{
+			map[string]any{"scheme": "exact", "network": caipArc, "asset": "0x3600000000000000000000000000000000000000", "payTo": "0xarc", "amount": "500"},
+			map[string]any{"scheme": "exact", "network": caipBase, "asset": baseUSDC, "payTo": "0xbase", "amount": "700"},
+			map[string]any{"scheme": "exact", "network": caipMainnet, "asset": usdc, "payTo": "Sol1", "amount": "900"},
+		}
+	})
+	baseOnly := item(func(m map[string]any) {
+		m["resource"] = "https://base.example/only"
+		meta(m)["provider"].(map[string]any)["name"] = "Base Only"
+		m["accepts"] = []any{map[string]any{"scheme": "exact", "network": caipBase, "asset": baseUSDC, "payTo": "0xbase", "amount": "100"}}
+	})
+	items := append(append(listed("arc", multi), listed("base", multi, baseOnly)...), listed("solana", multi)...)
+	snap, err := parse(Circle(""), items, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.providers) != 2 {
+		t.Fatalf("both providers are listed: %+v", snap.providers)
+	}
+	var ok, base catalog.Provider
+	for _, p := range snap.providers {
+		if p.Name == "Base Only" {
+			base = p
+		} else {
+			ok = p
+		}
+	}
+	e := snap.endpoints[ok.ID][0]
+	if len(e.Payments) != 3 || e.Payments[0].Network != "solana" || e.Network != "solana" || e.PriceMinor != 900 {
+		t.Fatalf("three networks, Solana's terms as the headline: %+v", e)
+	}
+	cands, _ := catalog.Candidates(&catalog.Detail{Provider: ok, Endpoints: []catalog.Endpoint{e}}, routing.SourceCircle, nil)
+	if len(cands) != 1 || cands[0].Network != "solana" {
+		t.Fatalf("only the network Algebra pays on is routed: %+v", cands)
+	}
+	be := snap.endpoints[base.ID][0]
+	if be.Network != "base" {
+		t.Fatalf("a Base-only endpoint is listed under Base: %+v", be)
+	}
+	if cands, _ := catalog.Candidates(&catalog.Detail{Provider: base, Endpoints: []catalog.Endpoint{be}}, routing.SourceCircle, nil); len(cands) != 0 {
+		t.Errorf("no rail for Base yet, so no candidate: %+v", cands)
+	}
+}
+
 func TestParseDropsWhatCantBePaidOrTrusted(t *testing.T) {
 	good := item(nil)
 	bad := []json.RawMessage{
@@ -310,8 +356,9 @@ func TestClientPagesThroughBothClusters(t *testing.T) {
 	if err != nil || all.Total != 4 {
 		t.Fatalf("3 mainnet providers + 1 devnet: %v %+v", err, all)
 	}
-	if f.hits != 4 {
-		t.Errorf("3 mainnet pages and 1 devnet page: %d", f.hits)
+	// Base, Base Sepolia, Arc and Arc testnet are asked once each and are empty here.
+	if f.hits != 8 {
+		t.Errorf("3 mainnet pages, 1 devnet page and 4 empty EVM pages: %d", f.hits)
 	}
 	for _, q := range f.query {
 		if !strings.Contains(q, "supportsVanillax402=true") || !strings.Contains(q, "siwx=false") || !strings.Contains(q, "limit=200") {
@@ -333,7 +380,8 @@ func TestPayAIAsksForBothNetworkSpellings(t *testing.T) {
 	})
 	c := client(PayAI(""), f, &clock{t: time.Unix(1_800_000_000, 0)})
 	l, err := c.List(context.Background(), catalog.Filter{})
-	if err != nil || l.Total < 6 || f.hits != 4 {
+	// Plus Base and Base Sepolia, both spellings each, empty here.
+	if err != nil || l.Total < 6 || f.hits != 8 {
 		t.Fatalf("v2 and v1 spellings for each cluster: %v total=%d hits=%d", err, l.Total, f.hits)
 	}
 }
@@ -459,7 +507,7 @@ func cdpItem(host, name string, solana bool, mod func(m map[string]any)) json.Ra
 func TestCDPRealSample(t *testing.T) {
 	var items []netItem
 	for _, raw := range fixture(t, "cdp-sample.json") {
-		for _, cluster := range solanaClusters(raw) {
+		for _, cluster := range listedNetworks(CDP(""), raw) {
 			items = append(items, netItem{network: cluster, raw: raw})
 		}
 	}
@@ -597,7 +645,7 @@ func TestSolanaClustersOfAnEntry(t *testing.T) {
 		"nothing":            {`{}`, ""},
 		"not json":           {`[`, ""},
 	} {
-		if got := strings.Join(solanaClusters(json.RawMessage(tc.raw)), ","); got != tc.want {
+		if got := strings.Join(listedNetworks(CDP(""), json.RawMessage(tc.raw)), ","); got != tc.want {
 			t.Errorf("%s: got %q want %q", name, got, tc.want)
 		}
 	}

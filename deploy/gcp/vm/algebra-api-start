@@ -1,0 +1,23 @@
+#!/bin/bash
+# Starts the API with its environment: the settings in /etc/algebra/api.conf, the secrets in
+# /run/algebra/api.env (written just before by algebra-fetch-secrets), and the devnet demo
+# sellers' configuration. The shell does the quoting, so values may hold spaces and JSON.
+set -euo pipefail
+set -a
+# shellcheck disable=SC1091
+. /etc/algebra/api.conf
+# shellcheck disable=SC1091
+. /run/algebra/api.env
+set +a
+
+if [ "${DEMO_PROVIDER:-on}" != "off" ] && [ -z "${ECONOMIC_PROVIDERS:-}" ]; then
+  if cfg=$(/opt/algebra/bin/demo-provider -addr 127.0.0.1:8402 -print-config 2>/dev/null); then
+    ECONOMIC_PROVIDERS=$cfg
+    export ECONOMIC_PROVIDERS
+  else
+    echo "algebra-api-start: the demo providers' configuration could not be read; starting without them" >&2
+  fi
+fi
+
+cd /opt/algebra/backend   # the migrations folder is read relative to here
+exec /opt/algebra/bin/api

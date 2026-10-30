@@ -44,19 +44,23 @@ func TestValidateProduction_ReportsEveryUnsafeSetting(t *testing.T) {
 	}
 }
 
-// A production server that pays on a Solana cluster pays from a person's
-// vault there, never from the payer's own funds.
-func TestValidateProduction_ARealRailNeedsVaultsRequired(t *testing.T) {
+// A production server that pays on devnet pays test money from its own wallet
+// only inside the test-money guard, or else from a person's vault.
+func TestValidateProduction_ADevnetRailNeedsTheGuardOrVaults(t *testing.T) {
 	t.Setenv("REDIS_ADDR", "redis.internal:6379")
 	c := prodConfig()
 	c.SolanaRails = []SolanaConfig{{Cluster: "devnet", Signer: "generated"}}
+	if err := c.ValidateProduction(); err != nil {
+		t.Fatalf("the guard on is enough on devnet: %v", err)
+	}
+	c.TestMoney.Off = true
 	err := c.ValidateProduction()
-	if err == nil || !strings.Contains(err.Error(), "SPEND_PASS_REQUIRED=devnet") {
-		t.Fatalf("a devnet rail whose payments aren't vault-only must be refused, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "TEST_MONEY_GUARD") {
+		t.Fatalf("a devnet rail with no guard and no vaults must be refused, got %v", err)
 	}
 	c.OnchainPasses.Required = map[string]bool{"devnet": true}
 	if err := c.ValidateProduction(); err != nil {
-		t.Fatalf("with vaults required: %v", err)
+		t.Fatalf("with vaults required the guard may be off: %v", err)
 	}
 	c.OnchainPasses.Disabled = true
 	if err := c.ValidateProduction(); err == nil {
@@ -64,8 +68,65 @@ func TestValidateProduction_ARealRailNeedsVaultsRequired(t *testing.T) {
 	}
 	// No rail, nothing to require (the sandbox has no wallet).
 	c = prodConfig()
+	c.TestMoney.Off = true
 	if err := c.ValidateProduction(); err != nil {
 		t.Fatalf("no rail: %v", err)
+	}
+}
+
+// Real money is paid from a vault, whatever the test-money guard says.
+func TestValidateProduction_AMainnetRailNeedsVaultsRequired(t *testing.T) {
+	t.Setenv("REDIS_ADDR", "redis.internal:6379")
+	c := prodConfig()
+	c.SolanaRails = []SolanaConfig{{Cluster: "mainnet", KMSKeyVersion: "projects/p/locations/global/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1"}}
+	err := c.ValidateProduction()
+	if err == nil || !strings.Contains(err.Error(), "SPEND_PASS_REQUIRED=mainnet") {
+		t.Fatalf("a mainnet rail whose payments aren't vault-only must be refused, got %v", err)
+	}
+	c.OnchainPasses.Required = map[string]bool{"mainnet": true}
+	if err := c.ValidateProduction(); err != nil {
+		t.Fatalf("with vaults required: %v", err)
+	}
+	c.OnchainPasses.Disabled = true
+	if err := c.ValidateProduction(); err == nil {
+		t.Fatal("the vault program switched off defeats the requirement")
+	}
+}
+
+// The vault is opt-in, and the guard's counts are read and checked.
+func TestLoadOnchainPassesAndTestMoney(t *testing.T) {
+	for _, k := range []string{"ONCHAIN_PASSES", "SPEND_PASS_PROGRAM_ID", "SPEND_PASS_REQUIRED", "SPEND_PASS_ANY_OWNER", "TEST_MONEY_GUARD", "TEST_MONEY_PER_ACCOUNT_PER_DAY", "TEST_MONEY_PER_DAY"} {
+		t.Setenv(k, "")
+	}
+	var op OnchainPassConfig
+	if err := loadOnchainPasses(&op); err != nil || !op.Disabled {
+		t.Fatalf("passes are off unless asked for: %+v %v", op, err)
+	}
+	t.Setenv("ONCHAIN_PASSES", "on")
+	op = OnchainPassConfig{}
+	if err := loadOnchainPasses(&op); err != nil || op.Disabled {
+		t.Fatalf("ONCHAIN_PASSES=on turns them on: %+v %v", op, err)
+	}
+	t.Setenv("SPEND_PASS_PROGRAM_ID", "off")
+	op = OnchainPassConfig{}
+	if err := loadOnchainPasses(&op); err != nil || !op.Disabled {
+		t.Fatalf("program off wins: %+v %v", op, err)
+	}
+
+	var tm TestMoneyConfig
+	if err := loadTestMoney(&tm); err != nil || tm.Off || tm.PerAccountPerDay != 25 || tm.PerDay != 400 {
+		t.Fatalf("defaults: %+v %v", tm, err)
+	}
+	t.Setenv("TEST_MONEY_GUARD", "off")
+	t.Setenv("TEST_MONEY_PER_ACCOUNT_PER_DAY", "3")
+	t.Setenv("TEST_MONEY_PER_DAY", "50")
+	tm = TestMoneyConfig{}
+	if err := loadTestMoney(&tm); err != nil || !tm.Off || tm.PerAccountPerDay != 3 || tm.PerDay != 50 {
+		t.Fatalf("set: %+v %v", tm, err)
+	}
+	t.Setenv("TEST_MONEY_PER_ACCOUNT_PER_DAY", "0")
+	if err := loadTestMoney(&tm); err == nil {
+		t.Fatal("a count of 0 would refuse every payment; it must be refused at start")
 	}
 }
 
@@ -85,7 +146,6 @@ func TestValidateProduction_AMainnetPayerMustBeCloudKMS(t *testing.T) {
 	}
 	// Devnet may still use a generated or file key.
 	c.SolanaRails = []SolanaConfig{{Cluster: "devnet", Signer: "generated"}}
-	c.OnchainPasses.Required = map[string]bool{"devnet": true}
 	if err := c.ValidateProduction(); err != nil {
 		t.Fatalf("devnet: %v", err)
 	}

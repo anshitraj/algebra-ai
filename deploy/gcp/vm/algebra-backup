@@ -1,0 +1,19 @@
+#!/bin/bash
+# Dumps the database and uploads it to the backup bucket with this VM's own identity. The
+# VM may only create objects there, never delete or read them, and the bucket keeps each one
+# for 14 days, so a compromised VM cannot erase its own history. Run as root by the timer.
+set -euo pipefail
+# shellcheck disable=SC1091
+. /etc/algebra/deploy.conf   # PROJECT, BACKUP_BUCKET
+
+MD=http://metadata.google.internal/computeMetadata/v1
+TOKEN=$(curl -fsS -H 'Metadata-Flavor: Google' "$MD/instance/service-accounts/default/token" | jq -r .access_token)
+name="pg/algebra-$(date -u +%Y%m%dT%H%M%SZ).dump"
+
+# -Fc is the compressed custom format: restore it with pg_restore. Streamed, never written to disk.
+runuser -u postgres -- pg_dump --format=custom --no-owner algebra | \
+  curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/octet-stream' \
+    --data-binary @- \
+    "https://storage.googleapis.com/upload/storage/v1/b/$BACKUP_BUCKET/o?uploadType=media&name=$name" \
+    -o /dev/null
+echo "algebra-backup: uploaded gs://$BACKUP_BUCKET/$name"

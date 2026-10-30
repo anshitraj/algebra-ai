@@ -16,8 +16,8 @@ export default function PrivacyPage() {
       <Section title="What we collect">
         <ul>
           <li>
-            <strong>Account</strong> — your name, email address, and either a password (stored only as an argon2id hash) or the ID of the Privy
-            account you sign in with, with the Solana wallet addresses it reports (public addresses; Algebra never holds a wallet&apos;s keys).
+            <strong>Account</strong> — your name (if you give one), your email address, and a password if you set one (stored only as an argon2id
+            hash). Signing in with an emailed code stores only a keyed hash of the code, for ten minutes.
           </li>
           <li>
             <strong>Spend Passes and agent tokens</strong> — each pass&apos;s label, limits and controls. A token is shown to you once and stored only
@@ -92,10 +92,6 @@ export default function PrivacyPage() {
             <strong>The Solana network and its node providers</strong> — payments are public by nature.
           </li>
           <li>
-            <strong>Privy</strong> (privy.io), if you sign in with it — your email address or wallet address, to send you a code or connect your wallet,
-            and to create a Solana wallet for you if you have none. Privy holds that wallet&apos;s key, not Algebra, and its own privacy policy applies to what it keeps.
-          </li>
-          <li>
             <strong>AI model providers</strong> (Google Gemini, Anthropic or OpenAI, depending on the model in use) — your chat messages and the
             results of the agent&apos;s searches, to generate replies.
           </li>
@@ -148,7 +144,7 @@ export default function PrivacyPage() {
 
       <Section title="Cookies and browser storage">
         <p>
-          We use one essential cookie to keep you signed in. Privy&apos;s sign-in runs in your browser and may keep its own data there while you sign in. Your browser
+          We use one essential cookie to keep you signed in. Your browser
           stores your current agent chat and chosen AI model. We use no advertising or tracking cookies and no third-party analytics.
         </p>
       </Section>

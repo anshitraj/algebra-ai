@@ -16,7 +16,6 @@ import {
   IconCheck,
   IconEye,
   IconTag,
-  IconLock,
   IconInbox,
   IconList,
   IconLogOut,
@@ -26,14 +25,14 @@ import {
   IconStore,
   IconPlug,
   IconX,
+  IconWallet,
   Spinner,
 } from "@/components/icons";
 import { ConsoleDataProvider, useConsoleData } from "./console-data";
-import { NetworkProvider } from "@/lib/network";
+import { NetworkProvider, useNetwork } from "@/lib/network";
 import { NotificationsProvider } from "@/lib/notifications";
 import { NetworkSwitch } from "./network-switch";
 import { NotificationBell } from "./notification-bell";
-import { WalletMenu } from "./wallet-menu";
 
 type NavItem = { href: string; label: string; icon: React.ReactNode; badge?: "approvals" };
 
@@ -47,8 +46,8 @@ const PRIMARY: NavItem[] = [
 ];
 
 const CONTROLS: NavItem[] = [
-  { href: "/console/passes", label: "Spend passes", icon: <IconShield /> },
-  { href: "/console/firewall", label: "Spend firewall", icon: <IconLock /> },
+  { href: "/console/firewall", label: "Spend Passes", icon: <IconShield /> },
+  { href: "/console/vault", label: "Vault", icon: <IconWallet /> },
 ];
 
 const DEVELOPERS: NavItem[] = [
@@ -96,8 +95,8 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
   }, [pathname]);
 
   return (
-    <div className="console-frame flex h-dvh overflow-hidden print:block print:h-auto print:overflow-visible">
-      <aside className="console-sidebar console-inverse hidden shrink-0 flex-col border-r border-border md:flex print:hidden">
+    <div className={`console-frame ${fullBleed ? "console-chat-frame" : ""} flex h-dvh overflow-hidden print:block print:h-auto print:overflow-visible`}>
+      <aside className={`console-sidebar ${fullBleed ? "" : "console-inverse"} hidden shrink-0 flex-col border-r border-border md:flex print:hidden`}>
         <SidebarContents user={user} pathname={pathname} />
       </aside>
 
@@ -112,7 +111,7 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
               onClick={() => setDrawer(false)}
             />
             <motion.aside
-              className="console-inverse fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-border bg-background shadow-2xl md:hidden"
+              className={`${fullBleed ? "console-chat-frame" : "console-inverse"} fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-border bg-background shadow-2xl md:hidden`}
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
@@ -146,7 +145,7 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
           >
             <IconMenu />
           </button>
-          <Link href="/console" className="flex items-center gap-2 text-foreground">
+          <Link href="/console/agent" className="flex items-center gap-2 text-foreground">
             <Logo size={20} />
             <span className="hidden font-display text-sm font-semibold min-[480px]:inline">Algebra</span>
           </Link>
@@ -154,12 +153,11 @@ function ShellFrame({ user, children }: { user: User; children: React.ReactNode 
             <MobileApprovalsPill />
             <NetworkSwitch compact />
             <NotificationBell />
-            <WalletMenu compact />
           </div>
         </header>
         <div className="console-toolbar hidden shrink-0 items-center gap-3 border-b border-border md:flex print:hidden">
           <div className="console-breadcrumb"><span>Workspace</span><span>/</span><strong>{[...PRIMARY, ...CONTROLS, ...DEVELOPERS].find((item) => isActive(pathname, item.href))?.label ?? "Settings"}</strong></div>
-          <div className="console-toolbar-actions"><Link href="/console/connect" className="console-status">Connect an agent <IconArrowRight size={13} /></Link><NetworkSwitch /><NotificationBell /><WalletMenu /></div>
+          <div className="console-toolbar-actions"><Link href="/console/connect" className="console-status">Connect an agent <IconArrowRight size={13} /></Link><NetworkSwitch /><NotificationBell /></div>
         </div>
         <main className={`min-h-0 flex-1 ${fullBleed ? "overflow-hidden" : "overflow-y-auto"} print:overflow-visible`}>
           {fullBleed ? children : <div className="px-5 py-8 md:px-10 md:py-10">{children}</div>}
@@ -186,6 +184,7 @@ function MobileApprovalsPill() {
 
 function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
   const { awaitingApproval: pending } = useConsoleData();
+  const chat = pathname === "/console/agent";
 
   const renderItem = (item: NavItem) => {
     const active = isActive(pathname, item.href);
@@ -223,6 +222,13 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
         <span className="font-display text-[1.4rem] font-semibold tracking-[-0.06em]">algebra</span>
       </Link>
       <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 pb-4" aria-label="Console">
+        {chat ? <>
+          <div className="flex flex-col gap-1">
+            {[PRIMARY[0], CONTROLS[1], ...PRIMARY.slice(1, 3), CONTROLS[0], { ...PRIMARY[5], label: "Activity" }, { href: "/console/settings", label: "Settings", icon: <IconSettings /> }].map(renderItem)}
+          </div>
+          <details className="console-more-tools"><summary>More tools <IconChevronDown size={13} /></summary><div>{[PRIMARY[3], PRIMARY[4], ...DEVELOPERS].map(renderItem)}</div></details>
+          <SidebarBalance />
+        </> : <>
         <div className="flex flex-col gap-0.5">{PRIMARY.map(renderItem)}</div>
         <div>
           <p className="px-3 pb-1.5 text-xs font-medium text-muted/80">Your agents</p>
@@ -233,10 +239,18 @@ function SidebarContents({ user, pathname }: { user: User; pathname: string }) {
           <div className="flex flex-col gap-0.5">{DEVELOPERS.map(renderItem)}</div>
         </div>
         <div className="mx-1 mt-auto rounded-lg border border-border px-3.5 py-4"><IconShield size={20} className="text-foreground" /><p className="mt-3 text-xs font-medium text-foreground">Your limits. Every request.</p><p className="mt-1.5 text-[0.6875rem] leading-relaxed text-muted">USDC on Solana. Keys stay with Algebra. Authority stays with you.</p><Link href="/console/firewall" className="mt-3 inline-flex items-center gap-2 text-[0.6875rem] font-medium text-foreground">Review your firewall <IconArrowRight size={12} /></Link></div>
+        </>}
       </nav>
       <UserMenu user={user} />
     </>
   );
+}
+
+function SidebarBalance() {
+  const { network, practice } = useNetwork();
+  // Accounts hold no wallet since sign-in moved to emailed codes: say what payments are made in, not a balance.
+  const what = practice ? "Play USDC" : network === "solana" ? "Mainnet USDC" : "Testnet credits";
+  return <Link href="/console/firewall" className="console-chat-balance"><div><span>{practice ? "Demo workspace" : "Paying with"}</span><IconWallet size={14} /></div><strong>{what}</strong></Link>;
 }
 
 function Avatar({ user, size = 32 }: { user: User; size?: number }) {

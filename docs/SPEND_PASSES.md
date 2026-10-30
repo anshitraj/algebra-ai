@@ -58,6 +58,161 @@ Independently of any pass, Algebra refuses providers that are down (`provider_do
 costs (`price_outlier`, more than 10× the class median and over $0.05; $1,000 a call is never paid). The rails have hard per-payment ceilings of their own (1 USDC for x402, 5 USDC for a swap by default) that no
 pass can raise.
 
+## Job Passes: a task's budget inside a pass
+
+The hierarchy is **Vault → Spend Pass → Job Pass**. A Job Pass is a temporary budget for one task, set aside from a
+Spend Pass and shared by every agent that works on the task (code: `internal/domain/jobpass`,
+`internal/app/job_passes.go`, migration `0031_job_passes.sql`).
+
+- **Set aside at once, or not at all.** Opening a job counts its whole budget against the pass immediately, under the
+  same row lock every payment of the pass takes. When the pass hasn't that much left the job is refused
+  (`JOB_PARENT_SHORT`, with `left_minor`), so a task never starts on money another task may take. The chat opens one
+  for every turn that pays: the most the chosen cards could cost, together. Two cards that each fit but not together
+  pay nothing, instead of half the task.
+- **Shared by sub-agents.** The agent that opens a job gets the job's token once (`ajob_…`, stored hashed). A sub-agent
+  holding it can pay under the job, open a smaller job inside it, and read or close what it reaches; nothing else. It
+  can't read the pass, other jobs, the account, or approve anything. Three sub-agents on a 3 USDC job can spend 3 USDC
+  together, not 9.
+- **Parent-child limits.** A sub-job comes out of what its parent has left, at most three levels deep, and never
+  outlives its parent or the pass. While a sub-job is open its whole budget counts in the parent; once it ends, only
+  what it paid or still holds does.
+- **Every rule of the pass still applies** to each payment: per-call cap, providers, ask-me line, new-provider and
+  web-found rules, calls per minute, the kill switch. A job narrows a pass, never widens it.
+- **Ends three ways**, each giving back what it didn't use at once: closed when the task is done (the agent, a
+  sub-agent for its own job, or the chat), stopped by the person (`Stop this task` in the pass, which stops every job
+  beneath it too), or expired (an hour by default, a day at most). An attempt already under way keeps its hold until
+  it settles. A job stopped between reserving and paying releases nothing: `Begin` and the payment authority both
+  check the job again.
+- **Ledger only.** A job is an allocation in Algebra's ledger, never separate money, a wallet or a deposit. On Testnet
+  the credits pay; with a vault allowance the vault pays; the job decides only whether a payment may happen.
+
+API: `POST /api/v1/jobs` (agent token, or a job token for a sub-job) with `label`, `budget_minor`,
+`expires_in_seconds`, `parent_id`; `GET /api/v1/jobs/{id}`; `POST /api/v1/jobs/{id}/close`. `POST /api/v1/execute`
+takes `job_id`, or pays under the job of the job token it is called with. The console: `GET|POST /api/v1/me/jobs`,
+`GET /api/v1/me/jobs/{id}`, `POST /api/v1/me/jobs/{id}/close|revoke`. The pass's view adds
+`set_aside_minor_units`: what running jobs hold and haven't used.
+
+MCP (`internal/mcpserver/job_tools.go`): `algebra_job_open`, `algebra_job_status`, `algebra_job_close`, and `job_id` on `algebra_execute`. A job token is a Bearer
+token for a sub-agent's own MCP connection and reaches what it reaches over REST: `algebra_execute` under its job, the three job tools for its tree, nothing
+else (every other tool says so). See [MCP.md](MCP.md).
+
+## Task and agent P&L
+
+`internal/app/pnl.go`. Every task (Job Pass, sub-tasks included) and every agent (Spend Pass, last 30 days) has its money
+worked out from what the chain and the coordinator recorded:
+
+- **Paid**: payments committed. **Wasted**: the part of that which bought an answer that wasn't usable.
+- **Accepted** answers, and **cost per accepted answer** (paid ÷ accepted).
+- **Saved by reuse**: what answers handed back by purchase memory would have cost again (each reuse records the task and
+  the pass that asked).
+- **Value** is never guessed: the agent states it when it opens a task (`value_minor` on `POST /api/v1/jobs`, or later
+  `POST /api/v1/jobs/{id}/value`), or the person does in the pass's task list. With a value, **P&L = value − paid**; an
+  agent's P&L adds up its tasks that have one.
+
+`GET /api/v1/me/passes/{id}/pnl?days=30` is an agent's; each task's is in its view (`pnl`).
+
+## Replay: a task under chaos
+
+`internal/app/replay_chaos.go`, `POST /api/v1/me/jobs/{id}/replay`, "Replay under chaos" in the task list. A finished
+task's paid purchases run again, on paper, through the router's dry run under the task's own Spend Pass, with one
+misbehaving seller added per scenario:
+
+| Scenario | What the seller does | What normally answers it |
+|---|---|---|
+| Overcharge | lists the usual price, asks four times as much | `price_above_listing` |
+| Honeypot | asks 25 USDC for the same work | the intent's ceiling, the outlier guard |
+| Web lure | an endpoint found on the open web at half price | the pass's web-found rule (asks first by default) |
+| Stranger | a seller never paid, at the same price | the pass's new-provider rule |
+| Seller down | the seller the task paid doesn't answer | falling back to the next, or stopping with nothing paid |
+| Loop | the same thing asked again and again | purchase memory, then the repeat-purchase rule |
+
+The adversaries are never contacted (their answers are written into the dry run) and the task's real sellers are priced
+from their listings, so nothing leaves Algebra and nothing is paid. Each finding says whether it was caught, waited for
+the person, was ranked below a better offer, or would have been paid, with the rule that decided.
+
+### Test this pass: the same scenarios before an agent has any task
+
+`ExecutionService.ReplayPreset`, `POST /api/v1/me/passes/{id}/replay`, "Test this pass" in an open pass card. A pass with no
+task has nothing to replay, so three kinds of work agents usually buy stand in for a task's purchases: `token.price`,
+`solana.token-risk` and `web.search`. For each:
+
+- the sellers are the ones the router would see now, kept to the networks the pass can pay on (a Testnet pass: the Testnet
+  networks whose rail is ready; a demo account: the sandbox) and to what is priced in USDC;
+- the cheapest one that lists a price stands in for "the seller the agent paid", and its price is the usual price the
+  scenarios scale from (overcharge is four times it, the web lure half of it);
+- the ask has the widest budget the pass lets one purchase have (its per-purchase limit, else its whole budget), so a pass
+  that holds against it holds against a smaller ask, and a missing limit shows as `would_pay`;
+- a kind of work nobody sells on those networks is listed in `skipped` with the reason instead of being tested.
+
+It says so instead of returning a report where everything was refused for one reason: a pass that shops (INR), a frozen,
+revoked or expired pass, and a Mainnet pass while Mainnet payments are off are refused with what to do. Same pass, same
+sellers, same report: a tie in price goes to the first seller by name. `TestReplayPreset_*`,
+`TestReplayPresetOverHTTP_APassIsTestedWithoutPayingAnyone`.
+
+## Web tools with your own API key
+
+`backend/providers/keyed`, `internal/app/tool_keys.go`, "Web tools" in Account. A person saves their own key for a vendor and
+that vendor's tools become one more seller their agents can route to, priced and ranked beside the paid ones:
+
+| Vendor | Tools | Class |
+|---|---|---|
+| TinyFish | Search · Fetch · Agent | `web.search` · `web.scrape` · `web.agent` |
+| Exa | Search | `web.search` |
+| Firecrawl | Scrape | `web.scrape` |
+| Tavily | Search | `web.search` |
+
+- **The vendor bills the person**, so Algebra moves no money. The call still goes through the coordinator: the Spend Pass's
+  budget, its rules and its ask-first gate apply, the quote is the vendor's list price, and the call settles on the `keyed`
+  rail for **what the vendor reported charging** (TinyFish Agent: steps × 1.5 cents; Exa: its `costDollars`; Firecrawl and
+  Tavily: their list price). A free call commits nothing; a call the vendor refused or failed is not billed and not counted.
+  The receipt says "Your own API key" and names the vendor's reference, never a chain transaction.
+- **The key** is sealed under a key derived from the master key (`algebra:tool-keys:v1`), bound to its owner and vendor, never
+  returned (only its last four characters are shown), never logged, never put in a URL, and sent only to the vendor's own
+  address: the runner looks the tool up by provider and class and refuses a quote that names any other endpoint. It is read
+  only for the owner of the Spend Pass making the call. Erasing an account deletes its keys. A demo account can't save one.
+- **Whose tools**: `CandidateResolver.ResolveFor` adds a person's keyed tools to their own requests only, first in the order
+  (they need no network to be priced). Naming `keyed:exa` in `providers` selects it; endpoints an agent supplies itself are
+  never keyed.
+- Environments: keyed calls are exempt from the network limit (no chain is used), so they work in Testnet and Mainnet alike.
+
+`GET /api/v1/me/tool-keys` lists the vendors and which keys are saved; `PUT /api/v1/me/tool-keys/{vendor}` with `{"key": "…"}`
+saves or replaces; `DELETE` removes.
+
+**The operator's own key.** An operator can keep a vendor key in the server's environment instead (`TINY_FISH_API`, `EXA_API`,
+`FIRECRAWL_API`, `TAVILY_API`; see `backend/.env.example`). That key is the operator's own account with the vendor, so every call
+made with it is billed there, and it is offered only to the accounts at the addresses in `ALGEBRA_OPERATOR_EMAILS`, and to
+nobody else (`internal/app/operator_keys.go`). An account counts only when it is a first-party account (not a B2B tenant's
+person), its person has proved the address (a sign-in code or a verified provider), it is not a demo, and it has **no
+password**: proving an address now clears a password set before it (`AccountService.claimAddress`), but an account verified
+before that change may still carry one that is somebody else's, so an operator account is one with none. The set is looked up
+from the addresses at most every 30 seconds, so a first sign-in counts within that.
+
+- A key the person saves themselves always wins, and removing it hands back to the server's. The server's key can't be saved,
+  replaced or removed from the app, and is never returned: the listing only says `server_key: true` and Account → Web tools
+  shows "Using the server's key".
+- It lives in the process, read from the environment at start. Nothing about it is stored in the database, and it goes only to the
+  vendor's own address, checked by the runner like any saved key. Keys set with no address listed: no account can use them, and the
+  API logs a warning at startup. A key that is not the shape of one stops the start, naming the vendor and never the key.
+
+**Checked live.** `providers/keyed/live_test.go` runs the real adapters against the real vendors, only when a key is in the
+test process's environment (`KEYED_LIVE_TINYFISH_KEY`, `_EXA_`, `_FIRECRAWL_`, `_TAVILY_`; an Agent run costs credits and
+also needs `KEYED_LIVE_AGENT=1`): `KEYED_LIVE_TINYFISH_KEY=… go test ./providers/keyed -run Live -v -count=1`. TinyFish
+Search (10 results), Fetch (a page as markdown) and one small Agent run (4 steps in 23 s, charged 4 x 1.5 cents = 0.06 USD)
+passed against the live API on 2026-10-29. TinyFish's answer to an Agent run reports its steps and not a dollar amount, so
+the charge is the steps at the pay-as-you-go step price: a plan with cheaper credits is billed less than Algebra records.
+The Exa, Firecrawl and Tavily adapters are so far tested against fake vendors only.
+
+`internal/platform/postgres/keyed_live_test.go` runs the whole path (router, coordinator, `keyed` rail and runner, Postgres)
+against the real TinyFish, with the key only in the test process's environment and nothing saved: Search and Fetch settle
+at 0 and count as accepted answers in the agent's P&L; an Agent run is refused as over budget under a 0.30 ceiling and, with
+a higher one, waits for the person. It never runs an Agent task (the test's HTTP client refuses that host), because one
+costs credits.
+
+A free call moves no money, so it does not make a vendor a known provider: the new-provider gate counts only commitments
+with a hold above zero. The first call that costs more than a never-paid provider may take (0.05 by default) is held for a
+yes however many free ones came before it, and an agent needs a ceiling of at least 0.30 USDC to ask for an Agent run,
+which is quoted at about twenty steps.
+
 ## Connecting an agent
 
 - **MCP** at `/mcp`: send the token as an HTTP header, so it never passes through the model: see [MCP.md](MCP.md). `algebra_spend_pass` reads the pass; `algebra_execute` spends under it.

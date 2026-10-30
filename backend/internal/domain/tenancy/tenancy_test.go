@@ -10,13 +10,20 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/agent"
 )
 
-func TestEnvironmentsMapToOneNetworkEach(t *testing.T) {
-	for env, want := range map[Environment]string{EnvSandbox: "sandbox", EnvDevnet: "solana-devnet", EnvMainnet: "solana"} {
-		if got := env.Networks(); len(got) != 1 || got[0] != want {
-			t.Errorf("%s networks = %v, want [%s]", env, got, want)
+func TestEnvironmentsMapToTheirNetworks(t *testing.T) {
+	for env, want := range map[Environment][]string{
+		EnvSandbox: {"sandbox"},
+		// Testnet is every test network Algebra pays on.
+		EnvDevnet:  {"solana-devnet", "base-sepolia", "arc-testnet"},
+		EnvMainnet: {"solana"},
+	} {
+		if got := env.Networks(); !slices.Equal(got, want) {
+			t.Errorf("%s networks = %v, want %v", env, got, want)
 		}
-		if back, ok := EnvironmentOfNetwork(want); !ok || back != env {
-			t.Errorf("network %s maps back to %q", want, back)
+		for _, n := range want {
+			if back, ok := EnvironmentOfNetwork(n); !ok || back != env {
+				t.Errorf("network %s maps back to %q", n, back)
+			}
 		}
 	}
 	if Environment("prod").Valid() || Environment("prod").Networks() != nil {

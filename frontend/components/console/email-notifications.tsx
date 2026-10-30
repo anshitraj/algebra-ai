@@ -15,7 +15,7 @@ import { IconCheck, IconMail, Spinner } from "@/components/icons";
 import { ErrorNote, Skeleton } from "@/components/console/ui";
 
 const KINDS = [
-  { id: "sign_ins", label: "Sign-in alerts", hint: "An email after each sign-in: when, which device, and how to sign it out if it wasn't you." },
+  { id: "sign_ins", label: "Sign-in alerts", hint: "An email after each sign-in with a password: when, which device, and how to sign it out if it wasn't you. A sign-in with an emailed code sends none: the code is the email." },
   { id: "receipts", label: "Payment receipts", hint: "An email for each payment that lands on Solana, with the transaction and the PDF receipt. At most 20 an hour; sandbox calls send none." },
 ] as const;
 
@@ -108,7 +108,7 @@ export function EmailNotifications() {
   return (
     <section id="notifications" className="mt-8 scroll-mt-6">
       <h2 className="text-[0.95rem] font-semibold text-foreground">Email notifications</h2>
-      <p className="mt-1 text-sm text-muted">A sign-in alert after each sign-in, and a receipt for each payment that lands on Solana.</p>
+      <p className="mt-1 text-sm text-muted">A sign-in alert after each password sign-in, and a receipt for each payment that lands on Solana.</p>
 
       <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-surface">
         {s === null && !error && (

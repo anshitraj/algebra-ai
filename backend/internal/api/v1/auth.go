@@ -20,7 +20,6 @@ import (
 
 	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/account"
-	"github.com/project-algebra/algebra/internal/platform/identity"
 )
 
 // SessionCookie is the HttpOnly cookie carrying a human session. The web
@@ -224,8 +223,8 @@ type userResponse struct {
 	Onboarded       bool     `json:"onboarded"`
 	HasPassword     bool     `json:"has_password"`
 	LinkedProviders []string `json:"linked_providers"`
-	// Wallets are the Solana wallets the person signed in with or was
-	// given at sign-in (Privy); public addresses only.
+	// Wallets are the Solana wallets earlier sign-ins recorded for the
+	// account; public addresses only. Empty for accounts made since.
 	Wallets   []account.Wallet `json:"wallets"`
 	CreatedAt string           `json:"created_at"`
 	// Mode is "live" or "demo" — see account.Mode.
@@ -286,57 +285,96 @@ func (a *API) authProviders(w http.ResponseWriter, _ *http.Request) {
 	_, github := a.b.OAuthProviders["github"]
 	out := map[string]any{
 		"password": a.b.AuthConfig.PasswordLogin, "google": google, "github": github,
-		"demo": a.b.AuthConfig.DemoAccounts && a.b.Demo != nil, "privy": a.b.Privy != nil,
-	}
-	if a.b.Privy != nil {
-		// Public: Privy's sign-in runs in the browser and needs the app ID.
-		out["privy_app_id"] = a.b.Privy.AppID()
+		"demo":       a.b.AuthConfig.DemoAccounts && a.b.Demo != nil,
+		"email_code": a.b.AuthConfig.EmailCodeLogin && a.b.Accounts.LoginCodesOn(),
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-type privySignInRequest struct {
-	IdentityToken string `json:"identity_token"`
+type sendLoginCodeRequest struct {
+	Email string `json:"email"`
 }
 
-// privySignIn trades a Privy identity token for an Algebra session. The web
-// app runs Privy's sign-in (email code, Google, or a Solana wallet; Privy
-// gives anyone without a wallet an embedded Solana one), then posts the
-// identity token Privy issued, which names the person and their wallets
-// and is signed by Privy for this app.
-func (a *API) privySignIn(w http.ResponseWriter, r *http.Request) {
-	if a.b.Privy == nil {
-		writeJSON(w, http.StatusNotFound, errorBody{Error: "Privy sign-in isn't configured on this server"})
+// loginCodesPerAddressPerHour bounds how many codes one address is sent in an
+// hour, whoever asks: a stranger typing someone's address over and over must
+// not fill their inbox.
+const loginCodesPerAddressPerHour = 6
+
+// sendLoginCode: POST /api/v1/auth/code/send {"email"}. Emails a six-digit code
+// to the address. The answer is the same whether or not the address has an
+// account; signing in with the code makes one.
+func (a *API) sendLoginCode(w http.ResponseWriter, r *http.Request) {
+	if !a.b.AuthConfig.EmailCodeLogin || !a.b.Accounts.LoginCodesOn() {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: app.ErrLoginCodesOff.Error()})
 		return
 	}
-	var req privySignInRequest
-	if err := decodeJSON(r, &req); err != nil || strings.TrimSpace(req.IdentityToken) == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody{Error: "identity_token is required"})
+	var req sendLoginCodeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	id, err := a.b.Privy.VerifyIdentityToken(r.Context(), req.IdentityToken)
-	if err != nil {
-		if errors.Is(err, identity.ErrPrivyToken) {
-			log.Printf("auth: privy sign-in refused: %v", err)
-			writeJSON(w, http.StatusUnauthorized, errorBody{Error: "We couldn't verify your Privy sign-in. Please try again."})
-			return
-		}
-		log.Printf("auth: privy sign-in: %v", err)
-		writeJSON(w, http.StatusBadGateway, errorBody{Error: "Privy isn't answering right now. Please try again in a moment."})
-		return
-	}
-	res, err := a.b.Accounts.SignInWithPrivy(r.Context(), id.Profile, id.Wallets, clientMeta(r))
+	address, err := account.NormalizeEmail(req.Email)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
 		return
 	}
-	a.setSessionCookie(w, res.Token)
-	if a.b.Notifications != nil && id.Profile.Email != "" && id.Profile.EmailVerified {
-		// A wallet account whose person has since verified an email with Privy
-		// is written to there, without confirming it a second time.
-		a.b.Notifications.AdoptVerifiedEmail(r.Context(), res.User, id.Profile.Email)
+	if a.limiter != nil {
+		sum := sha256.Sum256([]byte(address))
+		ok, retry, err := a.limiter.Allow(r.Context(), "quota:login-code:"+base64.RawURLEncoding.EncodeToString(sum[:12]), loginCodesPerAddressPerHour, time.Hour)
+		if err == nil && !ok {
+			w.Header().Set("Retry-After", formatSeconds(retry))
+			writeJSON(w, http.StatusTooManyRequests, errorBody{Error: "too many codes were sent to this address: try again in a while"})
+			return
+		}
 	}
-	a.signedIn(r, res)
+	if err := a.b.Accounts.RequestLoginCode(r.Context(), address, a.b.AuthConfig.PublicWebURL); err != nil {
+		var soon *account.LoginCodeTooSoon
+		if errors.As(err, &soon) {
+			w.Header().Set("Retry-After", formatSeconds(soon.RetryAfter))
+			writeJSON(w, http.StatusTooManyRequests, errorBody{Error: soon.Error()})
+			return
+		}
+		log.Printf("auth: sending a sign-in code: %v", err)
+		writeJSON(w, http.StatusBadGateway, errorBody{Error: "we couldn't send the email just now: try again in a moment"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "resend_in": int(account.LoginCodeCooldown / time.Second)})
+}
+
+type verifyLoginCodeRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+// verifyLoginCode: POST /api/v1/auth/code/verify {"email","code"}. The right
+// code signs in, and makes the account the first time.
+func (a *API) verifyLoginCode(w http.ResponseWriter, r *http.Request) {
+	if !a.b.AuthConfig.EmailCodeLogin || !a.b.Accounts.LoginCodesOn() {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: app.ErrLoginCodesOff.Error()})
+		return
+	}
+	var req verifyLoginCodeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	res, err := a.b.Accounts.SignInWithLoginCode(r.Context(), req.Email, req.Code, clientMeta(r))
+	if err != nil {
+		switch {
+		case errors.Is(err, account.ErrLoginCodeWrong), errors.Is(err, account.ErrLoginCodeGone):
+			writeJSON(w, http.StatusUnauthorized, errorBody{Error: err.Error()})
+		default:
+			writeError(w, err)
+		}
+		return
+	}
+	a.setSessionCookie(w, res.Token)
+	// The code mailed a moment ago already told them: an alert for a sign-in
+	// they just made would be a second email for nothing. A first sign-in still
+	// gets its welcome.
+	if res.Created {
+		a.signedIn(r, res)
+	}
 	resp := a.toUserResponse(r.Context(), res.User)
 	status := http.StatusOK
 	if res.Created {

@@ -55,9 +55,14 @@ Money is integer minor units (micro-USDC), never floats. `backend/internal/domai
    the intent's reliability or quality floor, a live price more than 5% above its own listing (`price_above_listing`) or an outlier.
 4. **Ranking.** `routing.Rank` is pure and stable (ties keep the order the caller gave). Real money is always ranked before test money,
    and an observed provider that delivers less than half the time after any other.
-   - `CHEAPEST`: the lowest total cost first; the live quote, fees included.
+   - `CHEAPEST`: the lowest **cost per accepted answer** first (`routing/accepted.go`): the live quote, fees included, times
+     (p + w) / p, where p is how often the provider's answers are accepted and w how often it is paid and brings nothing usable.
+     Failures before payment add attempts, not money. A 0.0008 provider paid for nothing half the time costs about 0.0015 per
+     answer and ranks below a 0.001 provider that delivers 95% of the time. Both rates come from Algebra's own calls, smoothed
+     towards the source's prior like reliability. Each offer and each plan carry the figure (`cost_per_accepted_minor`, and
+     `routing.expected` for the plan with its fallbacks counted).
    - `FASTEST`: the shortest expected time to a result first, from Algebra's own measurement of the provider when it has one.
-   - `AUTO`: a weighted score: cost 0.30, reliability 0.25, quality 0.15, latency 0.12, trust 0.10, price honesty 0.08. A provider with no
+   - `AUTO`: a weighted score: cost (per accepted answer) 0.30, reliability 0.25, quality 0.15, latency 0.12, trust 0.10, price honesty 0.08. A provider with no
      record is scored on a prior from its source (native 0.90, listed 0.70, unverified 0.40) that fades as real calls come in
      (it counts for three calls; after five, the record outweighs it).
    The best few (`MaxPlanSteps`) become the plan. The response says who was priced, each score by component and why the rest were left out.
@@ -100,7 +105,7 @@ or reshapes the class's fields into its own. `GET /api/v1/classes` and `/classes
 
 | | |
 |---|---|
-| `POST /api/v1/execute` | Ask for an outcome and have it done. Body: the intent spec (`capability`, `input`, `budget_max_minor`, `window`, `provider_policy.strategy`, `constraints`, …) plus `providers`, `candidates` (endpoints the agent found) and `store_result`. |
+| `POST /api/v1/execute` | Ask for an outcome and have it done. Body: the intent spec (`capability`, `input`, `max_usd` or `budget_max_minor`, `window`, `provider_policy.strategy`, `constraints`, …) plus `providers`, `candidates` (endpoints the agent found) and `store_result`. |
 | `POST /api/v1/policy/simulate` | The dry run: takes what `/execute` takes plus `live_quotes`, answers ALLOW / REQUIRE_APPROVAL / DENY with the reasons, the plan and what each provider would meet. Creates nothing, pays nothing. |
 | `POST /api/v1/economic-intents/{id}/execute` | Run an intent that already exists (for example one the person just approved). |
 | `GET /api/v1/economic-intents/{id}/executions` | Attempts with cost, latency, payment, delivery and quality. |
@@ -118,6 +123,21 @@ being established (do not retry); `502` every provider tried failed and nothing 
 
 Configuration: `ECONOMIC_SANDBOX`, `ECONOMIC_PROVIDERS`, `RESULT_RETENTION`, `RESULT_MAX_BYTES`, the catalog and Solana settings below (all in `.env.example`).
 
+### The request contract: dollars, and a key that makes a retry safe
+
+**Dollars.** The most a request may cost is `max_usd`, a decimal string of dollars with at most 6 decimals (`"0.05"`), or `budget_max_minor` in micro-USDC (50000):
+send one, and when both are sent they must agree. A JSON number for `max_usd` is refused, so an amount is never read as a float. It works on `/execute`, `/policy/simulate`
+and the intent routes. The answer says both: `budget_max_usd` and `paid_usd` next to `intent.budget_max_minor` and `intent.committed_minor`.
+
+**`Idempotency-Key`.** A header of 1 to 255 printable characters (a UUID will do) on `POST /api/v1/execute` makes the request's identity the key: it replaces
+`window`, so a retry that changes the window by accident can't buy twice. Send the same key and the same request again, after a timeout or a dropped connection, and
+the answer is the first one (`replayed: true`, nothing paid). The same key with a different request (another input, capability or amount; the way the amount is
+spelled doesn't count) is refused with `409` and `reason: idempotency_key_reused`, and keys are kept apart per person. A request refused as malformed doesn't use its key
+up. `window` stays for the cases without a key. Over MCP the `window` is still the identity. `TestIdempotencyKeyOverHTTP_*`, `TestMaxUSDOverHTTP_*`.
+
+**One wording.** The `error` of a refusal (needs approval, already committed, may still be settling, outside the person's limits, no provider could do it) is the same
+sentence over REST and over MCP (`app.ExplainRefusal`): `TestRefusalsReadTheSameOverRESTAndMCP`.
+
 ### Results are kept so that asking again works
 
 When an outcome is paid for, the provider's answer is sealed (AES-256-GCM under a key derived from the master key and used for nothing else) and kept for
@@ -125,6 +145,32 @@ When an outcome is paid for, the provider's answer is sealed (AES-256-GCM under 
 Asking again for a committed outcome then returns it with `replayed: true`: nothing runs, nothing is paid, and the receipt is the same. A request can say
 `store_result: false` to have its answer not kept, and a repeat is then refused as already committed. The kept answer is returned only after the asking agent's
 own pass is checked again and it matches the committed reservation and the result hash the coordinator holds. Erasing an account deletes its kept answers.
+
+### Purchase memory: the same thing is not bought twice while it is fresh
+
+A new request (another `window`) for the same work with the same input, by the same person, in the same project and on the same networks, is
+answered with the earlier answer while it is fresh (`internal/app/purchase_memory.go`): `reused` names the purchase and its age, nothing is paid and no
+intent is created. Fresh is the request's own `max_age_seconds`, else the work's default (`routing.FreshFor`): token price 60 s, balances 30 s,
+news 10 min, token or wallet risk, search, scrape and weather 30 min, translation and lookups a day; a model's completion and an endpoint with no class
+are never reused. The asking agent's pass must allow the provider that answered, and a request that names providers (`providers`) is only ever answered by
+one of them: asking beta for what alpha was paid for is a purchase of its own. `fresh: true` (REST, MCP, and "Buy a fresh one" in the chat) pays for a new
+answer. The dry run says when an answer would be reused (`reuse`).
+
+Buying the same work with the same input five times in ten minutes looks like a loop: the next purchase waits for the person (`REPEAT_PURCHASE`).
+
+### Cross-checking: do the providers agree?
+
+Ask two to five providers the same question (name one in `providers` of each `POST /execute`, a new `window` each time; in the chat, "Pick several providers for
+the same work"), then `POST /api/v1/cross-check {"intent_ids": [...]}` (MCP `algebra_cross_check`; the chat does it by itself and shows a card).
+`internal/domain/routing/crosscheck.go` compares the answers Algebra kept, field by field, only the fields that appear in at least two of them: numbers within
+a tolerance for the kind of work (token price 1%, balances 0.1%, weather 10%, else 2%), text and booleans exactly, records in a list matched by their `id`,
+`url`, `symbol`... Left out: what names the seller or the moment (`provider`, `source`, timestamps, request ids, notes), what repeats the request's own
+parameters, and prose too long to compare. The answer is `verdict` `agree`, `differ` (each field, what each provider said, how far apart numbers are, and with three
+or more the one provider alone against the rest: `outlier`) or `unclear`: nothing could be compared, which is never agreement.
+
+It reads answers already paid for (`store_result: false` or an expired answer can't be checked), calls nobody and moves no money. It refuses what can't be a
+check: fewer than two or more than five intents, one never paid for, two questions, two answers from one provider. It is written on each intent's record
+(`result.crosschecked`). The values it quotes are the providers' own words: untrusted data.
 
 ## Discovery: the catalogs (`backend/providers/catalog`, `backend/providers/paysh`, `backend/providers/bazaar`)
 
@@ -177,6 +223,28 @@ unverified web finds. A pass's web-found rule (`controls.web_found_providers`) h
 (`approve`; `allow` pays it like any provider, `deny` never does), until it has been executed here often enough to have a record; the new-provider
 rule and the price guards then decide on it like any other. Needs `GEMINI_API_KEY`, a Spend Pass, and is
 limited to ten searches an hour per agent.
+
+## The Base and Arc rail (`backend/providers/evmx402`)
+
+x402 `exact` on EVM chains whose USDC supports EIP-3009 (Base, Arc). For each payment the payer signs a
+`transferWithAuthorization`: exactly the price, to the seller, once (a random 32-byte nonce), valid from a minute ago
+until at most ten minutes ahead, over USDC's EIP-712 domain on that chain. It sends nothing and needs no gas; the seller
+or its facilitator submits it. It refuses another token, more than the hold or the rail's 1 USDC ceiling, and paying
+itself. Settlement comes from the chain: `authorizationState(payer, nonce)` used means paid (the `AuthorizationUsed` log
+gives the transaction); unused is PENDING until the deadline has passed at a *finalized* block, and only then
+NOT_SETTLED, since no later block can include it.
+
+One EVM payer pays on every EVM chain (`EVM_TESTNET_PAYER=generated` makes one for Base Sepolia and Arc testnet and keeps
+it sealed in the database; `EVM_TESTNET_PAYER_KEY` is an operator's; `EVM_TESTNET_PAYER_ADDRESS` pins it). A chain is
+offered to the router only while the payer holds at least 0.01 USDC there (checked every two minutes); until then its
+sellers are left out as `network_not_ready`. Testnet is Solana devnet, Base Sepolia and Arc testnet together, and the
+Testnet credits and the test-money guard cover all three. Mainnet Base and Arc payments are not enabled in this build.
+
+Proven without funds: a read-only call of `transferWithAuthorization` on the real Base Sepolia and Arc testnet USDC
+contracts with the rail's signature fails only on the payer's balance (USDC checks the signature first), and with a
+tampered signature fails on the signature (`EVMX402_LIVE=1 go test ./providers/evmx402`). The demo provider sells
+token prices and weather on Base Sepolia and Arc (`demo:basebeam`, `demo:arcade`, `demo:basecast`), checks each
+authorization itself and submits it with its own key, so its wallet needs gas there too.
 
 ## The Solana rails
 

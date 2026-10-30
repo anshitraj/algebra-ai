@@ -1,72 +1,9 @@
 // Run: node --test scripts/chat-ux.test.mjs   (node 24 strips the types)
-// The wallet reuse for vault creation, and the helpers behind the comparison list.
+// The helpers behind the comparison list.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { connectWallet } from "../lib/onchain-pass.ts";
 import { autoPicks, sharedRefusal, MAX_AUTO_PAY } from "../lib/agent/option-view.ts";
 import { vaultFix } from "../lib/decision.ts";
-
-const A = "DAngWalletAddressAAAAAAAAAAAAAAAAAAAAAAAAgU5D";
-const B = "OtherWalletAddressBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
-const acct = (address) => ({ address, publicKey: new Uint8Array(32), chains: ["solana:devnet"], features: [] });
-
-function wallet({ accounts = [], silent, interactive }) {
-  const calls = [];
-  return {
-    calls,
-    name: "Phantom",
-    icon: "",
-    chains: ["solana:devnet"],
-    accounts,
-    features: {
-      "standard:connect": {
-        connect: async (input) => {
-          calls.push(input?.silent ? "silent" : "interactive");
-          if (input?.silent) {
-            if (silent instanceof Error) throw silent;
-            return { accounts: silent ?? [] };
-          }
-          if (interactive instanceof Error) throw interactive;
-          return { accounts: interactive ?? [] };
-        },
-      },
-    },
-  };
-}
-
-test("an account the wallet already shares is used without any connect call", async () => {
-  const w = wallet({ accounts: [acct(A)] });
-  assert.equal((await connectWallet(w, A)).address, A);
-  assert.deepEqual(w.calls, []);
-});
-
-test("a wallet that trusts the site answers a silent connect: no popup", async () => {
-  const w = wallet({ silent: [acct(A)] });
-  assert.equal((await connectWallet(w, A)).address, A);
-  assert.deepEqual(w.calls, ["silent"]);
-});
-
-test("a wallet that doesn't trust the site yet is asked once, interactively", async () => {
-  const w = wallet({ silent: new Error("User rejected the request."), interactive: [acct(A)] });
-  assert.equal((await connectWallet(w, A)).address, A);
-  assert.deepEqual(w.calls, ["silent", "interactive"]);
-});
-
-test("the wanted account is picked when the wallet shares several", async () => {
-  const w = wallet({ accounts: [acct(B), acct(A)] });
-  assert.equal((await connectWallet(w, A)).address, A);
-  assert.equal((await connectWallet(w)).address, B);
-});
-
-test("a different active account is returned as is, so the caller can say which wallet it needs", async () => {
-  const w = wallet({ silent: [acct(B)], interactive: [acct(B)] });
-  assert.equal((await connectWallet(w, A)).address, B);
-});
-
-test("a wallet that shares nothing is an error naming it", async () => {
-  const w = wallet({ silent: [], interactive: [] });
-  await assert.rejects(connectWallet(w, A), /Phantom didn't share an account/);
-});
 
 const rec = (over = {}) => ({
   provider: "demo:alpha",
@@ -126,7 +63,7 @@ test("automatic payment stays within what the pass has left and within three at 
 
 test("the vault link lands on the pass's own card", () => {
   const fix = vaultFix(["ONCHAIN_PASS_REQUIRED"], "pass_a1256abe-e77e");
-  assert.equal(fix?.href, "/console/passes#pass-pass_a1256abe-e77e");
-  assert.equal(vaultFix(["ONCHAIN_PASS_REQUIRED"])?.href, "/console/passes");
+  assert.equal(fix?.href, "/console/firewall#pass-pass_a1256abe-e77e");
+  assert.equal(vaultFix(["ONCHAIN_PASS_REQUIRED"])?.href, "/console/firewall");
   assert.equal(vaultFix(["PASS_BUDGET_EXHAUSTED"]), null);
 });

@@ -78,7 +78,7 @@ function forModel(result: ToolResult): ToolResult {
  * a human click in the browser, not a tool).
  */
 /** A delivered, paid call as its receipt card: the PDF and the transaction on both explorers. */
-export function receiptOf(d: Record<string, unknown>, provider: string): ReceiptInfo | undefined {
+export function receiptOf(d: Record<string, unknown>, provider: string, context?: { work?: string; stepId: string; elapsedMs: number }): ReceiptInfo | undefined {
   const intentId = typeof d.intent_id === "string" ? d.intent_id : "";
   const paidMinor = typeof d.paid_minor === "number" ? d.paid_minor : 0;
   if (!intentId || d.outcome !== "delivered" || paidMinor <= 0) return undefined;
@@ -98,6 +98,11 @@ export function receiptOf(d: Record<string, unknown>, provider: string): Receipt
     pageUrl: `/console/executions/${encodeURIComponent(intentId)}/invoice`,
     test: d.test_money === true || network === "sandbox" || undefined,
     at: new Date().toISOString(),
+    reused: d.reused && typeof (d.reused as { age_seconds?: unknown }).age_seconds === "number" ? { ageSeconds: (d.reused as { age_seconds: number }).age_seconds } : undefined,
+    result: d.response,
+    work: context?.work,
+    stepId: context?.stepId,
+    elapsedMs: context?.elapsedMs,
   };
 }
 
@@ -144,6 +149,7 @@ export async function runTool(
   const title = stepTitle(name, input);
   emit({ type: "step", id, tool: name, status: "running", title, hint: stepHint(name, input, identity.network) });
 
+  const startedAt = Date.now();
   const result = await execute(name, input, identity);
   const outcome = summarizeStep(name, input, result);
   emit({ type: "step", id, tool: name, title, ...outcome });
@@ -161,7 +167,7 @@ export async function runTool(
         network: d.network,
       });
     }
-    const r = d && receiptOf(d as Record<string, unknown>, provider);
+    const r = d && receiptOf(d as Record<string, unknown>, provider, { work: typeof input.work === "string" ? input.work : undefined, stepId: id, elapsedMs: Date.now() - startedAt });
     if (r) emit({ type: "receipt", receipt: r });
   }
   // A comparison becomes cards, and the model's turn ends: the person chooses.

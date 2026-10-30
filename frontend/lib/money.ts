@@ -4,7 +4,7 @@
 const USDC_UNIT = 1_000_000;
 
 /** The number part of a USDC amount: "0.05", "1.00", "0.0015". */
-function usdcNumber(minor: number, minFraction = 2): string {
+export function usdcNumber(minor: number, minFraction = 2): string {
   return (minor / USDC_UNIT).toLocaleString("en-US", { minimumFractionDigits: minFraction, maximumFractionDigits: 6 });
 }
 

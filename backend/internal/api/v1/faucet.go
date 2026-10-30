@@ -10,9 +10,29 @@ import (
 	"github.com/project-algebra/algebra/internal/domain/account"
 )
 
+// testCredits: GET /api/v1/me/credits. The account's Testnet credits: what
+// it started with, what it has used and what is left. 404 when this server
+// runs no Testnet.
+func (a *API) testCredits(w http.ResponseWriter, r *http.Request) {
+	sess, ok := a.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if a.b.TestCredits == nil {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: "this server runs no Testnet"})
+		return
+	}
+	bal, err := a.b.TestCredits.Balance(r.Context(), sess.UserID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, bal)
+}
+
 // faucetStatus: GET /api/v1/me/faucet. Whether this server has a devnet
 // faucet, what one drop is, the wallet of the person's own that a drop
-// would go to (the one they signed in with, else the one Privy made), and
+// would go to (the first wallet recorded for the account), and
 // what they were given if they have had their one airdrop.
 func (a *API) faucetStatus(w http.ResponseWriter, r *http.Request) {
 	sess, ok := a.requireSession(w, r)

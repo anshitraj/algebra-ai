@@ -192,3 +192,37 @@ func TestMCPOverHTTP_TheLegacyToolsNeedTheirFlag(t *testing.T) {
 		}
 	}
 }
+
+// hostAs sends the Spend Pass token and names a public hostname in the Host header, the way a proxy in front of the
+// API (Caddy, a Cloudflare tunnel, the web app's rewrite) forwards a request that arrived for api.example.com.
+type hostAs struct{ host, token string }
+
+func (h hostAs) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Host = h.host
+	r.Header.Set("Authorization", "Bearer "+h.token)
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+// The API listens on a loopback address and sits behind a proxy that forwards the public hostname. The MCP SDK refuses a
+// non-loopback Host on a loopback listener (a guard against DNS rebinding) unless told not to, so before this was
+// switched off every request to /mcp through a proxy was answered 403 "invalid Host header". Calls on a loopback Host,
+// which is all the other tests make, never showed it.
+func TestMCPOverHTTP_AProxyForwardingItsPublicHostnameIsServed(t *testing.T) {
+	b, base := serve(t)
+	token := issuePass(t, b)
+	cs, err := gomcp.NewClient(&gomcp.Implementation{Name: "e2e", Version: "0"}, nil).Connect(context.Background(), &gomcp.StreamableClientTransport{
+		Endpoint: base + "/mcp", HTTPClient: &http.Client{Transport: hostAs{"api.example.test", token}, Timeout: 30 * time.Second}, DisableStandaloneSSE: true,
+	}, nil)
+	if err != nil {
+		t.Fatalf("connecting to /mcp with a public Host: %v", err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	tools, err := cs.ListTools(context.Background(), nil)
+	if err != nil || len(tools.Tools) == 0 {
+		t.Fatalf("listing the tools with a public Host: %v %v", tools, err)
+	}
+	if out, text, isErr := callTool(t, cs, "algebra_spend_pass", map[string]any{}); isErr || out["id"] == nil {
+		t.Errorf("a call with a public Host: %v %s", out, text)
+	}
+}

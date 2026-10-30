@@ -90,13 +90,19 @@ func issuePass(t *testing.T, b *wiring.Bundle) string {
 // pass's token, the person's ID and the pass's ID.
 func issuePassWith(t *testing.T, b *wiring.Bundle, budgetMinor int64) (token, userID, passID string) {
 	t.Helper()
+	return issuePassControlled(t, b, budgetMinor, spendpass.Controls{})
+}
+
+// issuePassControlled is issuePassWith for a pass with these controls.
+func issuePassControlled(t *testing.T, b *wiring.Bundle, budgetMinor int64, controls spendpass.Controls) (token, userID, passID string) {
+	t.Helper()
 	user, err := b.Users.Create(context.Background(), "replay-"+uuid.NewString()+"@example.test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	issued, err := b.SpendPasses.Create(context.Background(), user.ID, spendpass.Pass{
 		Label: "e2e", AgentKind: spendpass.AgentCustom, Currency: "USDC", BudgetMinorUnits: budgetMinor, BudgetPeriod: spendpass.PeriodTotal,
-		ExpiresAt: time.Now().Add(24 * time.Hour),
+		ExpiresAt: time.Now().Add(24 * time.Hour), Controls: controls,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -176,9 +182,11 @@ func TestExecuteOverHTTP_ARepeatRequestIsAnsweredFromTheKeptResult(t *testing.T)
 	}
 
 	// A request that declines keeping its answer: delivered, then refused on repeat.
+	// It is paid for anew ("fresh"): the answer kept for the first request would
+	// otherwise be handed back for the same work and input (purchase memory).
 	req2 := map[string]any{
 		"capability": "solana.token-risk", "input": map[string]any{"mint": "So11111111111111111111111111111111111111112"},
-		"budget_max_minor": 50_000, "window": window + "-private", "store_result": false,
+		"budget_max_minor": 50_000, "window": window + "-private", "store_result": false, "fresh": true,
 	}
 	status, _, priv := call(t, "POST", base+"/api/v1/execute", token, req2)
 	if status != 200 || priv["delivered"] != true || priv["response"] == nil {

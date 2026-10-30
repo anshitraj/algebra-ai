@@ -61,8 +61,18 @@ func (m *memOnchainStore) UpdateOnchainPull(_ context.Context, p *OnchainPull, f
 	m.pulls[p.ReservationID] = &c
 	return nil
 }
-func (m *memOnchainStore) OpenOnchainPulls(context.Context, int) ([]OnchainPull, error) {
-	return nil, nil
+func (m *memOnchainStore) OpenOnchainPulls(_ context.Context, source string, limit int) ([]OnchainPull, error) {
+	var out []OnchainPull
+	for _, p := range m.pulls {
+		src := p.Source
+		if src == "" {
+			src = PullSourcePass
+		}
+		if src == source && (p.State == PullSending || p.State == PullPulled || p.State == PullRefunding) && len(out) < limit {
+			out = append(out, *p)
+		}
+	}
+	return out, nil
 }
 func (m *memOnchainStore) OnchainPullsForPass(context.Context, string, int) ([]OnchainPull, error) {
 	return nil, nil
@@ -80,6 +90,21 @@ func testNetwork(t *testing.T, required bool) *OnchainNetwork {
 	}
 	return &OnchainNetwork{Network: "solana-devnet", Cluster: "devnet", RailName: "x402-solana-devnet", Program: prog,
 		RPC: solana.NewRPC("http://127.0.0.1:1", nil), Payer: kp, Mint: solana.MustPublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"), Required: required}
+}
+
+func TestPassesOnEitherDeploymentAreHonoured(t *testing.T) {
+	n := testNetwork(t, false)
+	pinocchio, _ := spendpass.New(spendpass.PinocchioProgramID)
+	n.Accepted = []spendpass.Program{n.Program, pinocchio}
+	if p, err := bindingProgram(n, &OnchainBinding{ProgramID: spendpass.AnchorProgramID}); err != nil || p.ID != n.Program.ID {
+		t.Fatalf("an Anchor-made pass: %v %v", p, err)
+	}
+	if p, err := bindingProgram(n, &OnchainBinding{ProgramID: spendpass.PinocchioProgramID}); err != nil || p.ID != pinocchio.ID {
+		t.Fatalf("a Pinocchio-made pass: %v %v", p, err)
+	}
+	if _, err := bindingProgram(n, &OnchainBinding{ProgramID: "11111111111111111111111111111111"}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("another program: %v", err)
+	}
 }
 
 func TestPassNumberIsStableAndPerPass(t *testing.T) {

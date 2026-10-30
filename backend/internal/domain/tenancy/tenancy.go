@@ -45,7 +45,9 @@ func (e Environment) Networks() []string {
 	case EnvSandbox:
 		return []string{chain.Sandbox}
 	case EnvDevnet:
-		return []string{chain.SolanaDevnet}
+		// Testnet: every test network Algebra can pay on. Base Sepolia and Arc
+		// testnet are paid only while their rail is ready (chain.Payable).
+		return []string{chain.SolanaDevnet, chain.BaseSepolia, chain.ArcTestnet}
 	case EnvMainnet:
 		return []string{chain.Solana}
 	}
@@ -57,7 +59,7 @@ func EnvironmentOfNetwork(network string) (Environment, bool) {
 	switch chain.NormalizeNetwork(network) {
 	case chain.Sandbox:
 		return EnvSandbox, true
-	case chain.SolanaDevnet:
+	case chain.SolanaDevnet, chain.BaseSepolia, chain.ArcTestnet:
 		return EnvDevnet, true
 	case chain.Solana:
 		return EnvMainnet, true

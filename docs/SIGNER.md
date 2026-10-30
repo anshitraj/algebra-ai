@@ -1,20 +1,24 @@
 # The payer key
 
-Algebra pays providers from one Solana key per cluster, the **payer**. Under a
-Spend Pass vault it never holds a person's money for long: for each payment the
-vault's program moves exactly that amount to the payer, the payer signs the
-payment, and anything the payment did not spend goes back to the vault. This
+Algebra pays providers from one Solana key per cluster, the **payer**. This
 page is about where that key comes from and how it is kept.
 
-Two wallets, and only two, are the person's to think about: **their wallet**
-(the one they sign in with, or the one Privy made for them) and **the vault**
-of each Spend Pass. The payer is Algebra's, and the console does not show it as
-a wallet. It appears only where the facts belong: on a receipt, as the signer
-of the payment.
+On devnet the payer pays **test money from its own wallet**, and the test-money
+guard (`TEST_MONEY_PER_ACCOUNT_PER_DAY`, `TEST_MONEY_PER_DAY`) bounds how much
+any one account, or everyone together, can take from it in a day. Keep it
+funded with devnet SOL and USDC. With the on-chain vault switched on
+(`ONCHAIN_PASSES=on`, off by default) it is different: for each payment the
+vault's program moves exactly that amount to the payer, the payer signs the
+payment, and anything the payment did not spend goes back to the vault. Real
+money, on mainnet, is always paid that way.
+
+The person has no wallet to think about here: sign-in is an emailed code, and
+the payer is Algebra's. The console does not show it as a wallet. It appears
+only where the facts belong: on a receipt, as the signer of the payment.
 
 ## Why the key must not change
 
-The payer is every on-chain pass's `agent`, and the account every pull pays
+(This applies where the on-chain vault is on.) The payer is every on-chain pass's `agent`, and the account every pull pays
 into (`destination`) is fixed when the pass is made
 (`solana-program/programs/spend-pass`, `pull.rs`; `set_agent` changes the agent
 only). So a different payer key **cannot pull from any existing vault**. The

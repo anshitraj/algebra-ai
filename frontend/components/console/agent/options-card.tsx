@@ -18,21 +18,35 @@ import { formatUSDC } from "@/lib/money";
 import { networkLabel } from "@/lib/network";
 import { latencySourceText, pickLabel } from "@/lib/strategy";
 import { reasonLine, vaultFix } from "@/lib/decision";
+import { agoText } from "@/lib/agent/steps";
 import { SellerChips } from "../trust-badges";
-import { IconBan, IconCheck, IconChevronDown, IconClock, IconLock } from "@/components/icons";
+import { ChainMark, chainName, hasChainMark } from "@/components/chain-logos";
+import { IconArrowRight, IconBan, IconCheck, IconChevronDown, IconClock, IconLock } from "@/components/icons";
+import styles from "./options-card.module.css";
 
 type Picked = AutoPick;
 
 const WAY_ORDER = ["cheapest", "balanced", "fastest"] as const;
 
 function providerName(id: string) {
-  const name = id.replace(/^(paysh|circle|payai|cdp|monid|sandbox):/, "");
+  const name = id.replace(/^(paysh|circle|payai|cdp|monid|sandbox|demo):/, "");
   return name.length > 34 ? `${name.slice(0, 33)}…` : name;
 }
 
 function priceText(r: Recommendation) {
   if (r.price_source === "unlisted") return "price on request";
   return `${formatUSDC(r.total_minor)}${r.price_source === "listed" ? " listed" : ""}`;
+}
+
+/**
+ * What one accepted answer is expected to cost, when that is more than the
+ * price: a provider whose calls are often paid for nothing costs more per
+ * answer than its price says. Undefined when the two are about the same.
+ */
+function perAnswerText(r: Recommendation) {
+  const cpa = r.cost_per_accepted_minor ?? 0;
+  if (r.price_source === "unlisted" || r.total_minor <= 0 || cpa <= r.total_minor * 1.02) return undefined;
+  return `≈ ${formatUSDC(cpa)} per accepted answer`;
 }
 
 function speedText(r: Recommendation) {
@@ -145,6 +159,18 @@ export function OptionsBoard({
     onPay(choices, text);
   }
 
+  // A fresh answer instead of the one already paid for: the recommended offer, paid even though
+  // the earlier answer is still fresh.
+  function payFresh(g: OptionGroup) {
+    const rec = g.recommendations.find((r) => r.strategy === "balanced" && r.decision !== "BLOCK");
+    if (!rec || !active) return;
+    const { choices, text } = choicesOf([{ group: g, rec, ways: ["balanced"] }]);
+    onPay(
+      choices.map((c) => ({ ...c, fresh: true })),
+      `${text.replace(/\.$/, "")}, fresh: don't reuse the earlier answer.`,
+    );
+  }
+
   // With "ask before paying" off, the recommended offer of each new comparison is paid once, as soon as
   // the answer is in. A comparison is only ever looked at once: one that isn't allowed outright
   // (waits for a yes, refused) is left for the person.
@@ -161,18 +187,21 @@ export function OptionsBoard({
   }, [auto, active, groups, done, remainingMinor, onPay]);
 
   return (
-    <div className="space-y-3" role="group" aria-label="Choose what to pay for">
+    <div className={styles.board} role="group" aria-label="Choose what to pay for">
       {groups.map((g) => (
-        <GroupView key={g.id} g={g} paid={done.has(g.id)} active={active} picked={picked} passId={passId} onToggle={toggle} />
+        <GroupView key={g.id} g={g} showHeading={groups.length > 1} paid={done.has(g.id)} active={active} picked={picked} passId={passId} onToggle={toggle} onFresh={payFresh} />
       ))}
 
       {open.length > 0 && (
-        <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border-strong bg-surface px-3 py-2 shadow-[0_10px_30px_-18px_rgba(11,16,32,0.45)]">
+        <div className={styles.checkout}>
+          <details className={styles.moreOptions}>
+            <summary>Selection options</summary>
           <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted">
             <input type="checkbox" checked={several} onChange={(e) => setSeveral(e.target.checked)} disabled={!active} className="accent-[var(--color-primary)]" />
             Pick several providers for the same work
           </label>
-          <span className="ml-auto text-xs text-muted">
+          </details>
+          <span className={styles.selectionSummary} aria-live="polite">
             {chosen.length === 0 ? (
               auto ? (
                 "Paid automatically when your pass allows it"
@@ -192,13 +221,10 @@ export function OptionsBoard({
             type="button"
             onClick={pay}
             disabled={!active || chosen.length === 0}
-            className="inline-flex h-8 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-semibold text-primary-tint transition-[transform,opacity] active:scale-[0.98] disabled:opacity-40"
+            className={styles.pay}
           >
             {chosen.length > 1 ? `Pay for ${chosen.length}` : "Pay"}
           </button>
-          <p className="basis-full text-[0.6875rem] leading-snug text-muted">
-            Nothing is paid until you press Pay. Your Spend Pass still checks every payment and refuses a price above its limit, a changed payee or a blocked provider.
-          </p>
         </div>
       )}
     </div>
@@ -207,18 +233,22 @@ export function OptionsBoard({
 
 function GroupView({
   g,
+  showHeading,
   paid,
   active,
   picked,
   passId,
   onToggle,
+  onFresh,
 }: {
   g: OptionGroup;
+  showHeading: boolean;
   paid: boolean;
   active: boolean;
   picked: Record<string, Picked>;
   passId?: string;
   onToggle: (g: OptionGroup, rec: Recommendation, ways: string[]) => void;
+  onFresh: (g: OptionGroup) => void;
 }) {
   const cards = cardsOf(g);
   // With one offer there is nothing to rank: the three ways would all name it.
@@ -231,8 +261,8 @@ function GroupView({
   const refusal = sharedRefusal(cards.map((c) => c.rec));
   const testMoney = g.compared.length > 0 && g.compared.every((r) => r.test);
   return (
-    <section className={`rounded-xl border border-border bg-surface ${paid ? "opacity-70" : ""}`} aria-label={g.title}>
-      <header className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-border px-3 py-2">
+    <section className={styles.comparison} aria-label={g.title} data-sent={paid || undefined}>
+      <header className={showHeading ? styles.groupHeading : "sr-only"}>
         <h3 className="text-sm font-semibold text-foreground">{g.title}</h3>
         <span className="text-xs text-muted">
           {g.compared.length} compared · up to {g.maxPriceUsdc} USDC · {networkLabel(g.network)}
@@ -253,59 +283,69 @@ function GroupView({
         </p>
       )}
 
-      <ul className="space-y-1.5 p-2">
+      {!paid && g.reuse && (
+        <p className={styles.reuse}>
+          <IconCheck size={13} className="shrink-0" />
+          <span>
+            You paid {formatUSDC(g.reuse.paid_minor)} for this {agoText(g.reuse.age_seconds)} ({providerName(g.reuse.provider)}). It&apos;s still fresh, so paying
+            again hands that answer back for nothing.
+          </span>
+          {active && g.recommendations.some((r) => r.strategy === "balanced" && r.decision !== "BLOCK") && (
+            <button type="button" onClick={() => onFresh(g)}>
+              Buy a fresh one
+            </button>
+          )}
+        </p>
+      )}
+
+      <ul className={styles.cards}>
         {cards.map(({ rec, ways }) => {
           const key = `${g.id}|${rec.candidate_id}`;
           const on = !!picked[key];
           const style = DECISION_STYLE[rec.decision];
           const recommended = ways.includes("balanced");
           const label = only ? "Only offer" : ways.length ? ways.map((w) => pickLabel(w)).join(" · ") : "Next best";
+          const tone = recommended ? "balanced" : ways.includes("cheapest") ? "cheapest" : ways.includes("fastest") ? "fastest" : "other";
+          const savings = rec.total_minor > 0 && g.compared.length > 1
+            ? Math.round((1 - rec.total_minor / Math.max(...g.compared.map((r) => r.total_minor))) * 100)
+            : 0;
           return (
-            <li key={rec.candidate_id}>
+            <li key={rec.candidate_id} className={styles.card} data-tone={tone} data-selected={on || undefined} data-blocked={rec.decision === "BLOCK" || undefined}>
               <button
                 type="button"
                 aria-pressed={on}
                 disabled={!active || paid || rec.decision === "BLOCK"}
                 onClick={() => onToggle(g, rec, ways)}
-                className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-2.5 py-2 text-left transition-[border-color,background-color] disabled:cursor-not-allowed ${
-                  on ? "border-primary bg-primary-tint/50" : "border-border-strong hover:border-primary/60"
-                } ${rec.decision === "BLOCK" ? "opacity-60" : ""}`}
+                className={styles.cardButton}
               >
-                <span
-                  className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border ${on ? "border-primary bg-primary text-primary-tint" : "border-border-strong"}`}
-                  aria-hidden="true"
-                >
-                  {on && <IconCheck size={10} strokeWidth={3} />}
+                <span className={styles.cardTop}>
+                  <span className={styles.strategy}><span aria-hidden="true">{tone === "balanced" ? "✦" : tone === "fastest" ? "ϟ" : tone === "cheapest" ? "↘" : "◇"}</span>{label}</span>
+                  {recommended && !only ? <span className={styles.badge}>Recommended</span> : tone === "cheapest" && savings > 0 ? <span className={styles.badge}>Save {savings}%</span> : null}
                 </span>
-                {/* Wide: the way is its own column. Narrow: it moves to the second line so the name keeps its room. */}
-                <span className="hidden w-[5.5rem] shrink-0 text-[0.6875rem] font-semibold tracking-wide text-muted uppercase sm:block">{label}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] text-foreground" title={rec.provider}>
-                  {providerName(rec.provider)}
+                <span className={styles.provider}>
+                  <span className={styles.providerMark} aria-hidden="true">{providerName(rec.provider).slice(0, 1).toUpperCase()}</span>
+                  <span className="min-w-0"><strong title={rec.provider}>{providerName(rec.provider)}</strong><small>{g.title}</small></span>
                 </span>
-                {recommended && !only && (
-                  <span className="hidden rounded-full bg-accent-tint px-1.5 py-px text-[0.625rem] font-semibold text-accent sm:inline">Recommended</span>
+                <span className={styles.price}>{priceText(rec)}</span>
+                {perAnswerText(rec) && (
+                  <span className={styles.perAnswer} title="The price spread over how often this provider's answers are accepted, with the calls it was paid for and failed counted. Algebra ranks on this.">
+                    {perAnswerText(rec)}
+                  </span>
                 )}
-                <span className="font-display text-sm font-semibold text-foreground tabular-nums">{priceText(rec)}</span>
-                <span className="flex basis-full flex-wrap items-center gap-x-3 gap-y-1 pl-7 text-xs text-muted">
-                  <span className="text-[0.6875rem] font-semibold tracking-wide uppercase sm:hidden">
-                    {label}
-                    {recommended && !only ? <span className="ml-1 text-accent" title="Recommended">★</span> : null}
+                <span className={styles.metrics}>
+                  <span title={latencySourceText(rec.latency_source, rec.calls)}>{speedText(rec)}</span><span aria-hidden="true">·</span>
+                  <span title={reliabilityText(rec)}>{Math.round((rec.reliability ?? 0) * 100)}% est. delivery</span>
+                  <span>
+                    {hasChainMark(rec.network) ? <ChainMark network={rec.network} size={12} /> : <span className={styles.networkDot} />}
+                    {rec.network && rec.network !== g.network ? chainName(rec.network) : networkLabel(g.network)}
                   </span>
-                  <span title={`Speed: ${latencySourceText(rec.latency_source, rec.calls)}`} className="tabular-nums">
-                    {speedText(rec)}
-                  </span>
-                  <span title={reliabilityText(rec)} className="tabular-nums">
-                    {Math.round((rec.reliability ?? 0) * 100)}%<span className="hidden sm:inline"> delivers</span>
-                  </span>
-                  <SellerChips seller={rec.seller} provider={rec.provider} />
-                  {/* A refusal everyone shares is said once above; a lone one is said here. */}
-                  {rec.decision !== "ALLOW" && !(refusal && rec.decision === "BLOCK") && (
-                    <span className={`inline-flex items-center gap-1 font-medium ${style.cls}`}>
-                      {style.icon} {style.text}
-                      {!refusal && rec.reasons?.length ? <span className="font-normal text-muted">: {reasonLine(rec.reasons[0]).text}</span> : null}
-                    </span>
-                  )}
-                  {rec.decision === "ALLOW" && <span className={`inline-flex items-center gap-1 font-medium ${style.cls}`}>{style.icon} Allowed</span>}
+                </span>
+                <span className={styles.select}>{paid ? "Sent to pay" : on ? "Selected" : rec.decision === "BLOCK" ? "Unavailable" : "Select"}{on ? <IconCheck size={14} /> : !paid && rec.decision !== "BLOCK" ? <IconArrowRight size={14} /> : null}</span>
+                <span className={styles.facts}>
+                  <span>{style.icon}{rec.decision === "ALLOW" ? "Within your pass limits" : style.text}</span>
+                  <span><IconCheck size={12} />{rec.price_source === "listed" ? "Listed price" : rec.price_source === "unlisted" ? "Price confirmed before payment" : "Live price compared"}</span>
+                  {rec.test && <span className={styles.testMoney}>Test money</span>}
+                  {rec.decision !== "ALLOW" && !refusal && rec.reasons?.length ? <span className={styles.reason}>{reasonLine(rec.reasons[0]).text}</span> : null}
                 </span>
               </button>
             </li>

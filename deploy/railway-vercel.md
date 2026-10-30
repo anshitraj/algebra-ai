@@ -1,5 +1,11 @@
 # Test deployment: backend on Railway, frontend on Vercel (devnet)
 
+> **Not used any more (2026-10-22).** Railway [disclosed](https://cybersecuritynews.com/railway-security-incident/) on
+> 2026-10-21 that customers' environment variables may have been read and decrypted, and Algebra's API moved to its own
+> Google Cloud VM: see [gcp/README.md](gcp/README.md), which also keeps secrets out of any hosting dashboard. This page
+> is kept only for the steps that still apply to the Vercel side. If you host on any platform, treat every secret you
+> ever set there as exposed after an incident like that, and rotate it.
+
 The quickest way to put Algebra on the internet for testing. Railway runs the API with Postgres and Redis; Vercel runs the web app and proxies `/api/v1` and `/mcp` to the API. Devnet only; mainnet stays off. For a long-lived deployment use the VM guide ([vm/README.md](vm/README.md)) or Cloud Run ([../docs/GCP_DEPLOYMENT.md](../docs/GCP_DEPLOYMENT.md)).
 
 **Not run by its author.** No Railway or Vercel account was available. Two things are unverified and decided by your plans, not by this code:
@@ -33,15 +39,13 @@ TRUSTED_PROXY_HOPS=2
 ALGEBRA_DATA_DIR=/data
 RESEND_API_KEY=<your Resend key>
 EMAIL_FROM=Algebra <no-reply@example.com>
-PRIVY_APP_ID=<your Privy app id>
-SOLANA_DEVNET_KEYPAIR=<the JSON array from your devnet payer key file>
 ECONOMIC_SANDBOX=on
 ```
 
-   `ALGEBRA_MASTER_KEY`: make a new one, never your laptop's, and keep a copy; losing it makes stored data unreadable. `SOLANA_DEVNET_KEYPAIR` is a secret: paste it only into Railway's variable editor, never into GitHub or chat. `RESEND_API_KEY` must be set for production mode to start; without a verified sending domain, email sign-up and reset can't send, but Privy sign-in works.
+   `ALGEBRA_MASTER_KEY`: make a new one, never your laptop's, and keep a copy; losing it makes stored data unreadable (it also opens the generated devnet payer key). `RESEND_API_KEY` must be set for production mode to start, and sign-in needs it: the code goes out by email, so verify a sending domain in Resend first (until you do, Resend delivers only to your own address).
    If the API can't connect to Postgres, append `?sslmode=require` to `DATABASE_URL`.
 
-   **Devnet faucet (optional).** Quickstart can drop 0.2 SOL and 2 USDC on a signed-in person's own wallet, so nobody copies an address to a public faucet. Make a devnet-only wallet (`go run ./cmd/solana-wallet -new -out faucet.json`), fund it (SOL at faucet.solana.com, USDC at faucet.circle.com) and set `DEVNET_FAUCET_KEYPAIR` to its key in Railway's variable editor, never in GitHub or chat. One drop per account and wallet a day, `DEVNET_FAUCET_PER_DAY` (200) for everyone; `DEVNET_FAUCET_SOL` and `DEVNET_FAUCET_USDC` set the amounts. The server turns it off on any cluster that isn't devnet. Unset: Quickstart points to the public faucets instead.
+   **The devnet payer.** With no wallet variable set, the API makes its own devnet payer key on first start, keeps it sealed in the database and logs its address. Devnet payments are test money from that wallet, so fund it: SOL at faucet.solana.com (the API also asks for a little itself) and USDC at faucet.circle.com (Solana Devnet). `go run ./cmd/solana-wallet -generated` prints the address and balances; see [../docs/SIGNER.md](../docs/SIGNER.md). Each account may make `TEST_MONEY_PER_ACCOUNT_PER_DAY` (25) payments a day and everyone together `TEST_MONEY_PER_DAY` (400), so one person can't empty it. To use a wallet you already have instead, set `SOLANA_DEVNET_KEYPAIR` to its JSON array, a secret you paste only into Railway's variable editor, never into GitHub or chat.
 6. Service, Settings, Networking: **Generate Domain**. Copy the `https://....up.railway.app` address.
 7. Wait for the deploy. Open `https://<that address>/readyz`: it should answer ok. Logs show the migrations running and the demo providers starting; if the demo providers can't fund themselves from the devnet faucet, send their wallet a little devnet SOL and USDC (the address is in the logs).
 
@@ -69,8 +73,7 @@ GRIEVANCE_OFFICER_EMAIL=you@example.com
 ## 3. Close the loop
 
 1. Railway: change `PUBLIC_WEB_URL` and `CORS_ALLOWED_ORIGINS` to the real Vercel address. The service redeploys.
-2. Privy dashboard, your app: add the Vercel address under **Allowed origins**; enable your login methods and Solana wallets; turn on "Return user data in an identity token".
-3. Vercel: if `PUBLIC_WEB_URL` was wrong the first time, fix it and redeploy.
+2. Vercel: if `PUBLIC_WEB_URL` was wrong the first time, fix it and redeploy.
 
 ### Your own domain
 
@@ -79,16 +82,15 @@ Adding a domain in Vercel changes the address the browser sends, and the API onl
 1. See which form Vercel serves. It usually redirects one to the other (`example.com` to `www.example.com`): `curl -sI https://example.com | grep -i location`. The one it redirects **to** is the site's address.
 2. Railway: `PUBLIC_WEB_URL=https://www.example.com` (that address) and `CORS_ALLOWED_ORIGINS=https://www.example.com,https://example.com` (both forms, comma-separated, no trailing slash). The service redeploys.
 3. Vercel: `PUBLIC_WEB_URL` to the same address, then redeploy (it is read at build time).
-4. Privy dashboard: both forms under **Allowed origins**.
-5. Resend: verify the domain, then `EMAIL_FROM=Algebra <no-reply@example.com>` on Railway.
+4. Resend: verify the domain, then `EMAIL_FROM=Algebra <no-reply@example.com>` on Railway.
 
 Check it without a browser: `curl -s -X POST https://www.example.com/api/v1/auth/logout -H "Origin: https://www.example.com" -H "Cookie: algebra_session=x"` answers `{"ok":true}` once the address is accepted, and "cross-origin request rejected" until then.
 
 ## 4. Check it
 
-1. Open the Vercel address and sign in with Privy. Hover your wallet at the top right: address and QR.
-2. Fund it from faucet.circle.com (Solana Devnet USDC) and faucet.solana.com (devnet SOL).
-3. Spend passes: create a pass, then "Create with my account wallet" to make its vault.
+1. Open the Vercel address and sign in: type your email, then the six-digit code it sends.
+2. Check the payer has test money: `go run ./cmd/solana-wallet -generated` (or the address in the API's log), funded from faucet.circle.com (Solana Devnet USDC) and faucet.solana.com (devnet SOL).
+3. Pick **Devnet** at the top of the page, then create a Spend Pass: its budget and limits are what an agent can spend.
 4. Agent chat: "Find a devnet API for token prices and call it". Approve the card, then open the invoice and the Solscan link.
 
 ## Notes

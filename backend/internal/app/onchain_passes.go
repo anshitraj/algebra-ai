@@ -65,9 +65,19 @@ const (
 	PullRefunded  = "REFUNDED"
 )
 
+// Where a pull's money came from.
+const (
+	// PullSourcePass: an on-chain Spend Pass's vault (the program pulls).
+	PullSourcePass = "spend_pass"
+	// PullSourceVault: the owner's own vault, through the capped allowance
+	// it gave Algebra's payer (VaultAllowanceService).
+	PullSourceVault = "owner_vault"
+)
+
 // OnchainPull is one pull for one paid attempt, and what became of it.
 type OnchainPull struct {
 	ReservationID    string    `json:"reservation_id"`
+	Source           string    `json:"source"`
 	IntentID         string    `json:"intent_id"`
 	PassID           string    `json:"pass_id"`
 	Network          string    `json:"network"`
@@ -96,7 +106,8 @@ type OnchainPassStore interface {
 	// UpdateOnchainPull saves p only if it is still in state from
 	// (shared.ErrConflict otherwise), so two processes never both act on it.
 	UpdateOnchainPull(ctx context.Context, p *OnchainPull, from string) error
-	OpenOnchainPulls(ctx context.Context, limit int) ([]OnchainPull, error)
+	// OpenOnchainPulls lists the pulls from source not yet settled.
+	OpenOnchainPulls(ctx context.Context, source string, limit int) ([]OnchainPull, error)
 	OnchainPullsForPass(ctx context.Context, passID string, limit int) ([]OnchainPull, error)
 }
 
@@ -112,7 +123,11 @@ type OnchainNetwork struct {
 	Network  string // chain.Solana or chain.SolanaDevnet
 	Cluster  string // "mainnet" or "devnet", for explorer links
 	RailName string
+	// Program is where new passes are made. Accepted are every program whose
+	// passes are honoured (Program among them): the same program built twice,
+	// on Anchor and on Pinocchio, with the same bytes and rules.
 	Program  spendpass.Program
+	Accepted []spendpass.Program
 	RPC      *solana.RPC
 	Payer    *solana.Keypair
 	Mint     solana.PublicKey
@@ -210,8 +225,14 @@ type OnchainPassService struct {
 	// RecoverAfter is how long after an attempt's deadline a payment channel the
 	// provider never settled is closed by the payer to get the escrow back.
 	RecoverAfter time.Duration
-	log          *slog.Logger
-	now          func() time.Time
+	// source is the kind of pull this service makes and settles.
+	source string
+	// allowances, when set, funds passes with no on-chain pass from their
+	// owner's vault, where the owner chose that: such a pass needs none even
+	// where one is Required.
+	allowances *VaultAllowanceService
+	log        *slog.Logger
+	now        func() time.Time
 }
 
 // DefaultRecoverAfter: a provider that is going to settle does so within
@@ -222,12 +243,20 @@ const DefaultRecoverAfter = 10 * time.Minute
 func NewOnchainPassService(store OnchainPassStore, passes *SpendPassService, wallets UserWalletStore, reservations ReservationReader, nets []*OnchainNetwork) *OnchainPassService {
 	s := &OnchainPassService{store: store, passes: passes, wallets: wallets, reservations: reservations,
 		nets: map[string]*OnchainNetwork{}, byRail: map[string]*OnchainNetwork{}, AnyOwnerOn: map[string]bool{},
-		RecoverAfter: DefaultRecoverAfter, log: slog.Default(), now: time.Now}
+		RecoverAfter: DefaultRecoverAfter, source: PullSourcePass, log: slog.Default(), now: time.Now}
 	for _, n := range nets {
 		s.nets[n.Network] = n
 		s.byRail[n.RailName] = n
 	}
 	return s
+}
+
+// SetAllowances lets passes with no on-chain pass be funded from their
+// owner's vault (VaultAllowanceService), even where a pass is Required.
+func (s *OnchainPassService) SetAllowances(a *VaultAllowanceService) {
+	if s != nil {
+		s.allowances = a
+	}
 }
 
 // PassNumber is the number an on-chain pass for passID must be made with.
@@ -389,20 +418,54 @@ func (s *OnchainPassService) Prepare(ctx context.Context, userID, passID string,
 		DepositMinor: o.DepositMinor, Transaction: tx, LastValidBlockHeight: lvbh}, nil
 }
 
-// readPass reads and decodes a pass account, refusing anything the program
-// doesn't own.
+// programFor is the accepted program with this address.
+func programFor(n *OnchainNetwork, id solana.PublicKey) (spendpass.Program, bool) {
+	if id == n.Program.ID {
+		return n.Program, true
+	}
+	for _, p := range n.Accepted {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return spendpass.Program{}, false
+}
+
+// bindingProgram is the program a linked pass lives on.
+func bindingProgram(n *OnchainNetwork, b *OnchainBinding) (spendpass.Program, error) {
+	id, err := solana.ParsePublicKey(b.ProgramID)
+	if err != nil {
+		return spendpass.Program{}, err
+	}
+	p, ok := programFor(n, id)
+	if !ok {
+		return spendpass.Program{}, fmt.Errorf("%w: the pass lives on program %s, which this server doesn't honour", ErrInvalidRequest, b.ProgramID)
+	}
+	return p, nil
+}
+
+// readPass reads and decodes a pass account, refusing anything an accepted
+// program doesn't own.
 func (s *OnchainPassService) readPass(ctx context.Context, n *OnchainNetwork, addr solana.PublicKey) (*spendpass.State, error) {
+	st, _, err := s.readPassProgram(ctx, n, addr)
+	return st, err
+}
+
+// readPassProgram is readPass, also saying which program owns the pass.
+func (s *OnchainPassService) readPassProgram(ctx context.Context, n *OnchainNetwork, addr solana.PublicKey) (*spendpass.State, spendpass.Program, error) {
 	acct, err := n.RPC.GetAccountInfo(ctx, addr, solana.Confirmed)
 	if err != nil {
-		return nil, err
+		return nil, spendpass.Program{}, err
 	}
 	if acct == nil {
-		return nil, fmt.Errorf("%w: no pass at %s on %s (not made yet, or closed)", shared.ErrNotFound, addr, n.Network)
+		return nil, spendpass.Program{}, fmt.Errorf("%w: no pass at %s on %s (not made yet, or closed)", shared.ErrNotFound, addr, n.Network)
 	}
-	if acct.Owner != n.Program.ID {
-		return nil, fmt.Errorf("%w: %s doesn't belong to the Spend Pass program", ErrInvalidRequest, addr)
+	prog, ok := programFor(n, acct.Owner)
+	if !ok {
+		return nil, spendpass.Program{}, fmt.Errorf("%w: %s doesn't belong to the Spend Pass program", ErrInvalidRequest, addr)
 	}
-	return spendpass.Decode(acct.Data)
+	st, err := spendpass.Decode(acct.Data)
+	return st, prog, err
 }
 
 // Link records the on-chain pass at address as passID's, after checking on
@@ -429,12 +492,12 @@ func (s *OnchainPassService) Link(ctx context.Context, userID, passID, network, 
 	} else if !errors.Is(err, shared.ErrNotFound) {
 		return nil, err
 	}
-	st, err := s.readPass(ctx, n, addr)
+	st, prog, err := s.readPassProgram(ctx, n, addr)
 	if err != nil {
 		return nil, err
 	}
 	number := PassNumber(passID)
-	want, err := n.Program.PassAddress(st.Owner, number)
+	want, err := prog.PassAddress(st.Owner, number)
 	if err != nil {
 		return nil, err
 	}
@@ -453,7 +516,7 @@ func (s *OnchainPassService) Link(ctx context.Context, userID, passID, network, 
 	if err := s.ownerAllowed(ctx, userID, n, st.Owner); err != nil {
 		return nil, err
 	}
-	b := &OnchainBinding{PassID: passID, UserID: userID, Network: n.Network, ProgramID: n.Program.ID.String(), Address: addr.String(),
+	b := &OnchainBinding{PassID: passID, UserID: userID, Network: n.Network, ProgramID: prog.ID.String(), Address: addr.String(),
 		OwnerWallet: st.Owner.String(), PassNumber: number, LinkedAt: s.now().UTC()}
 	if err := s.store.SaveOnchainBinding(ctx, b); err != nil {
 		return nil, err
@@ -543,6 +606,10 @@ func (s *OnchainPassService) OwnerTransaction(ctx context.Context, userID, passI
 	if err != nil {
 		return nil, err
 	}
+	prog, err := bindingProgram(n, b)
+	if err != nil {
+		return nil, err
+	}
 	owner, pass := solana.MustPublicKey(b.OwnerWallet), solana.MustPublicKey(b.Address)
 	ownerToken, err := solana.AssociatedTokenAddress(owner, n.Mint, solana.TokenProgram)
 	if err != nil {
@@ -557,23 +624,23 @@ func (s *OnchainPassService) OwnerTransaction(ctx context.Context, userID, passI
 	var ixs []solana.Instruction
 	switch action {
 	case ActionFreeze, ActionUnfreeze:
-		ixs = append(ixs, n.Program.SetFrozen(owner, pass, action == ActionFreeze))
+		ixs = append(ixs, prog.SetFrozen(owner, pass, action == ActionFreeze))
 	case ActionRevoke:
-		ixs = append(ixs, n.Program.Revoke(owner, pass))
+		ixs = append(ixs, prog.Revoke(owner, pass))
 	case ActionDeposit, ActionWithdraw:
 		if err := needAmount(); err != nil {
 			return nil, err
 		}
 		var ix solana.Instruction
 		if action == ActionDeposit {
-			ix, err = n.Program.Deposit(owner, pass, n.Mint, ownerToken, uint64(amountMinor))
+			ix, err = prog.Deposit(owner, pass, n.Mint, ownerToken, uint64(amountMinor))
 		} else {
 			ata, aerr := spendpass.CreateATAIdempotent(owner, owner, n.Mint)
 			if aerr != nil {
 				return nil, aerr
 			}
 			ixs = append(ixs, ata)
-			ix, err = n.Program.Withdraw(owner, pass, n.Mint, ownerToken, uint64(amountMinor))
+			ix, err = prog.Withdraw(owner, pass, n.Mint, ownerToken, uint64(amountMinor))
 		}
 		if err != nil {
 			return nil, err
@@ -584,7 +651,7 @@ func (s *OnchainPassService) OwnerTransaction(ctx context.Context, userID, passI
 		if err != nil {
 			return nil, err
 		}
-		ix, err := n.Program.ClosePass(owner, pass, n.Mint, ownerToken)
+		ix, err := prog.ClosePass(owner, pass, n.Mint, ownerToken)
 		if err != nil {
 			return nil, err
 		}
@@ -707,6 +774,9 @@ type VaultState struct {
 
 	pass *spendpass.State
 	now  int64
+	// shortCode is the code for an amount above FundedMinor, when it isn't
+	// ONCHAIN_PASS_UNFUNDED (the owner's vault: its allowance, or its USDC).
+	shortCode string
 }
 
 // For returns the ONCHAIN_PASS_* code a payment of amountMinor would be
@@ -728,6 +798,9 @@ func (v VaultState) For(amountMinor int64) string {
 		}
 	}
 	if v.Funded && v.FundedMinor < amountMinor {
+		if v.shortCode != "" {
+			return v.shortCode
+		}
 		return DenyOnchainUnfunded
 	}
 	return ""
@@ -750,6 +823,9 @@ func (s *OnchainPassService) VaultStatus(ctx context.Context, passID, network st
 	b, err := s.store.OnchainBinding(ctx, passID)
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
+		if s.allowances.Covers(ctx, passID, n.Network) {
+			return s.allowances.VaultStatus(ctx, passID, n.Network)
+		}
 		if n.Required {
 			out.Code = DenyOnchainRequired
 		}
@@ -812,7 +888,7 @@ func (s *OnchainPassService) Funding(ctx context.Context, passID, rail string) (
 	b, err := s.store.OnchainBinding(ctx, passID)
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
-		if n.Required {
+		if n.Required && !s.allowances.Covers(ctx, passID, n.Network) {
 			return false, &AuthorityDenied{ReasonCodes: []string{DenyOnchainRequired}}
 		}
 		return false, nil
@@ -836,10 +912,10 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 	b, err := s.store.OnchainBinding(ctx, passID)
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
-		if n.Required {
+		if n.Required && !s.allowances.Covers(ctx, passID, n.Network) {
 			return nil, &AuthorityDenied{ReasonCodes: []string{DenyOnchainRequired}}
 		}
-		return nil, nil
+		return nil, nil // the owner's vault funds it, or the payer pays as before
 	case err != nil:
 		return nil, err
 	}
@@ -855,7 +931,7 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 		return nil, err
 	}
 	pass := solana.MustPublicKey(b.Address)
-	st, err := s.readPass(ctx, n, pass)
+	st, prog, err := s.readPassProgram(ctx, n, pass)
 	if errors.Is(err, shared.ErrNotFound) {
 		return nil, &AuthorityDenied{ReasonCodes: []string{DenyOnchainMissing}}
 	}
@@ -875,18 +951,25 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 	if bal, err := n.RPC.GetTokenAccountBalance(ctx, vault, solana.Confirmed); err != nil || bal.Amount < uint64(amountMinor) {
 		return nil, &AuthorityDenied{ReasonCodes: []string{DenyOnchainUnfunded}}
 	}
-	ix, err := n.Program.Pull(n.Payer.PublicKey(), pass, n.Mint, s.destination(n), uint64(amountMinor), intentHash(rv.ID))
+	ix, err := prog.Pull(n.Payer.PublicKey(), pass, n.Mint, s.destination(n), uint64(amountMinor), intentHash(rv.ID))
 	if err != nil {
 		return nil, err
 	}
-	signed, err := spendpass.Sign(ctx, n.RPC, n.Payer, nil, n.PriorityMicroLamports, ix)
+	p := &OnchainPull{ReservationID: rv.ID, IntentID: rv.IntentID, PassID: passID, Network: n.Network, PassAddress: b.Address,
+		OwnerWallet: b.OwnerWallet, AmountMinor: amountMinor}
+	return s.pull(ctx, n, p, ix)
+}
+
+// pull signs the pull's instructions with the payer, records the pull, sends
+// it and waits for it, and returns it once it is confirmed. A refusal by the
+// pass's program is an *AuthorityDenied.
+func (s *OnchainPassService) pull(ctx context.Context, n *OnchainNetwork, p *OnchainPull, ixs ...solana.Instruction) (*OnchainPull, error) {
+	signed, err := spendpass.Sign(ctx, n.RPC, n.Payer, nil, n.PriorityMicroLamports, ixs...)
 	if err != nil {
 		return nil, err
 	}
 	now := s.now().UTC()
-	p := &OnchainPull{ReservationID: rv.ID, IntentID: rv.IntentID, PassID: passID, Network: n.Network, PassAddress: b.Address,
-		OwnerWallet: b.OwnerWallet, AmountMinor: amountMinor, PullSignature: signed.Signature, PullValidUntil: signed.LastValidBlockHeight,
-		State: PullSending, CreatedAt: now, UpdatedAt: now}
+	p.Source, p.PullSignature, p.PullValidUntil, p.State, p.CreatedAt, p.UpdatedAt = s.source, signed.Signature, signed.LastValidBlockHeight, PullSending, now, now
 	// Recorded before it is sent: whatever happens next, the pull is known.
 	if err := s.store.InsertOnchainPull(ctx, p); err != nil {
 		return nil, err
@@ -909,7 +992,7 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 	}
 	p.UpdatedAt = s.now().UTC()
 	if err := s.store.UpdateOnchainPull(ctx, p, PullSending); err != nil {
-		s.log.Error("onchain pass: recording a pull failed", "reservation_id", rv.ID, "signature", p.PullSignature, "state", p.State, "err", err)
+		s.log.Error("onchain pass: recording a pull failed", "reservation_id", p.ReservationID, "signature", p.PullSignature, "state", p.State, "err", err)
 	}
 	if p.State == PullVoid {
 		if d := denyFor(sendErr); d != nil {
@@ -917,7 +1000,7 @@ func (s *OnchainPassService) Fund(ctx context.Context, passID string, rv *econ.R
 		}
 		return nil, fmt.Errorf("the on-chain pull didn't land; nothing was paid: %w", sendErr)
 	}
-	s.log.Info("onchain pass: pulled", "pass", b.Address, "amount_minor", amountMinor, "signature", p.PullSignature, "reservation_id", rv.ID)
+	s.log.Info("onchain pass: pulled", "source", p.Source, "from", p.PassAddress, "amount_minor", p.AmountMinor, "signature", p.PullSignature, "reservation_id", p.ReservationID)
 	return p, nil
 }
 
@@ -932,7 +1015,7 @@ func refusedInPreflight(err error) bool {
 // is settled from the chain, and once an attempt has ended, whatever it
 // didn't spend goes back to the pass. It returns how many pulls changed.
 func (s *OnchainPassService) Reconcile(ctx context.Context) (int, error) {
-	open, err := s.store.OpenOnchainPulls(ctx, 50)
+	open, err := s.store.OpenOnchainPulls(ctx, s.source, 50)
 	if err != nil {
 		return 0, err
 	}
@@ -1087,7 +1170,11 @@ func (s *OnchainPassService) refund(ctx context.Context, n *OnchainNetwork, p *O
 	if err != nil {
 		return err
 	}
-	if acct != nil && acct.Owner == n.Program.ID {
+	prog, owned := spendpass.Program{}, false
+	if acct != nil {
+		prog, owned = programFor(n, acct.Owner)
+	}
+	if owned {
 		st, err := spendpass.Decode(acct.Data)
 		if err != nil {
 			return err
@@ -1102,8 +1189,8 @@ func (s *OnchainPassService) refund(ctx context.Context, n *OnchainNetwork, p *O
 			}
 		}
 	}
-	if acct != nil && acct.Owner == n.Program.ID {
-		ix, err := n.Program.Refund(n.Payer.PublicKey(), pass, n.Mint, dest, uint64(*p.RefundMinor), intentHash(p.ReservationID))
+	if acct != nil && owned {
+		ix, err := prog.Refund(n.Payer.PublicKey(), pass, n.Mint, dest, uint64(*p.RefundMinor), intentHash(p.ReservationID))
 		if err != nil {
 			return err
 		}

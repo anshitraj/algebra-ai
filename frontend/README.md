@@ -38,7 +38,7 @@ The legal pages, sitemap and share links are rendered at build time from `PUBLIC
 ```
 app/                routes: the landing page, (auth)/, onboarding/, console/ (agent, routing, firewall, passes,
                     executions, providers, connect, settings), (legal)/, verify/, api/agent/ (the chat's server side)
-components/         UI, including components/auth/ (Privy sign-in) and components/console/
+components/         UI, including components/auth/ (the emailed-code sign-in) and components/console/
 lib/                the API client and types, the agent (lib/agent/: models, tools, providers), formatting
 DESIGN.md           the design system: tokens, colors, type
 ```

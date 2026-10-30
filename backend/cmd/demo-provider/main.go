@@ -104,6 +104,12 @@ func main() {
 	cancel()
 
 	s := &server{rpc: rpc, key: key, mint: mint, base: base, results: map[string]cached{}}
+	if seller, err := loadEVMSeller(filepath.Dir(*keyPath)); err != nil {
+		log.Printf("demo-provider: no EVM seller (%v): the Base Sepolia and Arc personas can't take payments", err)
+	} else {
+		s.evm = seller
+		log.Printf("demo providers on Base Sepolia and Arc testnet are paid to %s; it submits each payment, so it needs Base Sepolia ETH and Arc testnet USDC for gas", seller.key.Hex())
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /personas", s.listPersonas)
 	for _, p := range served() {

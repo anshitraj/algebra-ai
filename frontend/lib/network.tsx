@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import * as api from "./api-client";
-import type { RailStatus, WalletsView } from "./types";
+import type { RailStatus } from "./types";
 
 /** A Solana cluster the console can work on. */
 export type Cluster = "solana" | "solana-devnet";
@@ -14,16 +14,19 @@ export type Cluster = "solana" | "solana-devnet";
  */
 export type Network = Cluster | "sandbox";
 
-/** The three places to work, in the order a new person meets them. */
+/**
+ * The two places a signed-in person works: Testnet (Solana devnet, paid from Algebra's test wallet out of the
+ * account's test credits) and Mainnet (real USDC). Demo mode ("sandbox") is only for demo accounts, which have
+ * no choice.
+ */
 export const NETWORKS: { id: Network; label: string; hint: string }[] = [
-  { id: "sandbox", label: "Demo", hint: "Simulated USDC: no wallet needed and nothing real moves" },
-  { id: "solana-devnet", label: "Devnet", hint: "Free test USDC on Solana's test network, paid from your own wallet" },
+  { id: "solana-devnet", label: "Testnet", hint: "Test USDC from your 10 USDC of credits, paid on Solana devnet: nothing real moves" },
   { id: "solana", label: "Mainnet", hint: "Real USDC on Solana mainnet" },
 ];
 
-const WORDS: Record<string, string> = { solana: "Mainnet", "solana-devnet": "Devnet", sandbox: "Demo" };
+const WORDS: Record<string, string> = { solana: "Mainnet", "solana-devnet": "Testnet", sandbox: "Demo" };
 
-/** What a sentence calls a network: "Mainnet", "Devnet" or "Demo". The switch uses the same words (NETWORKS). */
+/** What a sentence calls a network: "Mainnet", "Testnet" or "Demo". The switch uses the same words (NETWORKS). */
 export function networkLabel(n: string | undefined): string {
   return (n && WORDS[n]) || (n ?? "");
 }
@@ -43,13 +46,13 @@ function stored(key: string): string | null {
 }
 
 /**
- * The saved choice, or demo mode when there is none (or storage is
- * blocked): the first place a new person works needs no wallet and no money.
- * Devnet and Mainnet are picked on purpose.
+ * The saved choice, or Testnet when there is none (or storage is blocked):
+ * the first place a new person works spends test credits, never real money.
+ * Mainnet is picked on purpose. A choice of demo mode saved before Testnet
+ * existed becomes Testnet.
  */
 export function readSavedNetwork(): Network {
-  const saved = stored(KEY);
-  return saved === "solana" || saved === "solana-devnet" || saved === "sandbox" ? saved : "sandbox";
+  return stored(KEY) === "solana" ? "solana" : "solana-devnet";
 }
 
 /** The real cluster the wallet and vault panels talk to: the last one chosen, devnet until one is. */
@@ -99,12 +102,8 @@ type NetworkState = {
   setNetwork: (n: Network) => void;
   /** Whether this server can pay on each cluster, from which wallet, with what balance. Null until read. */
   rails: RailStatus[] | null;
-  /** Reads the wallets again, after a payment moved a balance. */
+  /** Reads the rails again, after a payment moved a balance. */
   refreshRails: () => void;
-  /** What the person's own wallets hold on the chosen cluster. Null until read, or when it couldn't be. */
-  wallets: WalletsView | null;
-  /** Reads them again; force skips the server's short cache (after sending funds, say). */
-  refreshWallets: (force?: boolean) => void;
 };
 
 const Ctx = createContext<NetworkState>({
@@ -117,8 +116,6 @@ const Ctx = createContext<NetworkState>({
   setNetwork: () => {},
   rails: null,
   refreshRails: () => {},
-  wallets: null,
-  refreshWallets: () => {},
 });
 
 /**
@@ -133,14 +130,12 @@ export function NetworkProvider({ children, demo = false }: { children: React.Re
   // there, so there is no server-rendered markup for it to differ from, and nobody sees the default flash by.
   const [saved, setSaved] = useState<{ choice: Network; cluster: Cluster; ready: boolean }>(() =>
     typeof window === "undefined"
-      ? { choice: "sandbox", cluster: "solana-devnet", ready: false }
+      ? { choice: "solana-devnet", cluster: "solana-devnet", ready: false }
       : { choice: readSavedNetwork(), cluster: readSavedCluster(), ready: true },
   );
   const [rails, setRails] = useState<RailStatus[] | null>(null);
   const [practiceAvailable, setPracticeAvailable] = useState(true);
   const [railsKey, setRailsKey] = useState(0);
-  const [wallets, setWallets] = useState<WalletsView | null>(null);
-  const [walletsRead, setWalletsRead] = useState({ n: 0, force: false });
 
   useEffect(() => {
     // The same choice wherever it is made: another switch on the page, another tab.
@@ -162,30 +157,15 @@ export function NetworkProvider({ children, demo = false }: { children: React.Re
 
   const refreshRails = useCallback(() => setRailsKey((k) => k + 1), []);
 
-  // The person's own wallets on the real cluster, for the wallet menu and the
-  // on-chain pass panel. A demo account has none, and a person with none gets none.
   const { cluster } = saved;
-  useEffect(() => {
-    if (demo) return;
-    let live = true;
-    api
-      .myWallets(cluster, walletsRead.force)
-      .then((v) => live && setWallets(v))
-      .catch(() => live && setWallets(null));
-    return () => {
-      live = false;
-    };
-  }, [cluster, demo, walletsRead]);
-
-  const refreshWallets = useCallback((force = false) => setWalletsRead((r) => ({ n: r.n + 1, force })), []);
 
   const setNetwork = useCallback((n: Network) => {
     setSaved((s) => ({ ...s, choice: n, cluster: n === "sandbox" ? s.cluster : n }));
     saveNetwork(n);
   }, []);
 
-  // A server without demo mode can't offer it: fall back to the saved real cluster.
-  const choice: Network = !practiceAvailable && saved.choice === "sandbox" ? saved.cluster : saved.choice;
+  // Demo mode belongs to demo accounts: anyone else works on a cluster.
+  const choice: Network = saved.choice === "sandbox" ? saved.cluster : saved.choice;
   const network: Network = demo ? "sandbox" : choice;
   return (
     <Ctx.Provider
@@ -199,8 +179,6 @@ export function NetworkProvider({ children, demo = false }: { children: React.Re
         setNetwork,
         rails: demo ? [] : rails,
         refreshRails,
-        wallets: demo || wallets?.network !== cluster ? null : wallets,
-        refreshWallets,
       }}
     >
       {children}

@@ -27,6 +27,8 @@ export type SpendPass = {
   active: boolean;
   spent_minor_units: number;
   remaining_minor_units: number;
+  /** Held by running Job Passes and not used yet: part of spent, back when they end. */
+  set_aside_minor_units?: number;
   window_starts_at: string;
   /** Velocity limits and the new-provider rule (see lib/routing-types). */
   controls?: import("./routing-types").PassControls;
@@ -38,6 +40,138 @@ export type SpendPass = {
 };
 
 export type PassConnect = { api_base: string; mcp_url?: string };
+
+/** A paid attempt made under a Job Pass. */
+export type JobAttempt = {
+  reservation_id: string;
+  intent_id: string;
+  job_pass_id: string;
+  capability: string;
+  provider_id: string;
+  rail?: string;
+  /** RESERVED, EXECUTING, UNKNOWN, RECONCILING: may still become a payment. COMMITTED: paid. RELEASED, EXPIRED: nothing paid. */
+  state: string;
+  hold_minor: number;
+  transaction?: string;
+  network?: string;
+  fulfillment?: string;
+  created_at: string;
+  finished_at?: string;
+};
+
+/**
+ * A Job Pass: one task's budget, set aside from a Spend Pass and shared by
+ * every agent working on the task. It is an allocation in Algebra's ledger,
+ * never separate money.
+ */
+export type JobPass = {
+  id: string;
+  spend_pass_id: string;
+  parent_id?: string;
+  depth: number;
+  label: string;
+  currency: string;
+  budget_minor: number;
+  state: "ACTIVE" | "CLOSED" | "REVOKED" | "EXPIRED";
+  created_by?: string;
+  close_reason?: string;
+  created_at: string;
+  expires_at: string;
+  closed_at?: string;
+  live: boolean;
+  paid_minor: number;
+  held_minor: number;
+  set_aside_minor: number;
+  left_minor: number;
+  returned_minor: number;
+  /** What the task is worth, if its agent or person said. */
+  value_minor?: number;
+  /** The task's money, its sub-tasks included. */
+  pnl: TaskPnL;
+  children: JobPass[];
+  attempts: JobAttempt[];
+};
+
+export type TaskPnL = {
+  value_minor?: number;
+  paid_minor: number;
+  /** Paid for answers that weren't usable. */
+  wasted_minor: number;
+  accepted: number;
+  failed_free: number;
+  cost_per_accepted_minor: number;
+  /** What reused answers would have cost again. */
+  saved_minor: number;
+  reused: number;
+  /** Value less what was paid, when a value was stated. */
+  profit_minor?: number;
+};
+
+/** A vendor whose web tools run with the person's own API key (GET /api/v1/me/tool-keys). The key is never in it. */
+export type ToolKey = {
+  id: string;
+  name: string;
+  /** Where to get a key. */
+  site: string;
+  /** What the key opens, in plain words. */
+  tools: string[];
+  saved: boolean;
+  /** The last four characters of the saved key. */
+  hint?: string;
+  saved_at?: string;
+  /** The operator's key for this vendor, kept in the server's environment, is theirs to use; a key they save themselves wins over it. Never shown. */
+  server_key?: boolean;
+};
+
+/** An agent's money over a period (GET /api/v1/me/passes/{id}/pnl). */
+export type AgentPnL = {
+  spend_pass_id: string;
+  days: number;
+  since: string;
+  paid_minor: number;
+  wasted_minor: number;
+  accepted: number;
+  failed_free: number;
+  cost_per_accepted_minor: number;
+  saved_minor: number;
+  reused: number;
+  duplicates_blocked: number;
+  duplicate_prevented_minor: number;
+  tasks: number;
+  valued_tasks: number;
+  value_minor: number;
+  valued_cost_minor: number;
+  profit_minor: number;
+};
+
+/**
+ * A task, or a Spend Pass with no task yet, replayed on paper against sellers
+ * that misbehave (POST /api/v1/me/jobs/{id}/replay, POST /api/v1/me/passes/{id}/replay).
+ * A pass test (`preset`) has no task or intents: the kinds of work agents
+ * usually buy stand in for them.
+ */
+export type ReplayReport = {
+  job_pass_id?: string;
+  spend_pass_id?: string;
+  label: string;
+  ran_at: string;
+  preset?: boolean;
+  purchases: {
+    intent_id?: string;
+    capability: string;
+    /** The kind of work in words ("Token price"), in a pass test. */
+    title?: string;
+    provider: string;
+    paid_minor: number;
+    findings: { scenario: string; title: string; outcome: string; safe: boolean; at_risk_minor: number; detail: string }[];
+  }[];
+  /** Kinds of work a pass test had no seller for. */
+  skipped?: { capability: string; title: string; reason: string }[];
+  safe: number;
+  unsafe: number;
+  at_risk_minor: number;
+  protected_minor: number;
+};
 
 /** A new pass with its agent token — the token is shown exactly once. */
 export type IssuedPass = SpendPass & { token: string; connect: PassConnect };
@@ -336,14 +470,12 @@ export type User = {
   onboarded: boolean;
   has_password: boolean;
   linked_providers: string[];
-  /** Solana wallets signed in with, or given at sign-in by Privy. Public addresses only. */
-  wallets?: UserWallet[];
   created_at: string;
   /** "demo": shops real listings with a simulated checkout (fake money). */
   mode: "live" | "demo";
   /** Where sign-in alerts and receipts are emailed; empty when nowhere. */
   notification_email?: string;
-  /** Signed in with a wallet, with no address mail can reach and none confirmed. */
+  /** An account whose address can't be mailed (made with a wallet before wallets were dropped), with none confirmed. */
   needs_notification_email?: boolean;
 };
 
@@ -364,57 +496,13 @@ export type NotificationSettings = {
   sending: boolean;
 };
 
-export type UserWallet = {
-  chain: "solana";
-  address: string;
-  /** "embedded": Privy holds the key for the person. "external": their own wallet, e.g. Phantom. */
-  kind: "embedded" | "external";
-  source: string;
-};
-
-/** One of the person's own wallets and what it holds on a cluster. ok is false when the node couldn't be read: then the amounts are unknown, not zero. */
-export type WalletBalance = {
-  address: string;
-  kind: "embedded" | "external";
-  sol_lamports: number;
-  usdc_minor: number;
-  ok: boolean;
-};
-
-/** The devnet faucet (GET /api/v1/me/faucet): devnet SOL and USDC dropped on the person's own wallet. */
-export type FaucetStatus = {
-  enabled: boolean;
-  network: string;
-  /** What one drop sends. */
-  sol_lamports?: number;
-  usdc_minor?: number;
-  /** The faucet wallet (public), so the operator can see where to refill it. */
-  address?: string;
-  /** The person's wallet a drop would go to. */
-  wallet?: string;
-  /** What the account was given, once it has had its one airdrop (an account gets one, ever). */
-  received?: FaucetReceipt;
-};
-
-export type FaucetDrop = { address: string; sol_lamports: number; usdc_minor: number; signature: string };
-
-/** The airdrop an account had: where it went, what it was, and the transaction (empty while it is being sent). */
-export type FaucetReceipt = { address: string; sol_lamports: number; usdc_minor: number; signature?: string; at: string };
-
-export type WalletsView = {
-  network: "solana" | "solana-devnet";
-  usdc_mint: string;
-  wallets: WalletBalance[];
-};
-
 export type AuthProviders = {
   password: boolean;
   google: boolean;
   github: boolean;
   demo?: boolean;
-  /** Sign-in with Privy: email, Google or a Solana wallet. */
-  privy?: boolean;
-  privy_app_id?: string;
+  /** Sign-in with a six-digit code emailed to the address typed: no password, no wallet. */
+  email_code?: boolean;
 };
 
 export type SessionInfo = {

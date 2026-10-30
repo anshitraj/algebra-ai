@@ -3,21 +3,25 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { NETWORKS, useNetwork, type Network } from "@/lib/network";
 import { IconCheck, IconChevronDown } from "@/components/icons";
+import { SolanaMark } from "@/components/chain-logos";
+import { getTestCredits, getVaultAllowances, type TestCredits, type VaultAllowance } from "@/lib/api-client";
+
+const formatUsdc = (minor: number) => (minor / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
 
 const DOTS: Record<Network, string> = { sandbox: "bg-muted", "solana-devnet": "bg-accent", solana: "bg-primary" };
 
 // What each place spends, in two words, so the choice is clear before it is made.
 const MONEY: Record<Network, { tag: string; cls: string }> = {
   sandbox: { tag: "play money", cls: "bg-primary-tint text-muted" },
-  "solana-devnet": { tag: "test money", cls: "bg-accent-tint text-accent" },
+  "solana-devnet": { tag: "test credits", cls: "bg-accent-tint text-accent" },
   solana: { tag: "real money", cls: "bg-danger-tint text-danger" },
 };
 
 /**
- * Where the console works, for the whole page: Demo (play money, no wallet),
- * Devnet (free test money) or Mainnet (real USDC). One button says where you
- * are; clicking it opens the places to switch to. A demo account only has the
- * demo. The wallet is the wallet menu's.
+ * Where the console works, for the whole page: Testnet (the account's test
+ * credits, paid on Solana devnet) or Mainnet (real USDC). One button says
+ * where you are; clicking it opens the places to switch to, with what is left
+ * of the test credits. A demo account only has the demo.
  */
 export function NetworkSwitch({ compact = false }: { compact?: boolean }) {
   const { network, demo, setNetwork, practiceAvailable } = useNetwork();
@@ -28,6 +32,24 @@ export function NetworkSwitch({ compact = false }: { compact?: boolean }) {
   const menuId = useId();
   const options = NETWORKS.filter((n) => n.id !== "sandbox" || practiceAvailable);
   const current = NETWORKS.find((n) => n.id === network) ?? NETWORKS[0];
+  const [credits, setCredits] = useState<TestCredits | null>(null);
+  const [vault, setVault] = useState<VaultAllowance | null>(null);
+
+  // What is left of the test credits, or of the Vault's limit when agents pay
+  // from it, read each time the menu opens (a payment may have used some).
+  useEffect(() => {
+    if (!open || demo) return;
+    let live = true;
+    getTestCredits()
+      .then((c) => live && setCredits(c))
+      .catch(() => live && setCredits(null));
+    getVaultAllowances()
+      .then((r) => live && setVault(r.allowances.find((a) => a.network === "solana-devnet" && a.active) ?? null))
+      .catch(() => live && setVault(null));
+    return () => {
+      live = false;
+    };
+  }, [open, demo]);
 
   useEffect(() => {
     if (!open) return;
@@ -93,7 +115,7 @@ export function NetworkSwitch({ compact = false }: { compact?: boolean }) {
         title={`Working in ${current.label}. Click to switch.`}
         className={`inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-surface text-xs font-medium text-foreground transition-colors hover:bg-primary-tint/60 ${compact ? "px-2.5" : "px-3"}`}
       >
-        <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${DOTS[current.id]}`} />
+        <SolanaMark size={13} className={current.id === "solana" ? "" : "opacity-70 grayscale-[30%]"} />
         {current.label}
         <IconChevronDown size={13} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
@@ -130,6 +152,18 @@ export function NetworkSwitch({ compact = false }: { compact?: boolean }) {
                     <span className={`rounded-full px-1.5 py-px text-[0.625rem] font-medium ${MONEY[n.id].cls}`}>{MONEY[n.id].tag}</span>
                   </span>
                   <span className="mt-0.5 block text-xs leading-snug text-muted">{n.hint}</span>
+                  {n.id === "solana-devnet" && vault ? (
+                    <span className="mt-1.5 block text-xs font-medium text-foreground tabular-nums">
+                      Paying from your Vault · {formatUsdc(vault.left_minor)} of {formatUsdc(vault.approved_minor)} USDC left
+                    </span>
+                  ) : (
+                    n.id === "solana-devnet" &&
+                    credits && (
+                      <span className="mt-1.5 block text-xs font-medium text-foreground tabular-nums">
+                        {formatUsdc(credits.usdc_left_minor)} of {formatUsdc(credits.usdc_granted_minor)} USDC left · {credits.sol_lamports / 1e9} SOL
+                      </span>
+                    )
+                  )}
                 </span>
                 {on && <IconCheck size={15} className="mt-0.5 shrink-0 text-primary" />}
               </button>

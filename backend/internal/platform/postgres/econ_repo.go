@@ -12,6 +12,7 @@ import (
 
 	"github.com/project-algebra/algebra/internal/app"
 	"github.com/project-algebra/algebra/internal/domain/econ"
+	"github.com/project-algebra/algebra/internal/domain/jobpass"
 	"github.com/project-algebra/algebra/internal/domain/shared"
 )
 
@@ -125,7 +126,7 @@ func (r *EconRepo) ListIntents(ctx context.Context, principalID string, limit in
 const reservationCols = `id, intent_id, executor_agent_id, COALESCE(executor_pass_id,''), attempt, state, hold_minor,
 	COALESCE(provider_id,''), COALESCE(rail,''), COALESCE(quote_minor,0), COALESCE(semantics,''), idempotency_key,
 	COALESCE(policy_version,''), lease_expires_at, execution_deadline, evidence, COALESCE(outcome,''),
-	COALESCE(release_reason,''), created_at, updated_at, finished_at`
+	COALESCE(release_reason,''), created_at, updated_at, finished_at, COALESCE(job_id,'')`
 
 func scanReservation(row pgx.Row) (*econ.Reservation, error) {
 	var rv econ.Reservation
@@ -134,7 +135,7 @@ func scanReservation(row pgx.Row) (*econ.Reservation, error) {
 	err := row.Scan(&rv.ID, &rv.IntentID, &rv.ExecutorAgentID, &rv.ExecutorPassID, &rv.Attempt, &state, &rv.HoldMinor,
 		&rv.ProviderID, &rv.Rail, &rv.QuoteMinor, &semantics, &rv.IdempotencyKey,
 		&rv.PolicyVersion, &rv.LeaseExpiresAt, &rv.ExecutionDeadline, &evidence, &outcome,
-		&rv.ReleaseReason, &rv.CreatedAt, &rv.UpdatedAt, &rv.FinishedAt)
+		&rv.ReleaseReason, &rv.CreatedAt, &rv.UpdatedAt, &rv.FinishedAt, &rv.JobID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -280,12 +281,12 @@ func (u *econUnit) InsertReservation(rv *econ.Reservation) error {
 	_, err = sp.Exec(u.ctx, `
 		INSERT INTO economic_reservations (id, intent_id, executor_agent_id, executor_pass_id, attempt, state, hold_minor, currency,
 		    provider_id, rail, quote_minor, semantics, idempotency_key, policy_version, lease_expires_at, execution_deadline,
-		    evidence, outcome, release_reason, created_at, updated_at, finished_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18,$19,$20,$21,$22)`,
+		    evidence, outcome, release_reason, created_at, updated_at, finished_at, job_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18,$19,$20,$21,$22,$23)`,
 		rv.ID, rv.IntentID, rv.ExecutorAgentID, nullable(rv.ExecutorPassID), rv.Attempt, string(rv.State), rv.HoldMinor, u.intent.Currency,
 		nullable(rv.ProviderID), nullable(rv.Rail), rv.QuoteMinor, nullable(string(rv.Semantics)), rv.IdempotencyKey, nullable(rv.PolicyVersion),
 		rv.LeaseExpiresAt, rv.ExecutionDeadline, string(evidence), nullable(string(rv.Outcome)), nullable(rv.ReleaseReason),
-		rv.CreatedAt, rv.UpdatedAt, rv.FinishedAt)
+		rv.CreatedAt, rv.UpdatedAt, rv.FinishedAt, nullable(rv.JobID))
 	if err != nil {
 		_ = sp.Rollback(u.ctx)
 		var pgErr *pgconn.PgError
@@ -325,20 +326,16 @@ func (u *econUnit) SaveReservation(rv *econ.Reservation) error {
 	return nil
 }
 
-// passExposureSQL is what a pass has used through economic intents: holds
-// that may still turn into payments, plus payments committed since a time.
-const passExposureSQL = `
-	SELECT COALESCE(SUM(hold_minor), 0) FROM economic_reservations
-	WHERE executor_pass_id = $1
-	  AND (state IN ('RESERVED', 'EXECUTING', 'UNKNOWN', 'RECONCILING') OR (state = 'COMMITTED' AND finished_at >= $2))`
-
-func (u *econUnit) PassExposure(passID string, since time.Time) (int64, error) {
-	var total int64
-	if err := u.tx.QueryRow(u.ctx, passExposureSQL, passID, since).Scan(&total); err != nil {
-		return 0, fmt.Errorf("postgres: summing pass exposure: %w", err)
-	}
-	return total, nil
+// PassExposure: see passExposureSQL (job_pass_repo.go).
+func (u *econUnit) PassExposure(passID string, since, now time.Time) (int64, error) {
+	return passExposure(u.ctx, u.tx, passID, since, now)
 }
+
+func (u *econUnit) JobExposure(jobID string, now time.Time) (int64, error) {
+	return jobExposure(u.ctx, u.tx, jobID, now)
+}
+
+func (u *econUnit) Job(id string) (*jobpass.Job, error) { return getJob(u.ctx, u.tx, id) }
 
 func (u *econUnit) PassAttemptsSince(passID, provider string, since time.Time) (int, error) {
 	var n int
@@ -355,7 +352,7 @@ func (u *econUnit) ProviderPaid(principalID, provider string) (bool, error) {
 	var paid bool
 	err := u.tx.QueryRow(u.ctx, `
 		SELECT EXISTS (SELECT 1 FROM economic_reservations r JOIN economic_intents i ON i.id = r.intent_id
-		               WHERE r.provider_id = $2 AND r.state = 'COMMITTED' AND i.principal_id = $1)`, principalID, provider).Scan(&paid)
+		               WHERE r.provider_id = $2 AND r.state = 'COMMITTED' AND r.hold_minor > 0 AND i.principal_id = $1)`, principalID, provider).Scan(&paid)
 	if err != nil {
 		return false, fmt.Errorf("postgres: checking whether a provider was paid: %w", err)
 	}
@@ -366,15 +363,33 @@ func (u *econUnit) ProviderPaid(principalID, provider string) (bool, error) {
 // coordinator checks under the pass's row lock, read on its own for the
 // pass's view and the shopping check, which read orders the same way. Grants
 // of reservations stay serialized by the coordinator, not by this read.
-func (r *EconRepo) PassSpend(ctx context.Context, passID string, since time.Time) (int64, error) {
+func (r *EconRepo) PassSpend(ctx context.Context, passID string, since, now time.Time) (int64, error) {
+	return passExposure(ctx, r.db.Pool, passID, since, now)
+}
+
+var _ app.PassEconomicSpend = (*EconRepo)(nil)
+
+// TestCreditSpend implements app.TestCreditSpend: the account's holds on the
+// rails that may still become payments, plus what its delivered payments
+// there cost. An intent the provider was paid for but didn't fulfil is left
+// out, which is how its credits come back. So is a payment a vault funded
+// (a pull that wasn't void): that was the person's own money, not credits.
+func (r *EconRepo) TestCreditSpend(ctx context.Context, userID string, rails []string) (int64, error) {
 	var total int64
-	if err := r.db.Pool.QueryRow(ctx, passExposureSQL, passID, since).Scan(&total); err != nil {
-		return 0, fmt.Errorf("postgres: summing pass exposure: %w", err)
+	err := r.db.Pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(CASE WHEN r.state = 'COMMITTED' THEN LEAST(r.hold_minor, i.committed_minor) ELSE r.hold_minor END), 0)
+		FROM economic_reservations r JOIN economic_intents i ON i.id = r.intent_id
+		WHERE i.principal_id = $1 AND r.rail = ANY($2)
+		  AND (r.state IN ('RESERVED', 'EXECUTING', 'UNKNOWN', 'RECONCILING')
+		       OR (r.state = 'COMMITTED' AND i.fulfillment <> 'NOT_FULFILLED'))
+		  AND NOT EXISTS (SELECT 1 FROM onchain_pulls p WHERE p.reservation_id = r.id AND p.state <> 'VOID')`, userID, rails).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("postgres: summing test credit use: %w", err)
 	}
 	return total, nil
 }
 
-var _ app.PassEconomicSpend = (*EconRepo)(nil)
+var _ app.TestCreditSpend = (*EconRepo)(nil)
 
 func (u *econUnit) AppendEvent(e app.EconEvent) error {
 	if err := app.ValidateEvent(e); err != nil {

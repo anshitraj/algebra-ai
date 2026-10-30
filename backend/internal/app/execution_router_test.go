@@ -92,7 +92,7 @@ func TestRouter_ExplainsItsChoiceToTheAgentAndTheLog(t *testing.T) {
 	}
 	first := out.Routing.Offers[0]
 	if first.Rank != 1 || first.Provider != "slow-cheap" || first.CostMinor != 2_000 || first.Trust != "native" ||
-		!strings.Contains(strings.Join(first.Notes, "|"), "cheapest of 3 offers") {
+		!strings.Contains(strings.Join(first.Notes, "|"), "lowest cost per accepted answer of 3 offers") {
 		t.Errorf("the first offer says why: %+v", first)
 	}
 	// No payee or payment requirements in an explanation.

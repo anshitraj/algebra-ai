@@ -40,6 +40,9 @@ const REASONS: Record<string, string> = {
   provider_not_allowed: "Provider isn't on the pass's list",
   DEMO_SANDBOX_ONLY: "A demo account works in demo mode only",
   NETWORK_NOT_ALLOWED: "The call isn't allowed on that network",
+  TEST_MONEY_ACCOUNT_LIMIT: "You've used today's Testnet payments; they come back within 24 hours",
+  TEST_CREDITS_EXHAUSTED: "Your 10 USDC of Testnet credits are used up, so nothing was paid",
+  TEST_MONEY_DAY_LIMIT: "Algebra's shared test wallet has made all its payments for today; try again later",
   authority_denied: "The Spend Pass doesn't allow it",
   already_committed: "Already paid for once; a repeat is blocked",
   frozen_unknown_outcome: "A payment's outcome is still being confirmed",
@@ -52,6 +55,9 @@ const REASONS: Record<string, string> = {
   ONCHAIN_PASS_EXPIRED: "The pass has expired on Solana",
   ONCHAIN_PASS_LIMIT: "Over a limit the pass enforces on Solana",
   ONCHAIN_PASS_UNFUNDED: "The vault holds less than this costs",
+  VAULT_ALLOWANCE_LOW: "What agents may still spend from your Vault is less than this costs",
+  REPEAT_PURCHASE: "The same thing was bought 5 times in 10 minutes: that looks like a loop, so this one waits for your yes",
+  VAULT_UNFUNDED: "Your Vault holds less USDC than this costs",
   ONCHAIN_PASS_AGENT_CHANGED: "The vault was made for an earlier Algebra payer key",
 };
 
@@ -117,11 +123,14 @@ export function friendlyFailure(message: string): string {
   if (/insufficient USDC/.test(message)) return "The wallet doesn't hold enough USDC for this call, so nothing was paid.";
   const payee = message.match(/provider's USDC account S+ doesn't exist on (S+)/);
   if (payee) return `The provider's payout account doesn't exist on ${net(payee[1])}, so it can't be paid. Nothing was paid.`;
+  // "authority denied: TEST_MONEY_ACCOUNT_LIMIT": a refusal with a code this page has words for.
+  const denied = message.match(/authority denied: ([A-Z_]+)/);
+  if (denied && REASONS[denied[1]]) return `${REASONS[denied[1]]}. Nothing was paid.`;
   return message.replace(/^payment authority refused: /, "");
 }
 
 /** Where a payment happened, as a step card says it: "on devnet", "on mainnet" or "in demo mode". */
-const onNet = (n: string) => (n === "sandbox" ? "in demo mode" : `on ${networkWord(n)}`);
+const onNet = (n: string) => (n === "sandbox" ? "in demo mode" : n === "keyed" ? "billed to your account" : `on ${networkWord(n)}`);
 
 function paidOutcome(d: Record<string, unknown>): StepOutcome {
   const outcome = String(d.outcome ?? "");
@@ -131,7 +140,8 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
   const rows: { label: string; value: string }[] = [];
   if (typeof d.paid === "string" && (d.paid_minor as number) > 0) rows.push({ label: "Paid", value: `${d.paid}${network ? ` ${onNet(network)}` : ""}` });
   if (pullTx) rows.push({ label: "Spend Pass pull", value: `${pullTx.slice(0, 8)}…${pullTx.slice(-8)}` });
-  if (tx) rows.push({ label: "Transaction", value: `${tx.slice(0, 8)}…${tx.slice(-8)}` });
+  // A web tool called with your own key has the vendor's reference, not a chain transaction.
+  if (tx && network !== "keyed") rows.push({ label: "Transaction", value: `${tx.slice(0, 8)}…${tx.slice(-8)}` });
   const routing = d.routing as { mode?: string; ranked?: { rank: number; provider: string; price?: string }[] } | undefined;
   if (routing?.mode && pickLabel(routing.mode)) rows.push({ label: "Picked by", value: pickLabel(routing.mode) });
   for (const r of (routing?.ranked ?? []).slice(0, 3)) rows.push({ label: `Rank ${r.rank}`, value: `${r.provider}${r.price ? ` · ${r.price}` : ""}` });
@@ -176,7 +186,9 @@ function paidOutcome(d: Record<string, unknown>): StepOutcome {
     case "delivered":
       return {
         status: "done",
-        summary: d.replayed
+        summary: d.reused
+          ? `Reused an answer paid for ${agoText((d.reused as { age_seconds: number }).age_seconds)}: nothing paid now`
+          : d.replayed
           ? `Already paid: the kept answer, nothing paid again${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid} the first time` : ""}`
           : `Delivered${typeof d.paid === "string" && (d.paid_minor as number) > 0 ? ` · ${d.paid}` : " · nothing to pay"}${network ? ` ${onNet(network)}` : ""}${d.test_money ? (network === "sandbox" ? " (play money)" : " (test money)") : ""}`,
         detail: { rows, links, response: pretty(d.response), note: "The response is the provider's own data, shown as received.", policy: d._policy as PolicyReport | undefined },
@@ -286,3 +298,10 @@ export function summarizeStep(tool: string, input: Record<string, unknown>, resu
 }
 
 export { usdc as formatUsdcMinor };
+
+/** "40 s ago", "3 min ago", "2 h ago". */
+export function agoText(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
+  return `${Math.round(seconds / 3600)} h ago`;
+}

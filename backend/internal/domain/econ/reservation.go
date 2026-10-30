@@ -13,7 +13,10 @@ type Reservation struct {
 	ExecutorAgentID string `json:"executor_agent_id"`
 	// ExecutorPassID is the Spend Pass whose authority this attempt uses.
 	ExecutorPassID string `json:"executor_pass_id,omitempty"`
-	Attempt        int    `json:"attempt"`
+	// JobID is the Job Pass the attempt was made under: its hold counts
+	// against that job's budget, inside the pass's.
+	JobID   string `json:"job_pass_id,omitempty"`
+	Attempt int    `json:"attempt"`
 
 	State ReservationState `json:"state"`
 	// HoldMinor is what's counted against the executor's pass until the
@@ -74,6 +77,11 @@ type Evidence struct {
 	// ValidUntilHeight is the chain height after which a signed but unseen
 	// payment can provably never land (Solana: lastValidBlockHeight).
 	ValidUntilHeight uint64 `json:"valid_until_height,omitempty"`
+	// ValidBefore is the Unix time after which a signed EIP-3009 authorization
+	// can provably never be used (EVM), and FromBlock the chain's height when
+	// it was signed, where the search for its transaction starts.
+	ValidBefore int64  `json:"valid_before,omitempty"`
+	FromBlock   uint64 `json:"from_block,omitempty"`
 	// Test marks sandbox evidence: never presented as a real payment.
 	Test bool `json:"test,omitempty"`
 }

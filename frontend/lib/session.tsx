@@ -143,16 +143,13 @@ export function firstName(user: User | null): string {
   return /^[A-Za-z][A-Za-z'’-]{1,19}$/.test(local) ? local[0].toUpperCase() + local.slice(1) : "";
 }
 
-/** What the account menu calls the person: their name, the start of their email, a wallet's short address, or "Guest" in a demo. */
+/** What the account menu calls the person: their name, the start of their email, or "Guest" in a demo. */
 export function displayName(user: User | null): string {
   if (!user) return "";
   if (user.mode === "demo") return "Guest";
   const n = user.name?.trim();
   if (n) return n;
-  const local = realEmail(user).split("@")[0];
-  if (local) return local;
-  const a = user.wallets?.find((w) => w.chain === "solana")?.address ?? user.wallets?.[0]?.address;
-  return a ? `${a.slice(0, 4)}…${a.slice(-4)}` : "Your account";
+  return realEmail(user).split("@")[0] || "Your account";
 }
 
 export function initials(user: User | null): string {

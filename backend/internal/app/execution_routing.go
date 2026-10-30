@@ -18,6 +18,17 @@ type RoutingSummary struct {
 	// Offers are the ranked steps. The first is the one tried first; the rest
 	// are the fallbacks, used only if an attempt is proven to have moved no money.
 	Offers []RoutedOffer `json:"offers"`
+	// Expected is what the plan as a whole is expected to come to, falling back
+	// down the offers when one doesn't deliver (routing.Expectation).
+	Expected PlanExpectation `json:"expected"`
+}
+
+// PlanExpectation is a plan's expected spend, its chance of ending with an
+// accepted answer, and the expected cost of one accepted answer.
+type PlanExpectation struct {
+	CostMinor            int64   `json:"cost_minor"`
+	AcceptRate           float64 `json:"accept_rate"`
+	CostPerAcceptedMinor int64   `json:"cost_per_accepted_minor"`
 }
 
 // RoutedOffer is one ranked step.
@@ -37,6 +48,11 @@ type RoutedOffer struct {
 	Components map[string]float64 `json:"components,omitempty"`
 	Notes      []string           `json:"notes,omitempty"`
 	Test       bool               `json:"test,omitempty"`
+	// CostPerAcceptedMinor is what one accepted answer from it is expected to
+	// cost, its paid failures counted; AcceptRate how often it is expected to
+	// deliver one.
+	CostPerAcceptedMinor int64   `json:"cost_per_accepted_minor"`
+	AcceptRate           float64 `json:"accept_rate"`
 }
 
 // SummarizePlan reads a plan into its explanation. Nil for no plan.
@@ -51,8 +67,10 @@ func SummarizePlan(p *routing.ExecutionPlan) *RoutingSummary {
 			LatencyMS: cmp.Or(st.Score.LatencyMS, st.Quote.EstimatedLatencyMS), LatencySource: st.Score.LatencySource, Calls: st.Score.Calls,
 			Trust: string(st.Trust), Score: st.Score.Total,
 			Components: st.Score.Components, Notes: st.Score.Notes, Test: st.Quote.Test,
+			CostPerAcceptedMinor: st.Score.CostPerAcceptedMinor, AcceptRate: st.Score.AcceptRate,
 		})
 	}
+	out.Expected.CostMinor, out.Expected.AcceptRate, out.Expected.CostPerAcceptedMinor = routing.Expectation(p.Steps)
 	return out
 }
 

@@ -2,7 +2,8 @@
 // network. Shared by the chat's step cards, the receipt verifier and the
 // executions page.
 
-const NETWORK_WORDS: Record<string, string> = { solana: "mainnet", "solana-devnet": "devnet" };
+// "keyed" is no chain: a web tool called with the person's own API key, which its vendor bills to them.
+const NETWORK_WORDS: Record<string, string> = { solana: "mainnet", "solana-devnet": "devnet", keyed: "your account" };
 
 /** "mainnet" or "devnet" for a network ID; the ID itself when it's something else. */
 export function networkWord(n: unknown): string {
