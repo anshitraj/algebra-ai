@@ -15,7 +15,7 @@ dashboard**, and a leak of the VM's configuration alone gives an attacker nothin
 |---|---|
 | Project | `algebra-prod-7802b5` (own project: no key, role or workload is shared with any other) |
 | VM | `algebra-1`, e2-standard-4 (4 vCPU, 16 GB), Debian 12, Mumbai (`asia-south1-b`), shielded boot, deletion protection. It started as e2-medium and was upsized on 2026-10-22: the stack used about 0.7 GB, so this is headroom (and room to host the web app here later), not need |
-| Reaching it | `gcloud compute ssh algebra-1 --tunnel-through-iap` (your Google login). **No port is open**: the one firewall rule lets Google's IAP range reach SSH |
+| Reaching it | `gcloud compute ssh algebra-1 --tunnel-through-iap` (your Google login). SSH is reachable only through Google's IAP range. Since 2026-10-30 ports 80 and 443 are also open for Caddy (see "Public HTTPS without Cloudflare"); nothing else is |
 | Secrets | Secret Manager, read by the VM's service account only; the master key is stored **wrapped by Cloud KMS** and unwrapped at start |
 | Backups | nightly `pg_dump` to a private bucket; the VM can only add objects; each is kept 14 days (a compromised VM can't erase them), deleted after 45 |
 | Logs and metrics | Google Ops Agent to Cloud Logging and Monitoring |
@@ -51,6 +51,25 @@ Get-Clipboard | gcloud secrets versions add algebra-resend-api-key --project alg
    hostname is `api.usealgebra.xyz` → `http://127.0.0.1:8080`.
 3. `deploy/gcp/deploy.sh --setup`: builds the current commit, uploads it through the tunnel, checks
    its hashes, installs, starts, and waits for `/readyz`.
+
+## Public HTTPS without Cloudflare (what runs today)
+
+A Cloudflare tunnel needs the domain's nameservers moved to Cloudflare, which waits on the owner's accounts. To be reachable
+before that, `public-https.sh` opens ports 80 and 443 to the internet for this VM only (firewall rule `algebra-allow-https`),
+installs Debian's Caddy, and gives it a name that resolves to the VM with no DNS record of ours: `34-180-40-140.sslip.io`
+(sslip.io answers every `a-b-c-d.sslip.io` with `a.b.c.d`; Google's own `N.N.N.N.bc.googleusercontent.com` can't be used,
+its CAA record forbids Let's Encrypt). Caddy gets and renews the certificate and proxies to `127.0.0.1:8080`, which is
+what `TRUSTED_PROXY_HOPS=1` already assumes. The address is reserved (`algebra-api-ip`), so the name keeps pointing at the VM
+after a stop and start.
+
+What this costs: the API itself faces the internet, with no WAF or DDoS shield in front of it and a name that appears in
+certificate-transparency logs. It is acceptable for a Testnet launch and not for real money. `public-https.sh --close`
+shuts ports 80 and 443 and stops Caddy; do that once the Cloudflare tunnel carries the traffic. To use a name of your own
+first, add an A record for it to the reserved address and run `public-https.sh api.usealgebra.xyz 34-180-40-140.sslip.io`.
+
+Two things this found: the MCP SDK refused every request whose `Host` wasn't loopback while the API listens on `127.0.0.1`
+(so `/mcp` answered 403 behind any proxy: fixed, `DisableLocalhostProtection`, `TestMCPOverHTTP_AProxyForwardingItsPublicHostnameIsServed`),
+and Caddy 2.6.2's ZeroSSL fallback no longer works, so Let's Encrypt is the only issuer.
 
 ## Cutover from Railway (in this order)
 
