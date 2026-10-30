@@ -90,6 +90,8 @@ names Railway breaks sign-in on the live site, so the API has to be reachable fi
 5. On www.usealgebra.xyz: ask for a code, sign in, make a pass, run "Test this pass" and one chat request.
 6. Only then stop the Railway API and rotate every secret that ever lived there.
 
+When something goes wrong, [docs/RUNBOOKS.md](../../docs/RUNBOOKS.md) has the order to do things in.
+
 ## Everyday
 
 | Task | How |
