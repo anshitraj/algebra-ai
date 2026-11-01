@@ -952,7 +952,7 @@ function EmptyState({
           <Link href="/console/connect" className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-primary">Connect your own agent <IconArrowUp size={13} className="rotate-45" /></Link>
         </div>
       ) : (
-        <div className="mt-10 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        <div className="mt-6 grid grid-cols-1 gap-2 sm:mt-10 sm:grid-cols-2 sm:gap-2.5">
           {suggestions.map((s, i) => (
             <motion.button
               key={s}
@@ -963,7 +963,7 @@ function EmptyState({
               transition={{ duration: 0.45, delay: 0.1 + i * 0.05, ease: EASE }}
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.98 }}
-              className="min-w-0 rounded-2xl border border-border-strong bg-surface px-4 py-3.5 text-left text-[0.925rem] leading-snug [overflow-wrap:anywhere] text-foreground transition-[border-color,box-shadow] hover:border-primary/50 hover:shadow-[0_10px_24px_-18px_rgba(11,16,32,0.5)]"
+              className={`min-w-0 rounded-xl border border-border-strong bg-surface px-3.5 py-2.5 text-left text-[0.85rem] leading-snug [overflow-wrap:anywhere] text-foreground transition-[border-color,box-shadow] hover:border-primary/50 hover:shadow-[0_10px_24px_-18px_rgba(11,16,32,0.5)] sm:rounded-2xl sm:px-4 sm:py-3.5 sm:text-[0.925rem] ${i >= 3 ? "max-sm:hidden" : ""}`}
             >
               {s}
             </motion.button>
