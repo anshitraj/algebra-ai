@@ -753,7 +753,7 @@ function TurnView({
     <div className="space-y-4" data-turn-id={turn.id}>
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className={delivered ? "agent-delivered-request" : "flex justify-end"}>
         {delivered && <span className="agent-user-avatar" aria-hidden="true">{firstName(user).slice(0, 1) || "Y"}</span>}
-        <p className="agent-user-message max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
+        <p className="agent-user-message max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
           {turn.displayUser ?? turn.user}
         </p>
       </motion.div>
@@ -952,7 +952,7 @@ function EmptyState({
           <Link href="/console/connect" className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-primary">Connect your own agent <IconArrowUp size={13} className="rotate-45" /></Link>
         </div>
       ) : (
-        <div className="mt-10 grid gap-2.5 sm:grid-cols-2">
+        <div className="mt-10 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           {suggestions.map((s, i) => (
             <motion.button
               key={s}
@@ -963,7 +963,7 @@ function EmptyState({
               transition={{ duration: 0.45, delay: 0.1 + i * 0.05, ease: EASE }}
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.98 }}
-              className="rounded-2xl border border-border-strong bg-surface px-4 py-3.5 text-left text-[0.925rem] leading-snug text-foreground transition-[border-color,box-shadow] hover:border-primary/50 hover:shadow-[0_10px_24px_-18px_rgba(11,16,32,0.5)]"
+              className="min-w-0 rounded-2xl border border-border-strong bg-surface px-4 py-3.5 text-left text-[0.925rem] leading-snug [overflow-wrap:anywhere] text-foreground transition-[border-color,box-shadow] hover:border-primary/50 hover:shadow-[0_10px_24px_-18px_rgba(11,16,32,0.5)]"
             >
               {s}
             </motion.button>

@@ -515,6 +515,7 @@
 }
 .envCommands {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 15px;
   margin-top: 10px;
 }

@@ -563,6 +563,7 @@ a:hover > .algebra-mark .mark-right,.algebra-mark:hover .mark-right { transform:
   .dashboard-standalone .execution-table { min-width:440px; } .console-overview h1 { font-size:27px; }
   .console-overview > dl > div { padding:17px; border-bottom:1px solid var(--color-border); } .console-overview > dl > div:nth-child(2) { border-right:0; } .console-overview > dl dd { font-size:25px; }
 }
+@media (max-width:360px) { .hero-copy h1 { font-size:37px; letter-spacing:-2px; } }
 @media (prefers-reduced-motion:reduce) {
   html { scroll-behavior:auto; }
   .landing *,.landing *::before,.landing *::after,.interactive-dashboard *,.console-frame *,.algebra-mark path { animation:none !important; transition:none !important; }
