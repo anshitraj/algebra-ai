@@ -168,7 +168,7 @@ func stripInternal(q *quote.CheckoutQuote) quote.CheckoutQuote {
 // deployment (see cmd/mcp).
 func NewMCPServer(srv *Server) *gomcp.Server {
 	s := gomcp.NewServer(&gomcp.Implementation{Name: "project-algebra", Version: "0.1.0"}, nil)
-	s.AddReceivingMiddleware(earlierNameMiddleware, bearerMiddleware, srv.rateLimitMiddleware)
+	s.AddReceivingMiddleware(earlierNameMiddleware, bearerMiddleware, srv.rateLimitMiddleware, toolHintsMiddleware)
 	srv.registerSpendPassTools(s)
 	srv.registerJobTools(s)
 	srv.registerEconomicTools(s)
