@@ -456,6 +456,10 @@ a:hover > .algebra-mark .mark-right,.algebra-mark:hover .mark-right { transform:
 .agent-welcome-eyebrow { font-family:var(--font-mono); font-size:8px; letter-spacing:1.3px; color:var(--color-muted); margin-bottom:14px; }
 .agent-welcome h2 { font-weight:500; letter-spacing:-1.5px; font-size:37px; max-width:600px; }
 .agent-welcome > p:not(.agent-welcome-eyebrow) { font-size:13px; line-height:1.8; }
+@media (max-width:639px) {
+  .agent-welcome-mark { width:44px; height:44px; margin-bottom:16px; } .agent-welcome-eyebrow { margin-bottom:10px; }
+  .agent-welcome h2 { font-size:26px; letter-spacing:-.8px; } .agent-welcome > p:not(.agent-welcome-eyebrow) { font-size:12.5px; line-height:1.65; }
+}
 .agent-workspace form { border-radius:10px; }
 .agent-workspace > section > header { background:var(--color-surface); }
 .agent-inspector h2 { font-family:var(--font-mono); font-size:9px; font-weight:400; letter-spacing:.8px; }
